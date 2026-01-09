@@ -7,9 +7,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.bylins.client.ClientState
 
 @Composable
-fun StatusPanel(modifier: Modifier = Modifier) {
+fun StatusPanel(
+    clientState: ClientState,
+    modifier: Modifier = Modifier
+) {
+    val msdpData by clientState.msdpData.collectAsState()
+
+    // Извлекаем данные из MSDP или используем значения по умолчанию
+    val health = (msdpData["HEALTH"] as? String)?.toIntOrNull() ?: 100
+    val maxHealth = (msdpData["MAX_HEALTH"] as? String)?.toIntOrNull() ?: 100
+    val mana = (msdpData["MANA"] as? String)?.toIntOrNull() ?: 100
+    val maxMana = (msdpData["MAX_MANA"] as? String)?.toIntOrNull() ?: 100
+    val movement = (msdpData["MOVEMENT"] as? String)?.toIntOrNull() ?: 100
+    val maxMovement = (msdpData["MAX_MOVEMENT"] as? String)?.toIntOrNull() ?: 100
+
+    val level = (msdpData["LEVEL"] as? String) ?: "1"
+    val experience = (msdpData["EXPERIENCE"] as? String) ?: "0"
+    val gold = (msdpData["GOLD"] as? String) ?: "0"
+    val opponent = (msdpData["OPPONENT_HEALTH"] as? String)
+
     Column(
         modifier = modifier
             .background(MaterialTheme.colorScheme.surface)
@@ -27,34 +46,50 @@ fun StatusPanel(modifier: Modifier = Modifier) {
         // Здоровье
         StatusBar(
             label = "HP",
-            current = 100,
-            max = 100,
+            current = health,
+            max = maxHealth,
             color = Color(0xFF4CAF50)
         )
 
         // Мана
         StatusBar(
             label = "Mana",
-            current = 80,
-            max = 100,
+            current = mana,
+            max = maxMana,
             color = Color(0xFF2196F3)
         )
 
         // Движение
         StatusBar(
             label = "Move",
-            current = 120,
-            max = 150,
+            current = movement,
+            max = maxMovement,
             color = Color(0xFFFFC107)
         )
+
+        // Противник (если есть)
+        opponent?.let { oppHealth ->
+            Divider()
+            Text(
+                text = "Противник",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+            StatusBar(
+                label = "HP",
+                current = oppHealth.toIntOrNull() ?: 0,
+                max = 100, // Обычно сервер не присылает max для противника
+                color = Color(0xFFFF5252)
+            )
+        }
 
         Divider()
 
         // Дополнительная информация
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            InfoRow("Уровень", "1")
-            InfoRow("Опыт", "0")
-            InfoRow("Золото", "0")
+            InfoRow("Уровень", level)
+            InfoRow("Опыт", experience)
+            InfoRow("Золото", gold)
         }
     }
 }

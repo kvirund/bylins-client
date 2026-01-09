@@ -51,6 +51,7 @@ fun MainWindow() {
 
                     // Боковая панель статуса персонажа
                     StatusPanel(
+                        clientState = clientState,
                         modifier = Modifier
                             .width(250.dp)
                             .fillMaxHeight()

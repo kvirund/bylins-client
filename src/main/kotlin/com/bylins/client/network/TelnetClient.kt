@@ -1,5 +1,6 @@
 package com.bylins.client.network
 
+import com.bylins.client.ClientState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,7 +9,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 
-class TelnetClient {
+class TelnetClient(private val clientState: ClientState? = null) {
     private var socket: Socket? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
@@ -21,6 +22,7 @@ class TelnetClient {
     val receivedData: StateFlow<String> = _receivedData
 
     private val telnetParser = TelnetParser()
+    private val msdpParser = MsdpParser()
 
     suspend fun connect(host: String, port: Int) = withContext(Dispatchers.IO) {
         try {
@@ -152,8 +154,15 @@ class TelnetClient {
     }
 
     private fun parseMSDP(data: ByteArray) {
-        // TODO: Implement MSDP parsing
-        // MSDP формат: VAR "variable_name" VAL "value"
+        try {
+            val msdpData = msdpParser.parse(data)
+            clientState?.updateMsdpData(msdpData)
+
+            // Debug output
+            println("MSDP Data: $msdpData")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun parseGMCP(data: ByteArray) {

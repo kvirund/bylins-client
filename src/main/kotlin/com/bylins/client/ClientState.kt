@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 class ClientState {
-    private val telnetClient = TelnetClient()
+    private val telnetClient = TelnetClient(this)
     private val scope = CoroutineScope(Dispatchers.Main)
 
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
@@ -16,6 +16,9 @@ class ClientState {
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage
+
+    private val _msdpData = MutableStateFlow<Map<String, Any>>(emptyMap())
+    val msdpData: StateFlow<Map<String, Any>> = _msdpData
 
     fun connect(host: String, port: Int) {
         scope.launch {
@@ -42,5 +45,9 @@ class ClientState {
                 e.printStackTrace()
             }
         }
+    }
+
+    fun updateMsdpData(data: Map<String, Any>) {
+        _msdpData.value = _msdpData.value + data
     }
 }
