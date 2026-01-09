@@ -22,8 +22,11 @@ fun InputPanel(
     val isConnected by clientState.isConnected.collectAsState()
 
     fun sendCommand() {
-        if (inputText.isNotBlank() && isConnected) {
-            commandHistory.add(inputText)
+        if (isConnected) {
+            // Добавляем в историю только непустые команды
+            if (inputText.isNotBlank()) {
+                commandHistory.add(inputText)
+            }
             historyIndex = -1
             clientState.send(inputText)
             inputText = ""
@@ -73,7 +76,7 @@ fun InputPanel(
 
         IconButton(
             onClick = { sendCommand() },
-            enabled = isConnected && inputText.isNotBlank()
+            enabled = isConnected
         ) {
             Icon(Icons.Default.Send, contentDescription = "Отправить")
         }
