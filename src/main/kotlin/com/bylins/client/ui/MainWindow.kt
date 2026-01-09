@@ -73,6 +73,11 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
+                        text = { Text("Хоткеи") }
+                    )
+                    Tab(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -121,6 +126,13 @@ fun MainWindow() {
                             )
                         }
                         3 -> {
+                            // Панель горячих клавиш
+                            HotkeysPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        4 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,

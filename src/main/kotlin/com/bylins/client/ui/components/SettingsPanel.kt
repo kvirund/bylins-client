@@ -76,6 +76,7 @@ fun SettingsPanel(
 
                 val triggers by clientState.triggers.collectAsState()
                 val aliases by clientState.aliases.collectAsState()
+                val hotkeys by clientState.hotkeys.collectAsState()
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -88,6 +89,13 @@ fun SettingsPanel(
 
                 Text(
                     text = "Алиасов: ${aliases.size}",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Text(
+                    text = "Горячих клавиш: ${hotkeys.size}",
                     color = Color.White,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
