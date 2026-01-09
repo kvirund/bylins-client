@@ -41,6 +41,123 @@ fun SettingsPanel(
 
         Divider(color = Color.Gray, thickness = 1.dp)
 
+        // Логирование
+        val isLogging by clientState.isLogging.collectAsState()
+        val currentLogFile by clientState.currentLogFile.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color(0xFF2D2D2D),
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Логирование",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Divider(color = Color.Gray, thickness = 1.dp)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Статус:",
+                        color = Color(0xFFBBBBBB),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    Text(
+                        text = if (isLogging) "Активно" else "Остановлено",
+                        color = if (isLogging) Color(0xFF00FF00) else Color(0xFFFF5555),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                if (currentLogFile != null) {
+                    Text(
+                        text = "Текущий файл:",
+                        color = Color(0xFFBBBBBB),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    Text(
+                        text = currentLogFile!!,
+                        color = Color(0xFF00FF00),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Text(
+                    text = "Директория логов: ${clientState.getLogsDirectory()}",
+                    color = Color(0xFF888888),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (isLogging) {
+                                clientState.stopLogging()
+                                statusMessage = "Логирование остановлено"
+                                statusColor = Color(0xFFFFAA00)
+                            } else {
+                                clientState.startLogging(stripAnsi = true)
+                                statusMessage = "Логирование начато"
+                                statusColor = Color(0xFF00FF00)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = if (isLogging) Color(0xFFFF5555) else Color(0xFF4CAF50)
+                        )
+                    ) {
+                        Text(
+                            text = if (isLogging) "Остановить" else "Начать",
+                            color = Color.White
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            val count = clientState.getLogFiles().size
+                            clientState.cleanOldLogs(30)
+                            val newCount = clientState.getLogFiles().size
+                            val removed = count - newCount
+                            statusMessage = "Удалено старых логов: $removed"
+                            statusColor = Color(0xFF00FF00)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFFFF9800)
+                        )
+                    ) {
+                        Text("Очистить старые", color = Color.White)
+                    }
+                }
+
+                Text(
+                    text = "Всего лог-файлов: ${clientState.getLogFiles().size}",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
         // Информация о конфигурации
         Card(
             modifier = Modifier.fillMaxWidth(),

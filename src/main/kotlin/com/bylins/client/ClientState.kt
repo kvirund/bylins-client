@@ -3,6 +3,7 @@ package com.bylins.client
 import com.bylins.client.aliases.AliasManager
 import com.bylins.client.config.ConfigManager
 import com.bylins.client.hotkeys.HotkeyManager
+import com.bylins.client.logging.LogManager
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.triggers.TriggerManager
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,8 @@ class ClientState {
         send(command)
     }
 
+    private val logManager = LogManager()
+
     private val telnetClient = TelnetClient(this)
 
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
@@ -47,6 +50,10 @@ class ClientState {
     val triggers = triggerManager.triggers
     val aliases = aliasManager.aliases
     val hotkeys = hotkeyManager.hotkeys
+
+    // Доступ к логированию
+    val isLogging = logManager.isLogging
+    val currentLogFile = logManager.currentLogFile
 
     init {
         // Пытаемся загрузить сохранённую конфигурацию
@@ -271,6 +278,11 @@ class ClientState {
      * Обрабатывает входящую строку текста (вызывается из TelnetClient)
      */
     fun processIncomingText(text: String) {
+        // Логируем весь полученный текст
+        if (text.isNotEmpty()) {
+            logManager.log(text)
+        }
+
         // Разбиваем на строки и обрабатываем каждую триггерами
         val lines = text.split("\n")
         for (line in lines) {
@@ -401,4 +413,25 @@ class ClientState {
     }
 
     fun getConfigPath(): String = configManager.getConfigFile()
+
+    // Управление логированием
+    fun startLogging(stripAnsi: Boolean = true) {
+        logManager.startLogging(stripAnsi)
+    }
+
+    fun stopLogging() {
+        logManager.stopLogging()
+    }
+
+    fun getLogFiles(): List<File> {
+        return logManager.getLogFiles()
+    }
+
+    fun getLogsDirectory(): String {
+        return logManager.getLogsDirectory()
+    }
+
+    fun cleanOldLogs(daysToKeep: Int = 30) {
+        logManager.cleanOldLogs(daysToKeep)
+    }
 }
