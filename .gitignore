@@ -26,7 +26,10 @@ logs/
 ### User data ###
 config/*.json
 plugins/
-scripts/
+
+### User scripts (but keep README) ###
+scripts/*
+!scripts/README.md
 
 ### Script dependencies ###
 scripts/**/__pycache__/
