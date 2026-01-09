@@ -13,7 +13,7 @@ class AnsiParser {
 
     // ANSI 16 базовых цветов (палитра tintin++)
     private val ansi16Colors = mapOf(
-        30 to Color(0xFF000000), // Black
+        30 to Color(0xFF555555), // Black (темно-серый, чтобы видеть на чёрном фоне) (85,85,85)
         31 to Color(0xFFBB0000), // Red (187,0,0)
         32 to Color(0xFF00BB00), // Green (0,187,0)
         33 to Color(0xFFBBBB00), // Yellow (187,187,0)
@@ -23,7 +23,7 @@ class AnsiParser {
         37 to Color(0xFFBBBBBB), // White (187,187,187)
 
         // Bright colors
-        90 to Color(0xFF555555), // Bright Black (Gray) (85,85,85)
+        90 to Color(0xFF888888), // Bright Black (Gray) (136,136,136)
         91 to Color(0xFFFF5555), // Bright Red (255,85,85)
         92 to Color(0xFF55FF55), // Bright Green (85,255,85)
         93 to Color(0xFFFFFF55), // Bright Yellow (255,255,85)
