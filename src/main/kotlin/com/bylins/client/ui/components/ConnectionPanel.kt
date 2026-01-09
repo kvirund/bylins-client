@@ -9,51 +9,72 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.bylins.client.ClientState
 
 @Composable
-fun ConnectionPanel(modifier: Modifier = Modifier) {
-    var host by remember { mutableStateOf("mud.bylins.su") }
+fun ConnectionPanel(
+    clientState: ClientState,
+    modifier: Modifier = Modifier
+) {
+    var host by remember { mutableStateOf("bylins.su") }
     var port by remember { mutableStateOf("4000") }
-    var isConnected by remember { mutableStateOf(false) }
+    val isConnected by clientState.isConnected.collectAsState()
+    val errorMessage by clientState.errorMessage.collectAsState()
 
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        OutlinedTextField(
-            value = host,
-            onValueChange = { host = it },
-            label = { Text("Host") },
-            enabled = !isConnected,
-            modifier = Modifier.weight(1f)
-        )
-
-        OutlinedTextField(
-            value = port,
-            onValueChange = { port = it },
-            label = { Text("Port") },
-            enabled = !isConnected,
-            modifier = Modifier.width(100.dp)
-        )
-
-        Button(
-            onClick = {
-                isConnected = !isConnected
-                // TODO: Implement connection logic
-            },
-            colors = if (isConnected) {
-                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            } else {
-                ButtonDefaults.buttonColors()
-            }
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (isConnected) Icons.Default.LinkOff else Icons.Default.Link,
-                contentDescription = if (isConnected) "Disconnect" else "Connect"
+            OutlinedTextField(
+                value = host,
+                onValueChange = { host = it },
+                label = { Text("Host") },
+                enabled = !isConnected,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(4.dp))
-            Text(if (isConnected) "Отключиться" else "Подключиться")
+
+            OutlinedTextField(
+                value = port,
+                onValueChange = { port = it },
+                label = { Text("Port") },
+                enabled = !isConnected,
+                modifier = Modifier.width(100.dp)
+            )
+
+            Button(
+                onClick = {
+                    if (isConnected) {
+                        clientState.disconnect()
+                    } else {
+                        val portInt = port.toIntOrNull() ?: 4000
+                        clientState.connect(host, portInt)
+                    }
+                },
+                colors = if (isConnected) {
+                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                } else {
+                    ButtonDefaults.buttonColors()
+                }
+            ) {
+                Icon(
+                    imageVector = if (isConnected) Icons.Default.LinkOff else Icons.Default.Link,
+                    contentDescription = if (isConnected) "Disconnect" else "Connect"
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(if (isConnected) "Отключиться" else "Подключиться")
+            }
+        }
+
+        // Показываем ошибку если есть
+        errorMessage?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 }

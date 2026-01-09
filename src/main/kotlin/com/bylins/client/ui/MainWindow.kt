@@ -7,6 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.bylins.client.ClientState
 import com.bylins.client.ui.components.ConnectionPanel
 import com.bylins.client.ui.components.OutputPanel
 import com.bylins.client.ui.components.InputPanel
@@ -14,6 +15,8 @@ import com.bylins.client.ui.components.StatusPanel
 
 @Composable
 fun MainWindow() {
+    val clientState = remember { ClientState() }
+
     MaterialTheme(
         colorScheme = darkColorScheme()
     ) {
@@ -24,6 +27,7 @@ fun MainWindow() {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Верхняя панель подключения
                 ConnectionPanel(
+                    clientState = clientState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
@@ -39,6 +43,7 @@ fun MainWindow() {
                 ) {
                     // Область вывода текста
                     OutputPanel(
+                        clientState = clientState,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
@@ -56,6 +61,7 @@ fun MainWindow() {
 
                 // Поле ввода команд
                 InputPanel(
+                    clientState = clientState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)

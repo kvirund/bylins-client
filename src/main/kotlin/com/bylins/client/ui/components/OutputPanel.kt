@@ -13,11 +13,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bylins.client.ClientState
 
 @Composable
-fun OutputPanel(modifier: Modifier = Modifier) {
+fun OutputPanel(
+    clientState: ClientState,
+    modifier: Modifier = Modifier
+) {
     val scrollState = rememberScrollState()
-    var outputText by remember { mutableStateOf("Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n") }
+    val receivedData by clientState.receivedData.collectAsState()
+
+    val outputText = if (receivedData.isEmpty()) {
+        "Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n"
+    } else {
+        receivedData
+    }
+
+    // Автопрокрутка вниз при появлении нового текста
+    LaunchedEffect(receivedData) {
+        scrollState.animateScrollTo(scrollState.maxValue)
+    }
 
     Box(
         modifier = modifier
