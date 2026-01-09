@@ -26,3 +26,11 @@ logs/
 ### User data ###
 config/*.json
 plugins/
+scripts/
+
+### Script dependencies ###
+scripts/**/__pycache__/
+scripts/**/node_modules/
+scripts/**/*.pyc
+scripts/**/venv/
+scripts/**/.venv/

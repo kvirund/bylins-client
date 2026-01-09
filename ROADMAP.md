@@ -45,7 +45,7 @@
 - [ ] Highlight (подсветка)
 - [ ] Play sound
 - [ ] Выполнение команд
-- [ ] Lua/JavaScript скрипты?
+- [ ] Скрипты в триггерах (Python/Lua/JavaScript/Perl)
 
 ### Aliases
 - [ ] Простые алиасы
@@ -108,17 +108,50 @@
 - [ ] Табы для разных каналов
 - [ ] Уведомления
 
-### Scripting
-- [ ] Embedded Lua VM
-- [ ] API для скриптов
-- [ ] Редактор скриптов
-- [ ] Отладчик
+### Scripting (multi-language support)
+- [ ] Python скрипты:
+  - [ ] GraalVM Python (рекомендуется)
+  - [ ] или Jython (Python 2.7)
+  - [ ] или внешний CPython процесс
+  - [ ] Автозагрузка .py файлов из scripts/
+- [ ] Lua скрипты:
+  - [ ] Embedded LuaJ
+  - [ ] Автозагрузка .lua файлов
+- [ ] JavaScript скрипты:
+  - [ ] GraalVM JavaScript
+  - [ ] или Nashorn (deprecated но работает)
+  - [ ] Автозагрузка .js файлов
+- [ ] Perl скрипты:
+  - [ ] Внешний процесс (perl interpreter)
+  - [ ] Автозагрузка .pl файлов
+- [ ] API для скриптов:
+  - [ ] send(command) - отправка команд
+  - [ ] echo(text) - вывод текста
+  - [ ] add_trigger/remove_trigger
+  - [ ] add_alias/remove_alias
+  - [ ] get_variable/set_variable
+  - [ ] MSDP данные
+  - [ ] Mapper API
+- [ ] Редактор скриптов встроенный
+- [ ] Отладчик для Python/Lua
+- [ ] Hot reload скриптов
 
 ### Plugins
-- [ ] Plugin API
-- [ ] Plugin загрузчик
+- [ ] Plugin API (Kotlin/Java):
+  - [ ] Plugin interface
+  - [ ] Lifecycle hooks (onLoad, onUnload, onCommand)
+  - [ ] Event system
+- [ ] Multi-language плагины:
+  - [ ] Python (.py) плагины + requirements.txt
+  - [ ] Lua (.lua) плагины
+  - [ ] JavaScript (.js) плагины + package.json/node_modules?
+  - [ ] Perl (.pl) плагины + cpanfile?
+  - [ ] Виртуальное окружение для каждого плагина
+- [ ] Plugin загрузчик (plugins/ директория)
 - [ ] Sandbox для плагинов
-- [ ] Marketplace?
+- [ ] Конфигурация плагинов (YAML/JSON)
+- [ ] UI для управления плагинами
+- [ ] Marketplace? (шаринг плагинов)
 
 ## Phase 7: Polish
 
