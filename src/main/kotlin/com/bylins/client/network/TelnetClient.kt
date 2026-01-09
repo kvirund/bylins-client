@@ -26,10 +26,18 @@ class TelnetClient(private val clientState: ClientState? = null) {
 
     suspend fun connect(host: String, port: Int) = withContext(Dispatchers.IO) {
         try {
+            // Убеждаемся что предыдущее соединение закрыто
+            if (_isConnected.value) {
+                disconnect()
+            }
+
             socket = Socket(host, port)
             inputStream = socket?.getInputStream()
             outputStream = socket?.getOutputStream()
             _isConnected.value = true
+
+            // Уведомляем пользователя об успешном подключении
+            _receivedData.value += "\u001B[1;32m[Подключено к $host:$port]\u001B[0m\n\n"
 
             // Отправляем поддерживаемые опции Telnet
             sendTelnetNegotiation()
@@ -37,17 +45,35 @@ class TelnetClient(private val clientState: ClientState? = null) {
             // Запускаем чтение данных
             startReading()
         } catch (e: IOException) {
-            _isConnected.value = false
+            disconnect()
             throw e
         }
     }
 
     fun disconnect() {
-        readJob?.cancel()
-        inputStream?.close()
-        outputStream?.close()
-        socket?.close()
-        _isConnected.value = false
+        try {
+            readJob?.cancel()
+            inputStream?.close()
+            outputStream?.close()
+            socket?.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            // Обнуляем ресурсы
+            readJob = null
+            inputStream = null
+            outputStream = null
+            socket = null
+
+            // Меняем статус подключения
+            val wasConnected = _isConnected.value
+            _isConnected.value = false
+
+            // Уведомляем пользователя о разрыве соединения (только если были подключены)
+            if (wasConnected) {
+                _receivedData.value += "\u001B[1;31m[Соединение разорвано]\u001B[0m\n"
+            }
+        }
     }
 
     suspend fun send(command: String) = withContext(Dispatchers.IO) {
@@ -64,7 +90,7 @@ class TelnetClient(private val clientState: ClientState? = null) {
      * Добавляет текст в лог (для эхо команд)
      */
     fun echoCommand(command: String) {
-        _receivedData.value += "\u001B[1;36m> $command\u001B[0m\n"
+        _receivedData.value += "\u001B[1;36m$command\u001B[0m\n"
     }
 
     private fun startReading() {
@@ -74,6 +100,8 @@ class TelnetClient(private val clientState: ClientState? = null) {
                 while (isActive && _isConnected.value) {
                     val bytesRead = inputStream?.read(buffer) ?: -1
                     if (bytesRead == -1) {
+                        // Соединение закрыто сервером
+                        disconnect()
                         break
                     }
 
@@ -91,7 +119,13 @@ class TelnetClient(private val clientState: ClientState? = null) {
                     telnetCommands.forEach { handleTelnetCommand(it) }
                 }
             } catch (e: IOException) {
+                // Ошибка чтения - разрываем соединение
                 if (isActive) {
+                    disconnect()
+                }
+            } finally {
+                // Убеждаемся что соединение закрыто
+                if (_isConnected.value) {
                     disconnect()
                 }
             }
