@@ -10,7 +10,9 @@
       "Bash(git commit:*)",
       "Bash(gradlew.bat build:*)",
       "Bash(cmd /c \"gradlew.bat build\")",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(cmd /c \"gradlew.bat run\")",
+      "Bash(cmd /c \"gradlew.bat clean compileKotlin 2>&1 | tail -50\")"
     ]
   }
 }

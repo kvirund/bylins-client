@@ -173,9 +173,9 @@ fun StatsPanel(
                     val durationSeconds = clientState.getSessionDuration()
                         .split(":")
                         .let { parts ->
-                            parts[0].toIntOrNull()?.times(3600) ?: 0 +
-                                    parts[1].toIntOrNull()?.times(60) ?: 0 +
-                                    parts[2].toIntOrNull() ?: 0
+                            (parts[0].toIntOrNull()?.times(3600) ?: 0) +
+                                    (parts[1].toIntOrNull()?.times(60) ?: 0) +
+                                    (parts[2].toIntOrNull() ?: 0)
                         }
                     val commandsPerMinute = if (durationSeconds > 0) {
                         (stats.commandsSent.toDouble() / durationSeconds * 60).toInt()
