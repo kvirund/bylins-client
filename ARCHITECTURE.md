@@ -268,9 +268,17 @@ class DamageCounterPlugin:
 
 ```
 User Input -> InputPanel -> TelnetClient.send() -> Server
-Server -> TelnetClient.receive() -> TelnetParser -> OutputPanel
-                                                 -> TriggerManager
-                                                 -> MSDP Handler -> StatusPanel
+
+Server -> TelnetClient.receive() -> TelnetParser -> TextProcessor
+                                                  -> MSDP Handler -> StatusPanel
+
+TextProcessor:
+  -> TriggerManager (execute triggers)
+  -> RedirectManager (check redirect rules)
+     -> Tab 1 (Main)
+     -> Tab 2 (Chat)
+     -> Tab 3 (Combat)
+     -> Tab N (Custom)
 ```
 
 ## State Management
