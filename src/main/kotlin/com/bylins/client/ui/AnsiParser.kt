@@ -11,25 +11,25 @@ import androidx.compose.ui.text.style.TextDecoration
 class AnsiParser {
     private val ESC = '\u001B'
 
-    // ANSI 16 базовых цветов
+    // ANSI 16 базовых цветов (классическая палитра xterm)
     private val ansi16Colors = mapOf(
         30 to Color(0xFF000000), // Black
-        31 to Color(0xFFCD3131), // Red
-        32 to Color(0xFF0DBC79), // Green
-        33 to Color(0xFFE5E510), // Yellow
-        34 to Color(0xFF2472C8), // Blue
-        35 to Color(0xFFBC3FBC), // Magenta
-        36 to Color(0xFF11A8CD), // Cyan
-        37 to Color(0xFFE5E5E5), // White
+        31 to Color(0xFFAA0000), // Red
+        32 to Color(0xFF00AA00), // Green
+        33 to Color(0xFFAA5500), // Yellow (brown)
+        34 to Color(0xFF0000AA), // Blue
+        35 to Color(0xFFAA00AA), // Magenta
+        36 to Color(0xFF00AAAA), // Cyan
+        37 to Color(0xFFAAAAAA), // White (gray)
 
         // Bright colors
-        90 to Color(0xFF666666), // Bright Black (Gray)
-        91 to Color(0xFFF14C4C), // Bright Red
-        92 to Color(0xFF23D18B), // Bright Green
-        93 to Color(0xFFF5F543), // Bright Yellow
-        94 to Color(0xFF3B8EEA), // Bright Blue
-        95 to Color(0xFFD670D6), // Bright Magenta
-        96 to Color(0xFF29B8DB), // Bright Cyan
+        90 to Color(0xFF555555), // Bright Black (dark gray)
+        91 to Color(0xFFFF5555), // Bright Red
+        92 to Color(0xFF55FF55), // Bright Green
+        93 to Color(0xFFFFFF55), // Bright Yellow
+        94 to Color(0xFF5555FF), // Bright Blue
+        95 to Color(0xFFFF55FF), // Bright Magenta
+        96 to Color(0xFF55FFFF), // Bright Cyan
         97 to Color(0xFFFFFFFF), // Bright White
     )
 

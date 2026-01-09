@@ -12,8 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import com.bylins.client.ClientState
 import com.bylins.client.ui.AnsiParser
 
@@ -50,6 +52,7 @@ fun OutputPanel(
                 color = Color(0xFFCCCCCC),
                 fontFamily = FontFamily.Monospace,
                 fontSize = 14.sp,
+                lineHeight = 18.sp, // Уменьшенный межстрочный интервал
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
