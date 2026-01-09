@@ -8,14 +8,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.bylins.client.ClientState
-import com.bylins.client.ui.components.ConnectionPanel
-import com.bylins.client.ui.components.OutputPanel
-import com.bylins.client.ui.components.InputPanel
-import com.bylins.client.ui.components.StatusPanel
+import com.bylins.client.ui.components.*
 
 @Composable
 fun MainWindow() {
     val clientState = remember { ClientState() }
+    var selectedTab by remember { mutableStateOf(0) }
 
     MaterialTheme(
         colorScheme = darkColorScheme()
@@ -35,32 +33,78 @@ fun MainWindow() {
 
                 Divider()
 
-                // Основная область с выводом текста и боковой панелью
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
+                // Вкладки
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color(0xFF2D2D2D),
+                    contentColor = Color.White
                 ) {
-                    // Область вывода текста
-                    OutputPanel(
-                        clientState = clientState,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Главная") }
                     )
-
-                    // Боковая панель статуса персонажа
-                    StatusPanel(
-                        clientState = clientState,
-                        modifier = Modifier
-                            .width(250.dp)
-                            .fillMaxHeight()
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Триггеры") }
+                    )
+                    Tab(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        text = { Text("Алиасы") }
                     )
                 }
 
                 Divider()
 
-                // Поле ввода команд
+                // Основная область в зависимости от выбранной вкладки
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    when (selectedTab) {
+                        0 -> {
+                            // Главный вид с выводом текста и боковой панелью
+                            Row(modifier = Modifier.fillMaxSize()) {
+                                // Область вывода текста
+                                OutputPanel(
+                                    clientState = clientState,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                )
+
+                                // Боковая панель статуса персонажа
+                                StatusPanel(
+                                    clientState = clientState,
+                                    modifier = Modifier
+                                        .width(250.dp)
+                                        .fillMaxHeight()
+                                )
+                            }
+                        }
+                        1 -> {
+                            // Панель триггеров
+                            TriggersPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        2 -> {
+                            // Панель алиасов
+                            AliasesPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+
+                Divider()
+
+                // Поле ввода команд (доступно всегда)
                 InputPanel(
                     clientState = clientState,
                     modifier = Modifier

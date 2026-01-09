@@ -38,6 +38,125 @@ class ClientState {
     val triggers = triggerManager.triggers
     val aliases = aliasManager.aliases
 
+    init {
+        // Загружаем стандартные триггеры и алиасы
+        loadDefaultAliases()
+        loadDefaultTriggers()
+    }
+
+    private fun loadDefaultAliases() {
+        // Алиас для recall (r -> cast 'word of recall')
+        addAlias(
+            com.bylins.client.aliases.Alias(
+                id = "recall",
+                name = "Recall",
+                pattern = "^r$".toRegex(),
+                commands = listOf("cast 'word of recall'"),
+                enabled = true,
+                priority = 10
+            )
+        )
+
+        // Алиас для tell (t <name> <text> -> tell <name> <text>)
+        addAlias(
+            com.bylins.client.aliases.Alias(
+                id = "tell-short",
+                name = "Tell Shortcut",
+                pattern = "^t (\\w+) (.+)$".toRegex(),
+                commands = listOf("tell $1 $2"),
+                enabled = true,
+                priority = 10
+            )
+        )
+
+        // Алиас для buff (buff -> cast armor, bless, shield)
+        addAlias(
+            com.bylins.client.aliases.Alias(
+                id = "buff",
+                name = "Buff",
+                pattern = "^buff$".toRegex(),
+                commands = listOf(
+                    "cast 'armor'",
+                    "cast 'bless'",
+                    "cast 'shield'"
+                ),
+                enabled = false, // Выключен по умолчанию
+                priority = 5
+            )
+        )
+
+        // Алиас для cast (c 'spell' target -> cast 'spell' target)
+        addAlias(
+            com.bylins.client.aliases.Alias(
+                id = "cast-short",
+                name = "Cast Shortcut",
+                pattern = "^c '(.+)'( (.+))?$".toRegex(),
+                commands = listOf("cast '$1'$2"),
+                enabled = true,
+                priority = 10
+            )
+        )
+    }
+
+    private fun loadDefaultTriggers() {
+        // Триггер для подсветки tells
+        addTrigger(
+            com.bylins.client.triggers.Trigger(
+                id = "tell-notify",
+                name = "Tell Notification",
+                pattern = "^(.+) говорит вам:".toRegex(),
+                commands = emptyList(),
+                enabled = true,
+                priority = 10,
+                colorize = com.bylins.client.triggers.TriggerColorize(
+                    foreground = "#00FF00",
+                    bold = true
+                )
+            )
+        )
+
+        // Триггер для подсветки шепота
+        addTrigger(
+            com.bylins.client.triggers.Trigger(
+                id = "whisper-notify",
+                name = "Whisper Notification",
+                pattern = "^(.+) шепчет вам:".toRegex(),
+                commands = emptyList(),
+                enabled = true,
+                priority = 10,
+                colorize = com.bylins.client.triggers.TriggerColorize(
+                    foreground = "#FFFF00",
+                    bold = true
+                )
+            )
+        )
+
+        // Триггер для gag болталки (выключен по умолчанию)
+        addTrigger(
+            com.bylins.client.triggers.Trigger(
+                id = "gag-gossip",
+                name = "Gag Gossip",
+                pattern = "^\\[Болталка\\]".toRegex(),
+                commands = emptyList(),
+                enabled = false, // Выключен по умолчанию
+                priority = 5,
+                gag = true
+            )
+        )
+
+        // Пример auto-heal триггера (выключен по умолчанию)
+        addTrigger(
+            com.bylins.client.triggers.Trigger(
+                id = "auto-heal",
+                name = "Auto Heal",
+                pattern = "HP: (\\d+)/(\\d+)".toRegex(),
+                commands = listOf("cast 'cure serious'"),
+                enabled = false, // Выключен по умолчанию - опасно!
+                priority = 15
+            )
+        )
+    }
+
     fun connect(host: String, port: Int) {
         scope.launch {
             try {
