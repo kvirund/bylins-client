@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -16,12 +18,18 @@ import com.bylins.client.ClientState
 @Composable
 fun InputPanel(
     clientState: ClientState,
+    focusRequester: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     var inputText by remember { mutableStateOf(TextFieldValue("")) }
     val commandHistory = remember { mutableListOf<String>() }
     var historyIndex by remember { mutableStateOf(-1) }
     val isConnected by clientState.isConnected.collectAsState()
+
+    // Автоматически фокусируемся при первом рендере
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     fun sendCommand() {
         if (isConnected) {
@@ -47,6 +55,7 @@ fun InputPanel(
             enabled = isConnected,
             modifier = Modifier
                 .weight(1f)
+                .focusRequester(focusRequester)
                 .onPreviewKeyEvent { event ->
                     when {
                         event.key == Key.Enter && event.type == KeyEventType.KeyDown -> {

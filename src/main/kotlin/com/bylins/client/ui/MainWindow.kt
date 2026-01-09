@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
@@ -15,6 +16,7 @@ import com.bylins.client.ui.components.*
 fun MainWindow() {
     val clientState = remember { ClientState() }
     var selectedTab by remember { mutableStateOf(0) }
+    val inputFocusRequester = remember { FocusRequester() }
 
     MaterialTheme(
         colorScheme = darkColorScheme()
@@ -31,6 +33,12 @@ fun MainWindow() {
                             isAltPressed = event.isAltPressed,
                             isShiftPressed = event.isShiftPressed
                         )
+
+                        // Если hotkey не обработан, фокусируем input для обычного ввода
+                        if (!handled && !event.isCtrlPressed && !event.isAltPressed) {
+                            inputFocusRequester.requestFocus()
+                        }
+
                         handled
                     } else {
                         false
@@ -147,6 +155,7 @@ fun MainWindow() {
                 // Поле ввода команд (доступно всегда)
                 InputPanel(
                     clientState = clientState,
+                    focusRequester = inputFocusRequester,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
