@@ -21,6 +21,8 @@ fun TriggersPanel(
     modifier: Modifier = Modifier
 ) {
     val triggers by clientState.triggers.collectAsState()
+    var showDialog by remember { mutableStateOf(false) }
+    var editingTrigger by remember { mutableStateOf<Trigger?>(null) }
 
     Column(
         modifier = modifier
@@ -28,14 +30,33 @@ fun TriggersPanel(
             .background(Color(0xFF1E1E1E))
             .padding(8.dp)
     ) {
-        // Заголовок
-        Text(
-            text = "Триггеры",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        // Заголовок с кнопкой добавления
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Триггеры",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Button(
+                onClick = {
+                    editingTrigger = null
+                    showDialog = true
+                },
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = Color(0xFF4CAF50)
+                )
+            ) {
+                Text("+ Добавить", color = Color.White)
+            }
+        }
 
         Divider(color = Color.Gray, thickness = 1.dp)
 
@@ -53,6 +74,10 @@ fun TriggersPanel(
                         } else {
                             clientState.disableTrigger(id)
                         }
+                    },
+                    onEdit = { trigger ->
+                        editingTrigger = trigger
+                        showDialog = true
                     },
                     onDelete = { id ->
                         clientState.removeTrigger(id)
@@ -74,12 +99,33 @@ fun TriggersPanel(
             }
         }
     }
+
+    // Диалог добавления/редактирования
+    if (showDialog) {
+        TriggerDialog(
+            trigger = editingTrigger,
+            onDismiss = {
+                showDialog = false
+                editingTrigger = null
+            },
+            onSave = { trigger ->
+                if (editingTrigger == null) {
+                    clientState.addTrigger(trigger)
+                } else {
+                    clientState.updateTrigger(trigger)
+                }
+                showDialog = false
+                editingTrigger = null
+            }
+        )
+    }
 }
 
 @Composable
 private fun TriggerItem(
     trigger: Trigger,
     onToggle: (String, Boolean) -> Unit,
+    onEdit: (Trigger) -> Unit,
     onDelete: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -132,6 +178,22 @@ private fun TriggerItem(
                             uncheckedThumbColor = Color.Gray
                         )
                     )
+
+                    // Кнопка редактирования
+                    Button(
+                        onClick = { onEdit(trigger) },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF2196F3)
+                        ),
+                        modifier = Modifier.size(32.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "✎",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    }
 
                     // Кнопка информации
                     Button(

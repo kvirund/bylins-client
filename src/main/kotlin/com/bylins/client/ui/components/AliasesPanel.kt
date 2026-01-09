@@ -21,6 +21,8 @@ fun AliasesPanel(
     modifier: Modifier = Modifier
 ) {
     val aliases by clientState.aliases.collectAsState()
+    var showDialog by remember { mutableStateOf(false) }
+    var editingAlias by remember { mutableStateOf<Alias?>(null) }
 
     Column(
         modifier = modifier
@@ -28,14 +30,33 @@ fun AliasesPanel(
             .background(Color(0xFF1E1E1E))
             .padding(8.dp)
     ) {
-        // Заголовок
-        Text(
-            text = "Алиасы",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        // Заголовок с кнопкой добавления
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Алиасы",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Button(
+                onClick = {
+                    editingAlias = null
+                    showDialog = true
+                },
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = Color(0xFF4CAF50)
+                )
+            ) {
+                Text("+ Добавить", color = Color.White)
+            }
+        }
 
         Divider(color = Color.Gray, thickness = 1.dp)
 
@@ -53,6 +74,10 @@ fun AliasesPanel(
                         } else {
                             clientState.disableAlias(id)
                         }
+                    },
+                    onEdit = { alias ->
+                        editingAlias = alias
+                        showDialog = true
                     },
                     onDelete = { id ->
                         clientState.removeAlias(id)
@@ -74,12 +99,33 @@ fun AliasesPanel(
             }
         }
     }
+
+    // Диалог добавления/редактирования
+    if (showDialog) {
+        AliasDialog(
+            alias = editingAlias,
+            onDismiss = {
+                showDialog = false
+                editingAlias = null
+            },
+            onSave = { alias ->
+                if (editingAlias == null) {
+                    clientState.addAlias(alias)
+                } else {
+                    clientState.updateAlias(alias)
+                }
+                showDialog = false
+                editingAlias = null
+            }
+        )
+    }
 }
 
 @Composable
 private fun AliasItem(
     alias: Alias,
     onToggle: (String, Boolean) -> Unit,
+    onEdit: (Alias) -> Unit,
     onDelete: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -132,6 +178,22 @@ private fun AliasItem(
                             uncheckedThumbColor = Color.Gray
                         )
                     )
+
+                    // Кнопка редактирования
+                    Button(
+                        onClick = { onEdit(alias) },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF2196F3)
+                        ),
+                        modifier = Modifier.size(32.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "✎",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    }
 
                     // Кнопка информации
                     Button(

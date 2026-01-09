@@ -215,6 +215,11 @@ class ClientState {
         triggerManager.addTrigger(trigger)
     }
 
+    fun updateTrigger(trigger: com.bylins.client.triggers.Trigger) {
+        triggerManager.removeTrigger(trigger.id)
+        triggerManager.addTrigger(trigger)
+    }
+
     fun removeTrigger(id: String) {
         triggerManager.removeTrigger(id)
     }
@@ -229,6 +234,11 @@ class ClientState {
 
     // Управление алиасами
     fun addAlias(alias: com.bylins.client.aliases.Alias) {
+        aliasManager.addAlias(alias)
+    }
+
+    fun updateAlias(alias: com.bylins.client.aliases.Alias) {
+        aliasManager.removeAlias(alias.id)
         aliasManager.addAlias(alias)
     }
 
