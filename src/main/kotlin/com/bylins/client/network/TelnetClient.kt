@@ -75,6 +75,9 @@ class TelnetClient(private val clientState: ClientState? = null) {
 
                     if (text.isNotEmpty()) {
                         _receivedData.value += text
+
+                        // Обрабатываем текст триггерами
+                        clientState?.processIncomingText(text)
                     }
 
                     // Обработка telnet команд
