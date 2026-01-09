@@ -10,10 +10,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.ui.AnsiParser
 
 @Composable
 fun OutputPanel(
@@ -22,11 +24,14 @@ fun OutputPanel(
 ) {
     val scrollState = rememberScrollState()
     val receivedData by clientState.receivedData.collectAsState()
+    val ansiParser = remember { AnsiParser() }
 
-    val outputText = if (receivedData.isEmpty()) {
-        "Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n"
-    } else {
-        receivedData
+    val outputText: AnnotatedString = remember(receivedData) {
+        if (receivedData.isEmpty()) {
+            AnnotatedString("Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n")
+        } else {
+            ansiParser.parse(receivedData)
+        }
     }
 
     // Автопрокрутка вниз при появлении нового текста
