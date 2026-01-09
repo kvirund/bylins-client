@@ -7,6 +7,7 @@ import com.bylins.client.logging.LogManager
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.stats.SessionStats
 import com.bylins.client.triggers.TriggerManager
+import com.bylins.client.variables.VariableManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,7 @@ class ClientState {
 
     private val logManager = LogManager()
     private val sessionStats = SessionStats()
+    private val variableManager = VariableManager()
 
     private val telnetClient = TelnetClient(this)
 
@@ -60,20 +62,24 @@ class ClientState {
     // Доступ к статистике
     val stats = sessionStats.stats
 
+    // Доступ к переменным
+    val variables = variableManager.variables
+
     init {
         // Пытаемся загрузить сохранённую конфигурацию
-        val (loadedTriggers, loadedAliases, loadedHotkeys) = configManager.loadConfig()
+        val configData = configManager.loadConfig()
 
-        if (loadedTriggers.isEmpty() && loadedAliases.isEmpty() && loadedHotkeys.isEmpty()) {
+        if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы и хоткеи
             loadDefaultAliases()
             loadDefaultTriggers()
             loadDefaultHotkeys()
         } else {
             // Загружаем сохранённую конфигурацию
-            loadedTriggers.forEach { addTrigger(it) }
-            loadedAliases.forEach { addAlias(it) }
-            loadedHotkeys.forEach { addHotkey(it) }
+            configData.triggers.forEach { addTrigger(it) }
+            configData.aliases.forEach { addAlias(it) }
+            configData.hotkeys.forEach { addHotkey(it) }
+            variableManager.loadVariables(configData.variables)
         }
     }
 
@@ -261,14 +267,26 @@ class ClientState {
     }
 
     fun send(command: String) {
+        // Сначала проверяем команды управления переменными
+        val varHandled = variableManager.processCommand(command) { message ->
+            // Выводим сообщения от VariableManager в лог
+            telnetClient.addToOutput(message)
+        }
+        if (varHandled) {
+            return
+        }
+
+        // Подставляем переменные в команду
+        val commandWithVars = variableManager.substituteVariables(command)
+
         // Проверяем алиасы
-        val handled = aliasManager.processCommand(command)
+        val handled = aliasManager.processCommand(commandWithVars)
         if (handled) {
             // Алиас сработал
             sessionStats.incrementAliasesExecuted()
         } else {
             // Алиас не сработал, отправляем команду как есть
-            sendRaw(command)
+            sendRaw(commandWithVars)
         }
     }
 
@@ -418,25 +436,27 @@ class ClientState {
 
     // Управление конфигурацией
     fun saveConfig() {
-        configManager.saveConfig(triggers.value, aliases.value, hotkeys.value)
+        configManager.saveConfig(triggers.value, aliases.value, hotkeys.value, variableManager.getAllVariables())
     }
 
     fun exportConfig(file: File) {
-        configManager.exportConfig(file, triggers.value, aliases.value, hotkeys.value)
+        configManager.exportConfig(file, triggers.value, aliases.value, hotkeys.value, variableManager.getAllVariables())
     }
 
     fun importConfig(file: File) {
-        val (importedTriggers, importedAliases, importedHotkeys) = configManager.importConfig(file)
+        val configData = configManager.importConfig(file)
 
-        // Очищаем текущие триггеры, алиасы и хоткеи
+        // Очищаем текущие триггеры, алиасы, хоткеи и переменные
         triggerManager.clear()
         aliasManager.clear()
         hotkeyManager.clear()
+        variableManager.clear()
 
         // Загружаем импортированные
-        importedTriggers.forEach { addTrigger(it) }
-        importedAliases.forEach { addAlias(it) }
-        importedHotkeys.forEach { addHotkey(it) }
+        configData.triggers.forEach { addTrigger(it) }
+        configData.aliases.forEach { addAlias(it) }
+        configData.hotkeys.forEach { addHotkey(it) }
+        variableManager.loadVariables(configData.variables)
 
         // Сохраняем в основной конфиг
         saveConfig()

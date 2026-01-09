@@ -153,5 +153,6 @@ data class HotkeyDto(
 data class ClientConfig(
     val triggers: List<TriggerDto> = emptyList(),
     val aliases: List<AliasDto> = emptyList(),
-    val hotkeys: List<HotkeyDto> = emptyList()
+    val hotkeys: List<HotkeyDto> = emptyList(),
+    val variables: Map<String, String> = emptyMap()
 )

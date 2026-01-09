@@ -26,14 +26,15 @@ class ConfigManager {
     }
 
     /**
-     * Сохраняет триггеры, алиасы и хоткеи в файл
+     * Сохраняет триггеры, алиасы, хоткеи и переменные в файл
      */
-    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>) {
+    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>) {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
                 aliases = aliases.map { AliasDto.fromAlias(it) },
-                hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) }
+                hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) },
+                variables = variables
             )
 
             val jsonString = json.encodeToString(config)
@@ -47,13 +48,13 @@ class ConfigManager {
     }
 
     /**
-     * Загружает триггеры, алиасы и хоткеи из файла
+     * Загружает триггеры, алиасы, хоткеи и переменные из файла
      */
-    fun loadConfig(): Triple<List<Trigger>, List<Alias>, List<Hotkey>> {
+    fun loadConfig(): ConfigData {
         try {
             if (!Files.exists(configFile)) {
                 println("Config file not found: $configFile")
-                return Triple(emptyList(), emptyList(), emptyList())
+                return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap())
             }
 
             val jsonString = Files.readString(configFile)
@@ -62,25 +63,27 @@ class ConfigManager {
             val triggers = config.triggers.map { it.toTrigger() }
             val aliases = config.aliases.map { it.toAlias() }
             val hotkeys = config.hotkeys.mapNotNull { it.toHotkey() }
+            val variables = config.variables
 
-            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys)")
-            return Triple(triggers, aliases, hotkeys)
+            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables)")
+            return ConfigData(triggers, aliases, hotkeys, variables)
         } catch (e: Exception) {
             println("Failed to load config: ${e.message}")
             e.printStackTrace()
-            return Triple(emptyList(), emptyList(), emptyList())
+            return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap())
         }
     }
 
     /**
      * Экспортирует конфигурацию в указанный файл
      */
-    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>) {
+    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>) {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
                 aliases = aliases.map { AliasDto.fromAlias(it) },
-                hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) }
+                hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) },
+                variables = variables
             )
 
             val jsonString = json.encodeToString(config)
@@ -97,7 +100,7 @@ class ConfigManager {
     /**
      * Импортирует конфигурацию из указанного файла
      */
-    fun importConfig(file: File): Triple<List<Trigger>, List<Alias>, List<Hotkey>> {
+    fun importConfig(file: File): ConfigData {
         try {
             val jsonString = file.readText()
             val config = json.decodeFromString<ClientConfig>(jsonString)
@@ -105,9 +108,10 @@ class ConfigManager {
             val triggers = config.triggers.map { it.toTrigger() }
             val aliases = config.aliases.map { it.toAlias() }
             val hotkeys = config.hotkeys.mapNotNull { it.toHotkey() }
+            val variables = config.variables
 
-            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys)")
-            return Triple(triggers, aliases, hotkeys)
+            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables)")
+            return ConfigData(triggers, aliases, hotkeys, variables)
         } catch (e: Exception) {
             println("Failed to import config: ${e.message}")
             e.printStackTrace()
@@ -125,3 +129,13 @@ class ConfigManager {
      */
     fun getConfigFile(): String = configFile.toString()
 }
+
+/**
+ * Данные конфигурации
+ */
+data class ConfigData(
+    val triggers: List<Trigger>,
+    val aliases: List<Alias>,
+    val hotkeys: List<Hotkey>,
+    val variables: Map<String, String>
+)

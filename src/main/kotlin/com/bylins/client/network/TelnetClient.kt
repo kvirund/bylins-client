@@ -93,6 +93,13 @@ class TelnetClient(private val clientState: ClientState? = null) {
         _receivedData.value += "\u001B[1;36m$command\u001B[0m\n"
     }
 
+    /**
+     * Добавляет произвольный текст в output (для системных сообщений)
+     */
+    fun addToOutput(text: String) {
+        _receivedData.value += text + "\n"
+    }
+
     private fun startReading() {
         readJob = CoroutineScope(Dispatchers.IO).launch {
             try {
