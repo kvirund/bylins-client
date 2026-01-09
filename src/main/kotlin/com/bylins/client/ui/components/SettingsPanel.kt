@@ -134,6 +134,36 @@ fun SettingsPanel(
 
                     Button(
                         onClick = {
+                            try {
+                                val logsDir = clientState.getLogsDirectory()
+                                val os = System.getProperty("os.name").lowercase()
+                                when {
+                                    os.contains("win") -> {
+                                        Runtime.getRuntime().exec("explorer \"$logsDir\"")
+                                    }
+                                    os.contains("mac") -> {
+                                        Runtime.getRuntime().exec("open \"$logsDir\"")
+                                    }
+                                    else -> {
+                                        Runtime.getRuntime().exec("xdg-open \"$logsDir\"")
+                                    }
+                                }
+                                statusMessage = "Открыта директория логов"
+                                statusColor = Color(0xFF00FF00)
+                            } catch (e: Exception) {
+                                statusMessage = "Ошибка открытия: ${e.message}"
+                                statusColor = Color(0xFFFF5555)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF2196F3)
+                        )
+                    ) {
+                        Text("Открыть папку", color = Color.White)
+                    }
+
+                    Button(
+                        onClick = {
                             val count = clientState.getLogFiles().size
                             clientState.cleanOldLogs(30)
                             val newCount = clientState.getLogFiles().size

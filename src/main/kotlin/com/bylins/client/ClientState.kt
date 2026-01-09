@@ -243,6 +243,8 @@ class ClientState {
                 telnetClient.connect(host, port)
                 // Начинаем сбор статистики
                 sessionStats.startSession()
+                // Автоматически запускаем логирование
+                logManager.startLogging(stripAnsi = true)
             } catch (e: Exception) {
                 _errorMessage.value = "Ошибка подключения: ${e.message}"
                 e.printStackTrace()
@@ -254,6 +256,8 @@ class ClientState {
         telnetClient.disconnect()
         // Останавливаем сбор статистики
         sessionStats.stopSession()
+        // Останавливаем логирование
+        logManager.stopLogging()
     }
 
     fun send(command: String) {
