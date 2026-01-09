@@ -86,6 +86,11 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 4,
                         onClick = { selectedTab = 4 },
+                        text = { Text("Статистика") }
+                    )
+                    Tab(
+                        selected = selectedTab == 5,
+                        onClick = { selectedTab = 5 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -141,6 +146,13 @@ fun MainWindow() {
                             )
                         }
                         4 -> {
+                            // Панель статистики
+                            StatsPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        5 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,

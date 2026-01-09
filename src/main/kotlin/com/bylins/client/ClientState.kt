@@ -5,6 +5,7 @@ import com.bylins.client.config.ConfigManager
 import com.bylins.client.hotkeys.HotkeyManager
 import com.bylins.client.logging.LogManager
 import com.bylins.client.network.TelnetClient
+import com.bylins.client.stats.SessionStats
 import com.bylins.client.triggers.TriggerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,7 @@ class ClientState {
     }
 
     private val logManager = LogManager()
+    private val sessionStats = SessionStats()
 
     private val telnetClient = TelnetClient(this)
 
@@ -54,6 +56,9 @@ class ClientState {
     // Доступ к логированию
     val isLogging = logManager.isLogging
     val currentLogFile = logManager.currentLogFile
+
+    // Доступ к статистике
+    val stats = sessionStats.stats
 
     init {
         // Пытаемся загрузить сохранённую конфигурацию
@@ -236,6 +241,8 @@ class ClientState {
             try {
                 _errorMessage.value = null
                 telnetClient.connect(host, port)
+                // Начинаем сбор статистики
+                sessionStats.startSession()
             } catch (e: Exception) {
                 _errorMessage.value = "Ошибка подключения: ${e.message}"
                 e.printStackTrace()
@@ -245,12 +252,17 @@ class ClientState {
 
     fun disconnect() {
         telnetClient.disconnect()
+        // Останавливаем сбор статистики
+        sessionStats.stopSession()
     }
 
     fun send(command: String) {
         // Проверяем алиасы
         val handled = aliasManager.processCommand(command)
-        if (!handled) {
+        if (handled) {
+            // Алиас сработал
+            sessionStats.incrementAliasesExecuted()
+        } else {
             // Алиас не сработал, отправляем команду как есть
             sendRaw(command)
         }
@@ -259,6 +271,9 @@ class ClientState {
     private fun sendRaw(command: String) {
         // Эхо команды в лог
         telnetClient.echoCommand(command)
+
+        // Увеличиваем счетчик отправленных команд
+        sessionStats.incrementCommandsSent()
 
         scope.launch {
             try {
@@ -281,13 +296,20 @@ class ClientState {
         // Логируем весь полученный текст
         if (text.isNotEmpty()) {
             logManager.log(text)
+
+            // Добавляем полученные байты в статистику
+            sessionStats.addBytesReceived(text.toByteArray(Charsets.UTF_8).size)
         }
 
         // Разбиваем на строки и обрабатываем каждую триггерами
         val lines = text.split("\n")
         for (line in lines) {
             if (line.isNotEmpty()) {
-                triggerManager.processLine(line)
+                val matches = triggerManager.processLine(line)
+                // Увеличиваем счетчик на количество сработавших триггеров
+                if (matches.isNotEmpty()) {
+                    sessionStats.incrementTriggersActivated()
+                }
             }
         }
     }
@@ -383,7 +405,11 @@ class ClientState {
         isAltPressed: Boolean,
         isShiftPressed: Boolean
     ): Boolean {
-        return hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed)
+        val handled = hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed)
+        if (handled) {
+            sessionStats.incrementHotkeysUsed()
+        }
+        return handled
     }
 
     // Управление конфигурацией
@@ -433,5 +459,14 @@ class ClientState {
 
     fun cleanOldLogs(daysToKeep: Int = 30) {
         logManager.cleanOldLogs(daysToKeep)
+    }
+
+    // Доступ к статистике
+    fun getSessionDuration(): String {
+        return sessionStats.getFormattedDuration()
+    }
+
+    fun getFormattedBytes(): String {
+        return sessionStats.getFormattedBytes()
     }
 }
