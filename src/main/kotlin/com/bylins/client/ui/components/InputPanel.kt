@@ -8,6 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.bylins.client.ClientState
 
@@ -16,7 +18,7 @@ fun InputPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
-    var inputText by remember { mutableStateOf("") }
+    var inputText by remember { mutableStateOf(TextFieldValue("")) }
     val commandHistory = remember { mutableListOf<String>() }
     var historyIndex by remember { mutableStateOf(-1) }
     val isConnected by clientState.isConnected.collectAsState()
@@ -24,12 +26,12 @@ fun InputPanel(
     fun sendCommand() {
         if (isConnected) {
             // Добавляем в историю только непустые команды
-            if (inputText.isNotBlank()) {
-                commandHistory.add(inputText)
+            if (inputText.text.isNotBlank()) {
+                commandHistory.add(inputText.text)
             }
             historyIndex = -1
-            clientState.send(inputText)
-            inputText = ""
+            clientState.send(inputText.text)
+            inputText = TextFieldValue("")
         }
     }
 
@@ -54,17 +56,25 @@ fun InputPanel(
                         event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown -> {
                             if (commandHistory.isNotEmpty()) {
                                 historyIndex = (historyIndex + 1).coerceAtMost(commandHistory.size - 1)
-                                inputText = commandHistory[commandHistory.size - 1 - historyIndex]
+                                val command = commandHistory[commandHistory.size - 1 - historyIndex]
+                                inputText = TextFieldValue(
+                                    text = command,
+                                    selection = TextRange(command.length)
+                                )
                             }
                             true
                         }
                         event.key == Key.DirectionDown && event.type == KeyEventType.KeyDown -> {
                             if (historyIndex > 0) {
                                 historyIndex--
-                                inputText = commandHistory[commandHistory.size - 1 - historyIndex]
+                                val command = commandHistory[commandHistory.size - 1 - historyIndex]
+                                inputText = TextFieldValue(
+                                    text = command,
+                                    selection = TextRange(command.length)
+                                )
                             } else {
                                 historyIndex = -1
-                                inputText = ""
+                                inputText = TextFieldValue("")
                             }
                             true
                         }
