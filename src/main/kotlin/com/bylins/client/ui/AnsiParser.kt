@@ -11,25 +11,25 @@ import androidx.compose.ui.text.style.TextDecoration
 class AnsiParser {
     private val ESC = '\u001B'
 
-    // ANSI 16 базовых цветов (палитра tintin++)
+    // ANSI 16 базовых цветов (стандартная VGA/xterm палитра)
     private val ansi16Colors = mapOf(
         30 to Color(0xFF555555), // Black (темно-серый, чтобы видеть на чёрном фоне) (85,85,85)
-        31 to Color(0xFFBB0000), // Red (187,0,0)
-        32 to Color(0xFF00BB00), // Green (0,187,0)
-        33 to Color(0xFFBBBB00), // Yellow (187,187,0)
-        34 to Color(0xFF0000BB), // Blue (0,0,187)
-        35 to Color(0xFFBB00BB), // Magenta (187,0,187)
-        36 to Color(0xFF00BBBB), // Cyan (0,187,187)
-        37 to Color(0xFFBBBBBB), // White (187,187,187)
+        31 to Color(0xFFCD0000), // Red (205,0,0)
+        32 to Color(0xFF00CD00), // Green (0,205,0)
+        33 to Color(0xFFCDCD00), // Yellow (205,205,0)
+        34 to Color(0xFF0000EE), // Blue (0,0,238)
+        35 to Color(0xFFCD00CD), // Magenta (205,0,205)
+        36 to Color(0xFF00CDCD), // Cyan (0,205,205)
+        37 to Color(0xFFE5E5E5), // White (229,229,229)
 
-        // Bright colors
-        90 to Color(0xFF888888), // Bright Black (Gray) (136,136,136)
-        91 to Color(0xFFFF5555), // Bright Red (255,85,85)
-        92 to Color(0xFF55FF55), // Bright Green (85,255,85)
-        93 to Color(0xFFFFFF55), // Bright Yellow (255,255,85)
-        94 to Color(0xFF5555FF), // Bright Blue (85,85,255)
-        95 to Color(0xFFFF55FF), // Bright Magenta (255,85,255)
-        96 to Color(0xFF55FFFF), // Bright Cyan (85,255,255)
+        // Bright colors (максимальная яркость)
+        90 to Color(0xFF7F7F7F), // Bright Black (Gray) (127,127,127)
+        91 to Color(0xFFFF0000), // Bright Red (255,0,0)
+        92 to Color(0xFF00FF00), // Bright Green (0,255,0)
+        93 to Color(0xFFFFFF00), // Bright Yellow (255,255,0)
+        94 to Color(0xFF5C5CFF), // Bright Blue (92,92,255)
+        95 to Color(0xFFFF00FF), // Bright Magenta (255,0,255)
+        96 to Color(0xFF00FFFF), // Bright Cyan (0,255,255)
         97 to Color(0xFFFFFFFF), // Bright White (255,255,255)
     )
 
