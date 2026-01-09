@@ -139,13 +139,13 @@ fun SettingsPanel(
                                 val os = System.getProperty("os.name").lowercase()
                                 when {
                                     os.contains("win") -> {
-                                        Runtime.getRuntime().exec("explorer \"$logsDir\"")
+                                        Runtime.getRuntime().exec(arrayOf("explorer", logsDir))
                                     }
                                     os.contains("mac") -> {
-                                        Runtime.getRuntime().exec("open \"$logsDir\"")
+                                        Runtime.getRuntime().exec(arrayOf("open", logsDir))
                                     }
                                     else -> {
-                                        Runtime.getRuntime().exec("xdg-open \"$logsDir\"")
+                                        Runtime.getRuntime().exec(arrayOf("xdg-open", logsDir))
                                     }
                                 }
                                 statusMessage = "Открыта директория логов"
