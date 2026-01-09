@@ -54,6 +54,11 @@ fun MainWindow() {
                         onClick = { selectedTab = 2 },
                         text = { Text("Алиасы") }
                     )
+                    Tab(
+                        selected = selectedTab == 3,
+                        onClick = { selectedTab = 3 },
+                        text = { Text("Настройки") }
+                    )
                 }
 
                 Divider()
@@ -95,6 +100,13 @@ fun MainWindow() {
                         2 -> {
                             // Панель алиасов
                             AliasesPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        3 -> {
+                            // Панель настроек
+                            SettingsPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )

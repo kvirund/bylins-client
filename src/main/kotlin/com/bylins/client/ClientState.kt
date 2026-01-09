@@ -1,6 +1,7 @@
 package com.bylins.client
 
 import com.bylins.client.aliases.AliasManager
+import com.bylins.client.config.ConfigManager
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.triggers.TriggerManager
 import kotlinx.coroutines.CoroutineScope
@@ -8,9 +9,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
+    private val configManager = ConfigManager()
 
     // AliasManager и TriggerManager инициализируются первыми
     private val aliasManager = AliasManager { command ->
@@ -39,9 +42,18 @@ class ClientState {
     val aliases = aliasManager.aliases
 
     init {
-        // Загружаем стандартные триггеры и алиасы
-        loadDefaultAliases()
-        loadDefaultTriggers()
+        // Пытаемся загрузить сохранённую конфигурацию
+        val (loadedTriggers, loadedAliases) = configManager.loadConfig()
+
+        if (loadedTriggers.isEmpty() && loadedAliases.isEmpty()) {
+            // Если конфига нет, загружаем стандартные триггеры и алиасы
+            loadDefaultAliases()
+            loadDefaultTriggers()
+        } else {
+            // Загружаем сохранённую конфигурацию
+            loadedTriggers.forEach { addTrigger(it) }
+            loadedAliases.forEach { addAlias(it) }
+        }
     }
 
     private fun loadDefaultAliases() {
@@ -183,6 +195,9 @@ class ClientState {
     }
 
     private fun sendRaw(command: String) {
+        // Эхо команды в лог
+        telnetClient.echoCommand(command)
+
         scope.launch {
             try {
                 telnetClient.send(command)
@@ -213,44 +228,80 @@ class ClientState {
     // Управление триггерами
     fun addTrigger(trigger: com.bylins.client.triggers.Trigger) {
         triggerManager.addTrigger(trigger)
+        saveConfig()
     }
 
     fun updateTrigger(trigger: com.bylins.client.triggers.Trigger) {
         triggerManager.removeTrigger(trigger.id)
         triggerManager.addTrigger(trigger)
+        saveConfig()
     }
 
     fun removeTrigger(id: String) {
         triggerManager.removeTrigger(id)
+        saveConfig()
     }
 
     fun enableTrigger(id: String) {
         triggerManager.enableTrigger(id)
+        saveConfig()
     }
 
     fun disableTrigger(id: String) {
         triggerManager.disableTrigger(id)
+        saveConfig()
     }
 
     // Управление алиасами
     fun addAlias(alias: com.bylins.client.aliases.Alias) {
         aliasManager.addAlias(alias)
+        saveConfig()
     }
 
     fun updateAlias(alias: com.bylins.client.aliases.Alias) {
         aliasManager.removeAlias(alias.id)
         aliasManager.addAlias(alias)
+        saveConfig()
     }
 
     fun removeAlias(id: String) {
         aliasManager.removeAlias(id)
+        saveConfig()
     }
 
     fun enableAlias(id: String) {
         aliasManager.enableAlias(id)
+        saveConfig()
     }
 
     fun disableAlias(id: String) {
         aliasManager.disableAlias(id)
+        saveConfig()
     }
+
+    // Управление конфигурацией
+    fun saveConfig() {
+        configManager.saveConfig(triggers.value, aliases.value)
+    }
+
+    fun exportConfig(file: File) {
+        configManager.exportConfig(file, triggers.value, aliases.value)
+    }
+
+    fun importConfig(file: File) {
+        val (importedTriggers, importedAliases) = configManager.importConfig(file)
+
+        // Очищаем текущие триггеры и алиасы
+        triggerManager.clear()
+        aliasManager.clear()
+
+        // Загружаем импортированные
+        importedTriggers.forEach { addTrigger(it) }
+        importedAliases.forEach { addAlias(it) }
+
+        // Сохраняем в основной конфиг
+        saveConfig()
+    }
+
+    fun getConfigPath(): String = configManager.getConfigFile()
 }

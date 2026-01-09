@@ -60,6 +60,13 @@ class TelnetClient(private val clientState: ClientState? = null) {
         }
     }
 
+    /**
+     * Добавляет текст в лог (для эхо команд)
+     */
+    fun echoCommand(command: String) {
+        _receivedData.value += "\u001B[1;36m> $command\u001B[0m\n"
+    }
+
     private fun startReading() {
         readJob = CoroutineScope(Dispatchers.IO).launch {
             try {
