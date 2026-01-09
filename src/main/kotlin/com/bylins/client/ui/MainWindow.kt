@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import com.bylins.client.ClientState
 import com.bylins.client.ui.components.*
@@ -19,7 +20,22 @@ fun MainWindow() {
         colorScheme = darkColorScheme()
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        // Обрабатываем горячие клавиши
+                        val handled = clientState.processHotkey(
+                            key = event.key,
+                            isCtrlPressed = event.isCtrlPressed,
+                            isAltPressed = event.isAltPressed,
+                            isShiftPressed = event.isShiftPressed
+                        )
+                        handled
+                    } else {
+                        false
+                    }
+                },
             color = MaterialTheme.colorScheme.background
         ) {
             Column(modifier = Modifier.fillMaxSize()) {

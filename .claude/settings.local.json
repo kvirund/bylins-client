@@ -7,7 +7,9 @@
       "Bash(./gradlew:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial project setup: Bylins MUD Client\n\nСоздана базовая структура проекта с Kotlin + Compose for Desktop:\n- Gradle конфигурация с необходимыми зависимостями\n- UI компоненты: главное окно, панель подключения, вывод текста, ввод команд, статус персонажа\n- Telnet клиент с поддержкой базового протокола и расширений \\(MSDP, GMCP\\)\n- Telnet парсер для обработки IAC последовательностей\n- Документация: README, QUICKSTART, ARCHITECTURE, ROADMAP\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gradlew.bat build:*)",
+      "Bash(cmd /c \"gradlew.bat build\")"
     ]
   }
 }

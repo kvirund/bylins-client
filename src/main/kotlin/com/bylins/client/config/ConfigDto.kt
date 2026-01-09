@@ -1,6 +1,7 @@
 package com.bylins.client.config
 
 import com.bylins.client.aliases.Alias
+import com.bylins.client.hotkeys.Hotkey
 import com.bylins.client.triggers.Trigger
 import com.bylins.client.triggers.TriggerColorize
 import kotlinx.serialization.Serializable
@@ -108,7 +109,49 @@ data class AliasDto(
 }
 
 @Serializable
+data class HotkeyDto(
+    val id: String,
+    val name: String,
+    val key: String, // Название клавиши как строка
+    val ctrl: Boolean = false,
+    val alt: Boolean = false,
+    val shift: Boolean = false,
+    val commands: List<String>,
+    val enabled: Boolean = true
+) {
+    fun toHotkey(): Hotkey? {
+        val parsedKey = Hotkey.parseKey(key) ?: return null
+        return Hotkey(
+            id = id,
+            name = name,
+            key = parsedKey,
+            ctrl = ctrl,
+            alt = alt,
+            shift = shift,
+            commands = commands,
+            enabled = enabled
+        )
+    }
+
+    companion object {
+        fun fromHotkey(hotkey: Hotkey): HotkeyDto {
+            return HotkeyDto(
+                id = hotkey.id,
+                name = hotkey.name,
+                key = Hotkey.getKeyName(hotkey.key),
+                ctrl = hotkey.ctrl,
+                alt = hotkey.alt,
+                shift = hotkey.shift,
+                commands = hotkey.commands,
+                enabled = hotkey.enabled
+            )
+        }
+    }
+}
+
+@Serializable
 data class ClientConfig(
     val triggers: List<TriggerDto> = emptyList(),
-    val aliases: List<AliasDto> = emptyList()
+    val aliases: List<AliasDto> = emptyList(),
+    val hotkeys: List<HotkeyDto> = emptyList()
 )

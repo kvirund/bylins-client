@@ -2,6 +2,7 @@ package com.bylins.client
 
 import com.bylins.client.aliases.AliasManager
 import com.bylins.client.config.ConfigManager
+import com.bylins.client.hotkeys.HotkeyManager
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.triggers.TriggerManager
 import kotlinx.coroutines.CoroutineScope
@@ -15,7 +16,7 @@ class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val configManager = ConfigManager()
 
-    // AliasManager и TriggerManager инициализируются первыми
+    // Менеджеры инициализируются первыми
     private val aliasManager = AliasManager { command ->
         // Callback для отправки команд из алиасов (без рекурсии)
         sendRaw(command)
@@ -23,6 +24,11 @@ class ClientState {
 
     private val triggerManager = TriggerManager { command ->
         // Callback для отправки команд из триггеров
+        send(command)
+    }
+
+    private val hotkeyManager = HotkeyManager { command ->
+        // Callback для отправки команд из хоткеев
         send(command)
     }
 
@@ -40,19 +46,22 @@ class ClientState {
     // Доступ к менеджерам
     val triggers = triggerManager.triggers
     val aliases = aliasManager.aliases
+    val hotkeys = hotkeyManager.hotkeys
 
     init {
         // Пытаемся загрузить сохранённую конфигурацию
-        val (loadedTriggers, loadedAliases) = configManager.loadConfig()
+        val (loadedTriggers, loadedAliases, loadedHotkeys) = configManager.loadConfig()
 
-        if (loadedTriggers.isEmpty() && loadedAliases.isEmpty()) {
-            // Если конфига нет, загружаем стандартные триггеры и алиасы
+        if (loadedTriggers.isEmpty() && loadedAliases.isEmpty() && loadedHotkeys.isEmpty()) {
+            // Если конфига нет, загружаем стандартные триггеры, алиасы и хоткеи
             loadDefaultAliases()
             loadDefaultTriggers()
+            loadDefaultHotkeys()
         } else {
             // Загружаем сохранённую конфигурацию
             loadedTriggers.forEach { addTrigger(it) }
             loadedAliases.forEach { addAlias(it) }
+            loadedHotkeys.forEach { addHotkey(it) }
         }
     }
 
@@ -169,6 +178,52 @@ class ClientState {
         )
     }
 
+    private fun loadDefaultHotkeys() {
+        // F1 - info
+        addHotkey(
+            com.bylins.client.hotkeys.Hotkey(
+                id = "f1-info",
+                name = "Info",
+                key = androidx.compose.ui.input.key.Key.F1,
+                commands = listOf("info"),
+                enabled = true
+            )
+        )
+
+        // F2 - score
+        addHotkey(
+            com.bylins.client.hotkeys.Hotkey(
+                id = "f2-score",
+                name = "Score",
+                key = androidx.compose.ui.input.key.Key.F2,
+                commands = listOf("score"),
+                enabled = true
+            )
+        )
+
+        // F3 - inventory
+        addHotkey(
+            com.bylins.client.hotkeys.Hotkey(
+                id = "f3-inventory",
+                name = "Inventory",
+                key = androidx.compose.ui.input.key.Key.F3,
+                commands = listOf("inventory"),
+                enabled = true
+            )
+        )
+
+        // F4 - look
+        addHotkey(
+            com.bylins.client.hotkeys.Hotkey(
+                id = "f4-look",
+                name = "Look",
+                key = androidx.compose.ui.input.key.Key.F4,
+                commands = listOf("look"),
+                enabled = true
+            )
+        )
+    }
+
     fun connect(host: String, port: Int) {
         scope.launch {
             try {
@@ -279,25 +334,67 @@ class ClientState {
         saveConfig()
     }
 
+    // Управление хоткеями
+    fun addHotkey(hotkey: com.bylins.client.hotkeys.Hotkey) {
+        hotkeyManager.addHotkey(hotkey)
+        saveConfig()
+    }
+
+    fun updateHotkey(hotkey: com.bylins.client.hotkeys.Hotkey) {
+        hotkeyManager.removeHotkey(hotkey.id)
+        hotkeyManager.addHotkey(hotkey)
+        saveConfig()
+    }
+
+    fun removeHotkey(id: String) {
+        hotkeyManager.removeHotkey(id)
+        saveConfig()
+    }
+
+    fun enableHotkey(id: String) {
+        hotkeyManager.enableHotkey(id)
+        saveConfig()
+    }
+
+    fun disableHotkey(id: String) {
+        hotkeyManager.disableHotkey(id)
+        saveConfig()
+    }
+
+    /**
+     * Обрабатывает нажатие горячей клавиши
+     * Возвращает true, если хоткей сработал
+     */
+    fun processHotkey(
+        key: androidx.compose.ui.input.key.Key,
+        isCtrlPressed: Boolean,
+        isAltPressed: Boolean,
+        isShiftPressed: Boolean
+    ): Boolean {
+        return hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed)
+    }
+
     // Управление конфигурацией
     fun saveConfig() {
-        configManager.saveConfig(triggers.value, aliases.value)
+        configManager.saveConfig(triggers.value, aliases.value, hotkeys.value)
     }
 
     fun exportConfig(file: File) {
-        configManager.exportConfig(file, triggers.value, aliases.value)
+        configManager.exportConfig(file, triggers.value, aliases.value, hotkeys.value)
     }
 
     fun importConfig(file: File) {
-        val (importedTriggers, importedAliases) = configManager.importConfig(file)
+        val (importedTriggers, importedAliases, importedHotkeys) = configManager.importConfig(file)
 
-        // Очищаем текущие триггеры и алиасы
+        // Очищаем текущие триггеры, алиасы и хоткеи
         triggerManager.clear()
         aliasManager.clear()
+        hotkeyManager.clear()
 
         // Загружаем импортированные
         importedTriggers.forEach { addTrigger(it) }
         importedAliases.forEach { addAlias(it) }
+        importedHotkeys.forEach { addHotkey(it) }
 
         // Сохраняем в основной конфиг
         saveConfig()
