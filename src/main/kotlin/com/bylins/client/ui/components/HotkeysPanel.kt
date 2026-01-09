@@ -21,6 +21,8 @@ fun HotkeysPanel(
     modifier: Modifier = Modifier
 ) {
     val hotkeys by clientState.hotkeys.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editingHotkey by remember { mutableStateOf<Hotkey?>(null) }
 
     Column(
         modifier = modifier
@@ -45,15 +47,37 @@ fun HotkeysPanel(
 
             Button(
                 onClick = {
-                    // TODO: добавить диалог создания хоткея
+                    showAddDialog = true
                 },
                 colors = ButtonDefaults.buttonColors(
                     backgroundColor = Color(0xFF4CAF50)
-                ),
-                enabled = false // Пока диалога нет
+                )
             ) {
                 Text("+ Добавить", color = Color.White)
             }
+        }
+
+        // Диалог добавления хоткея
+        if (showAddDialog) {
+            HotkeyDialog(
+                onDismiss = { showAddDialog = false },
+                onSave = { hotkey ->
+                    clientState.addHotkey(hotkey)
+                    showAddDialog = false
+                }
+            )
+        }
+
+        // Диалог редактирования хоткея
+        if (editingHotkey != null) {
+            HotkeyDialog(
+                hotkey = editingHotkey,
+                onDismiss = { editingHotkey = null },
+                onSave = { hotkey ->
+                    clientState.updateHotkey(hotkey)
+                    editingHotkey = null
+                }
+            )
         }
 
         Divider(color = Color.Gray, thickness = 1.dp)
@@ -72,6 +96,9 @@ fun HotkeysPanel(
                         } else {
                             clientState.disableHotkey(id)
                         }
+                    },
+                    onEdit = { editHotkey ->
+                        editingHotkey = editHotkey
                     },
                     onDelete = { id ->
                         clientState.removeHotkey(id)
@@ -99,6 +126,7 @@ fun HotkeysPanel(
 private fun HotkeyItem(
     hotkey: Hotkey,
     onToggle: (String, Boolean) -> Unit,
+    onEdit: (Hotkey) -> Unit,
     onDelete: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -165,6 +193,22 @@ private fun HotkeyItem(
                             text = if (expanded) "▲" else "▼",
                             color = Color.White,
                             fontSize = 10.sp
+                        )
+                    }
+
+                    // Кнопка редактирования
+                    Button(
+                        onClick = { onEdit(hotkey) },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF2196F3)
+                        ),
+                        modifier = Modifier.size(32.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "✎",
+                            color = Color.White,
+                            fontSize = 14.sp
                         )
                     }
 
