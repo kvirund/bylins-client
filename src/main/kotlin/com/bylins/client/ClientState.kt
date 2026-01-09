@@ -1,5 +1,6 @@
 package com.bylins.client
 
+import com.bylins.client.aliases.AliasManager
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.triggers.TriggerManager
 import kotlinx.coroutines.CoroutineScope
@@ -11,7 +12,12 @@ import kotlinx.coroutines.launch
 class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    // TriggerManager инициализируется первым
+    // AliasManager и TriggerManager инициализируются первыми
+    private val aliasManager = AliasManager { command ->
+        // Callback для отправки команд из алиасов (без рекурсии)
+        sendRaw(command)
+    }
+
     private val triggerManager = TriggerManager { command ->
         // Callback для отправки команд из триггеров
         send(command)
@@ -28,8 +34,9 @@ class ClientState {
     private val _msdpData = MutableStateFlow<Map<String, Any>>(emptyMap())
     val msdpData: StateFlow<Map<String, Any>> = _msdpData
 
-    // Доступ к TriggerManager
+    // Доступ к менеджерам
     val triggers = triggerManager.triggers
+    val aliases = aliasManager.aliases
 
     fun connect(host: String, port: Int) {
         scope.launch {
@@ -48,6 +55,15 @@ class ClientState {
     }
 
     fun send(command: String) {
+        // Проверяем алиасы
+        val handled = aliasManager.processCommand(command)
+        if (!handled) {
+            // Алиас не сработал, отправляем команду как есть
+            sendRaw(command)
+        }
+    }
+
+    private fun sendRaw(command: String) {
         scope.launch {
             try {
                 telnetClient.send(command)
@@ -90,5 +106,22 @@ class ClientState {
 
     fun disableTrigger(id: String) {
         triggerManager.disableTrigger(id)
+    }
+
+    // Управление алиасами
+    fun addAlias(alias: com.bylins.client.aliases.Alias) {
+        aliasManager.addAlias(alias)
+    }
+
+    fun removeAlias(id: String) {
+        aliasManager.removeAlias(id)
+    }
+
+    fun enableAlias(id: String) {
+        aliasManager.enableAlias(id)
+    }
+
+    fun disableAlias(id: String) {
+        aliasManager.disableAlias(id)
     }
 }
