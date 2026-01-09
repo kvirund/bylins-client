@@ -43,16 +43,16 @@ fun OutputPanel(
 
     Box(
         modifier = modifier
-            .background(Color(0xFF1E1E1E))
+            .background(Color.Black) // Черный фон как у tintin++
             .padding(8.dp)
     ) {
         SelectionContainer {
             Text(
                 text = outputText,
-                color = Color(0xFFCCCCCC),
+                color = Color(0xFFBBBBBB), // Светло-серый текст по умолчанию (187,187,187)
                 fontFamily = FontFamily.Monospace,
                 fontSize = 14.sp,
-                lineHeight = 18.sp, // Уменьшенный межстрочный интервал
+                lineHeight = 18.sp,
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
