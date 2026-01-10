@@ -60,7 +60,14 @@ data class Tab(
 data class TabFilter(
     val pattern: Regex,
     val includeMatched: Boolean = true
-)
+) {
+    /**
+     * Проверяет, соответствует ли строка паттерну
+     */
+    fun matches(line: String): Boolean {
+        return pattern.matches(line)
+    }
+}
 
 /**
  * Режим захвата текста

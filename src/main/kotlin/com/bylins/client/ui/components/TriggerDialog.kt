@@ -377,6 +377,12 @@ fun TriggerDialog(
     }
 }
 
+data class ColorOption(
+    val hex: String,
+    val name: String,
+    val preview: Color?
+)
+
 @Composable
 private fun ColorPicker(
     label: String,
@@ -388,18 +394,18 @@ private fun ColorPicker(
 
     // Популярные цвета
     val commonColors = listOf(
-        "" to "Нет" to null,
-        "#FFFFFF" to "Белый" to Color(0xFFFFFFFF),
-        "#FF0000" to "Красный" to Color(0xFFFF0000),
-        "#00FF00" to "Зелёный" to Color(0xFF00FF00),
-        "#0000FF" to "Синий" to Color(0xFF0000FF),
-        "#FFFF00" to "Жёлтый" to Color(0xFFFFFF00),
-        "#FF00FF" to "Пурпурный" to Color(0xFFFF00FF),
-        "#00FFFF" to "Голубой" to Color(0xFF00FFFF),
-        "#FFA500" to "Оранжевый" to Color(0xFFFFA500),
-        "#800080" to "Фиолетовый" to Color(0xFF800080),
-        "#808080" to "Серый" to Color(0xFF808080),
-        "#000000" to "Чёрный" to Color(0xFF000000)
+        ColorOption("", "Нет", null),
+        ColorOption("#FFFFFF", "Белый", Color(0xFFFFFFFF)),
+        ColorOption("#FF0000", "Красный", Color(0xFFFF0000)),
+        ColorOption("#00FF00", "Зелёный", Color(0xFF00FF00)),
+        ColorOption("#0000FF", "Синий", Color(0xFF0000FF)),
+        ColorOption("#FFFF00", "Жёлтый", Color(0xFFFFFF00)),
+        ColorOption("#FF00FF", "Пурпурный", Color(0xFFFF00FF)),
+        ColorOption("#00FFFF", "Голубой", Color(0xFF00FFFF)),
+        ColorOption("#FFA500", "Оранжевый", Color(0xFFFFA500)),
+        ColorOption("#800080", "Фиолетовый", Color(0xFF800080)),
+        ColorOption("#808080", "Серый", Color(0xFF808080)),
+        ColorOption("#000000", "Чёрный", Color(0xFF000000))
     ).let { if (allowEmpty) it else it.drop(1) }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -430,7 +436,7 @@ private fun ColorPicker(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = commonColors.find { it.first.first == value }?.first?.second ?: "Свой цвет",
+                            text = commonColors.find { it.hex == value }?.name ?: "Свой цвет",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp
                         )
@@ -450,10 +456,10 @@ private fun ColorPicker(
                         onDismissRequest = { dropdownExpanded = false },
                         modifier = Modifier.fillMaxWidth(0.8f)
                     ) {
-                        commonColors.forEach { (colorHex, colorName, colorPreview) ->
+                        commonColors.forEach { colorOption ->
                             DropdownMenuItem(
                                 onClick = {
-                                    onValueChange(colorHex)
+                                    onValueChange(colorOption.hex)
                                     dropdownExpanded = false
                                 }
                             ) {
@@ -463,16 +469,16 @@ private fun ColorPicker(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = colorName,
+                                        text = colorOption.name,
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 12.sp,
-                                        color = if (colorHex == value) Color(0xFF00FF00) else Color.White
+                                        color = if (colorOption.hex == value) Color(0xFF00FF00) else Color.White
                                     )
-                                    if (colorPreview != null) {
+                                    if (colorOption.preview != null) {
                                         Box(
                                             modifier = Modifier
                                                 .size(20.dp)
-                                                .background(colorPreview)
+                                                .background(colorOption.preview)
                                         )
                                     }
                                 }
@@ -512,6 +518,24 @@ private fun ColorPicker(
     }
 }
 
+/**
+ * Парсит HEX цвет в Compose Color
+ */
+private fun parseHexColor(hex: String): Color? {
+    return try {
+        val cleanHex = hex.trim().removePrefix("#")
+        if (cleanHex.length != 6) return null
+
+        val r = cleanHex.substring(0, 2).toInt(16)
+        val g = cleanHex.substring(2, 4).toInt(16)
+        val b = cleanHex.substring(4, 6).toInt(16)
+
+        Color(r, g, b)
+    } catch (e: Exception) {
+        null
+    }
+}
+
 @Composable
 private fun ColorPreview(
     foreground: String,
@@ -526,17 +550,15 @@ private fun ColorPreview(
             fontFamily = FontFamily.Monospace
         )
 
-        val fgColor = try {
-            if (foreground.isNotBlank()) Color(android.graphics.Color.parseColor(foreground))
-            else Color.White
-        } catch (e: Exception) {
+        val fgColor = if (foreground.isNotBlank()) {
+            parseHexColor(foreground) ?: Color.White
+        } else {
             Color.White
         }
 
-        val bgColor = try {
-            if (background.isNotBlank()) Color(android.graphics.Color.parseColor(background))
-            else Color.Black
-        } catch (e: Exception) {
+        val bgColor = if (background.isNotBlank()) {
+            parseHexColor(background) ?: Color.Black
+        } else {
             Color.Black
         }
 
