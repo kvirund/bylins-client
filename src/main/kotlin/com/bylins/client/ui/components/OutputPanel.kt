@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -44,21 +45,14 @@ fun OutputPanel(
             }
         }
 
-        // Содержимое вкладок - рендерим все, но показываем только активную
-        Box(modifier = Modifier.fillMaxSize()) {
-            tabs.forEach { tab ->
-                Box(
-                    modifier = Modifier.fillMaxSize().then(
-                        if (tab.id == activeTabId) Modifier else Modifier.height(0.dp)
-                    )
-                ) {
-                    TabContent(
-                        tab = tab,
-                        receivedData = receivedData,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
+        // Содержимое активной вкладки
+        val activeTab = tabs.find { it.id == activeTabId }
+        if (activeTab != null) {
+            TabContent(
+                tab = activeTab,
+                receivedData = receivedData,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
@@ -69,29 +63,15 @@ fun TabContent(
     receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier
 ) {
-    // Используем key для сохранения scrollState при переключении вкладок
-    key(tab.id) {
-        val scrollState = rememberScrollState()
-        val ansiParser = remember { AnsiParser() }
+    // Сохраняем позицию прокрутки с уникальным ключом для каждой вкладки
+    val scrollValue = rememberSaveable(key = "scroll_${tab.id}") { mutableStateOf(0) }
+    val scrollState = rememberScrollState(initial = scrollValue.value)
+    val ansiParser = remember { AnsiParser() }
 
-        TabContentInternal(
-            tab = tab,
-            scrollState = scrollState,
-            ansiParser = ansiParser,
-            receivedData = receivedData,
-            modifier = modifier
-        )
+    // Сохраняем позицию прокрутки при изменении
+    LaunchedEffect(scrollState.value) {
+        scrollValue.value = scrollState.value
     }
-}
-
-@Composable
-private fun TabContentInternal(
-    tab: com.bylins.client.tabs.Tab,
-    scrollState: ScrollState,
-    ansiParser: AnsiParser,
-    receivedData: String,
-    modifier: Modifier = Modifier
-) {
 
     // Получаем содержимое вкладки
     val tabContent by tab.content.collectAsState()
