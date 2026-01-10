@@ -29,6 +29,9 @@ fun OutputPanel(
     val activeTabId by clientState.activeTabId.collectAsState()
     val receivedData by clientState.receivedData.collectAsState()
 
+    // Храним ScrollState для каждой вкладки
+    val scrollStates = remember { mutableMapOf<String, ScrollState>() }
+
     Column(modifier = modifier) {
         // Вкладки
         if (tabs.size > 1) {
@@ -50,15 +53,21 @@ fun OutputPanel(
         // Рендерим все вкладки одновременно, показываем только активную
         Box(modifier = Modifier.fillMaxSize()) {
             tabs.forEach { tab ->
-                val isActive = tab.id == activeTabId
-                TabContent(
-                    tab = tab,
-                    receivedData = receivedData,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .zIndex(if (isActive) 1f else 0f)
-                        .alpha(if (isActive) 1f else 0f)
-                )
+                key(tab.id) {
+                    // Получаем или создаём ScrollState для этой вкладки
+                    val scrollState = scrollStates.getOrPut(tab.id) { ScrollState(0) }
+                    val isActive = tab.id == activeTabId
+
+                    TabContent(
+                        tab = tab,
+                        scrollState = scrollState,
+                        receivedData = receivedData,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(if (isActive) 1f else 0f)
+                            .alpha(if (isActive) 1f else 0f)
+                    )
+                }
             }
         }
     }
@@ -67,12 +76,11 @@ fun OutputPanel(
 @Composable
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
+    scrollState: ScrollState,
     receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier
 ) {
-    // Просто rememberScrollState - компонент не уничтожается, поэтому состояние сохраняется
-    val scrollState = rememberScrollState()
-    val ansiParser = remember { AnsiParser() }
+    val ansiParser = remember(tab.id) { AnsiParser() }
 
     // Получаем содержимое вкладки
     val tabContent by tab.content.collectAsState()
