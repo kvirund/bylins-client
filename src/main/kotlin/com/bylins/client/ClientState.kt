@@ -43,6 +43,10 @@ class ClientState {
     private val sessionStats = SessionStats()
     private val variableManager = VariableManager()
     private val tabManager = TabManager()
+    private val mapManager = com.bylins.client.mapper.MapManager()
+    private val roomParser = com.bylins.client.mapper.RoomParser()
+
+    private var lastCommand: String? = null
 
     private val telnetClient = TelnetClient(this)
 
@@ -73,6 +77,11 @@ class ClientState {
     // Доступ к вкладкам
     val tabs = tabManager.tabs
     val activeTabId = tabManager.activeTabId
+
+    // Доступ к карте
+    val mapRooms = mapManager.rooms
+    val currentRoomId = mapManager.currentRoomId
+    val mapEnabled = mapManager.mapEnabled
 
     init {
         // Пытаемся загрузить сохранённую конфигурацию
@@ -339,6 +348,9 @@ class ClientState {
     }
 
     private fun sendRaw(command: String) {
+        // Сохраняем команду для автомаппера
+        lastCommand = command
+
         // Эхо команды в лог
         telnetClient.echoCommand(command)
 
@@ -382,6 +394,9 @@ class ClientState {
 
         // Распределяем текст по вкладкам
         tabManager.processText(text)
+
+        // Обрабатываем текст для автомаппера
+        processMapping(text)
 
         // Разбиваем на строки и обрабатываем каждую триггерами
         val ansiParser = com.bylins.client.ui.AnsiParser()
@@ -716,5 +731,85 @@ class ClientState {
 
     fun getFormattedBytes(): String {
         return sessionStats.getFormattedBytes()
+    }
+
+    // Управление картой
+    /**
+     * Обрабатывает входящий текст для автомаппера
+     */
+    private fun processMapping(text: String) {
+        if (!mapManager.mapEnabled.value) return
+
+        val ansiParser = com.bylins.client.ui.AnsiParser()
+        val cleanText = ansiParser.stripAnsi(text)
+        val lines = cleanText.lines()
+
+        // Ищем информацию о комнате
+        for (line in lines) {
+            // Парсим выходы
+            val exits = roomParser.parseExits(line)
+            if (exits.isNotEmpty()) {
+                // Найдены выходы, пробуем определить название комнаты
+                val roomName = lines.firstOrNull { roomParser.parseRoomName(it) != null }
+                    ?.let { roomParser.parseRoomName(it) }
+
+                if (roomName != null) {
+                    // Определяем направление движения из последней команды
+                    val direction = lastCommand?.let { roomParser.detectMovementDirection(it) }
+
+                    if (direction != null) {
+                        // Обрабатываем движение и обновляем карту
+                        mapManager.handleMovement(direction, roomName, exits)
+                    } else {
+                        // Возможно первая комната или телепорт
+                        // TODO: обработка телепорта/первой комнаты
+                    }
+                }
+            }
+        }
+
+        // Обработка MSDP данных для маппинга
+        val msdp = _msdpData.value
+        if (msdp.isNotEmpty()) {
+            val roomInfo = roomParser.parseFromMSDP(msdp)
+            if (roomInfo != null) {
+                val direction = lastCommand?.let { roomParser.detectMovementDirection(it) }
+                if (direction != null) {
+                    mapManager.handleMovement(direction, roomInfo.name, roomInfo.exits)
+                }
+            }
+        }
+    }
+
+    fun setMapEnabled(enabled: Boolean) {
+        mapManager.setMapEnabled(enabled)
+    }
+
+    fun clearMap() {
+        mapManager.clearMap()
+    }
+
+    fun setRoomNote(roomId: String, note: String) {
+        mapManager.setRoomNote(roomId, note)
+    }
+
+    fun setRoomColor(roomId: String, color: String?) {
+        mapManager.setRoomColor(roomId, color)
+    }
+
+    fun getMapBounds(level: Int): com.bylins.client.mapper.MapBounds? {
+        return mapManager.getMapBounds(level)
+    }
+
+    fun getRoomsOnLevel(level: Int): List<com.bylins.client.mapper.Room> {
+        return mapManager.getRoomsOnLevel(level)
+    }
+
+    fun exportMap(): Map<String, com.bylins.client.mapper.Room> {
+        return mapManager.exportMap()
+    }
+
+    fun importMap(rooms: Map<String, com.bylins.client.mapper.Room>) {
+        mapManager.importMap(rooms)
     }
 }
