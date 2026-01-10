@@ -385,13 +385,13 @@ class ClientState {
 
         // Разбиваем на строки и обрабатываем каждую триггерами
         val ansiParser = com.bylins.client.ui.AnsiParser()
-        val lineDelimiter = Regex("(\r\n|\r|\n)")
-        val lines = text.split(lineDelimiter)
+        val lines = text.lines()
         val modifiedLines = mutableListOf<String>()
 
-        for (line in lines) {
-            if (line.isEmpty() || line.matches(lineDelimiter)) {
-                // Сохраняем разделители как есть
+        for (i in lines.indices) {
+            val line = lines[i]
+
+            if (line.isEmpty()) {
                 modifiedLines.add(line)
                 continue
             }
@@ -418,7 +418,21 @@ class ClientState {
             }
         }
 
-        return modifiedLines.joinToString("")
+        // Восстанавливаем переводы строк
+        val result = StringBuilder()
+        for (i in modifiedLines.indices) {
+            result.append(modifiedLines[i])
+            if (i < modifiedLines.size - 1) {
+                result.append("\n")
+            }
+        }
+
+        // Если оригинальный текст заканчивался на \n, добавляем его
+        if (text.endsWith("\n") || text.endsWith("\r\n") || text.endsWith("\r")) {
+            result.append("\n")
+        }
+
+        return result.toString()
     }
 
     /**
@@ -575,6 +589,33 @@ class ClientState {
     // Управление вкладками
     fun addTab(tab: com.bylins.client.tabs.Tab) {
         tabManager.addTab(tab)
+        saveConfig()
+    }
+
+    fun createTab(name: String, patterns: List<String>, captureMode: com.bylins.client.tabs.CaptureMode) {
+        val filters = patterns.map { pattern ->
+            com.bylins.client.tabs.TabFilter(
+                pattern = pattern.toRegex(),
+                includeMatched = true
+            )
+        }
+        val tab = com.bylins.client.tabs.Tab(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            filters = filters,
+            captureMode = captureMode
+        )
+        addTab(tab)
+    }
+
+    fun updateTab(id: String, name: String, patterns: List<String>, captureMode: com.bylins.client.tabs.CaptureMode) {
+        val filters = patterns.map { pattern ->
+            com.bylins.client.tabs.TabFilter(
+                pattern = pattern.toRegex(),
+                includeMatched = true
+            )
+        }
+        tabManager.updateTab(id, name, filters, captureMode)
         saveConfig()
     }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
@@ -29,21 +30,65 @@ fun OutputPanel(
     val activeTabId by clientState.activeTabId.collectAsState()
     val receivedData by clientState.receivedData.collectAsState()
 
+    var showTabDialog by remember { mutableStateOf(false) }
+    var editingTab by remember { mutableStateOf<com.bylins.client.tabs.Tab?>(null) }
+
     Column(modifier = modifier) {
-        // Вкладки
-        if (tabs.size > 1) {
-            TabRow(
+        // Вкладки с управлением
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Вкладки
+            ScrollableTabRow(
                 selectedTabIndex = tabs.indexOfFirst { it.id == activeTabId }.takeIf { it >= 0 } ?: 0,
                 containerColor = Color(0xFF1E1E1E),
-                contentColor = Color.White
+                contentColor = Color.White,
+                edgePadding = 0.dp,
+                modifier = Modifier.weight(1f)
             ) {
                 tabs.forEach { tab ->
                     Tab(
                         selected = tab.id == activeTabId,
                         onClick = { clientState.setActiveTab(tab.id) },
-                        text = { Text(tab.name) }
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(tab.name)
+                                // Кнопки управления (кроме главной вкладки)
+                                if (tab.id != "main") {
+                                    IconButton(
+                                        onClick = {
+                                            editingTab = tab
+                                            showTabDialog = true
+                                        },
+                                        modifier = Modifier.size(20.dp)
+                                    ) {
+                                        Text("✎", fontSize = 12.sp)
+                                    }
+                                    IconButton(
+                                        onClick = { clientState.removeTab(tab.id) },
+                                        modifier = Modifier.size(20.dp)
+                                    ) {
+                                        Text("✕", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
                     )
                 }
+            }
+
+            // Кнопка добавления новой вкладки
+            IconButton(
+                onClick = {
+                    editingTab = null
+                    showTabDialog = true
+                }
+            ) {
+                Text("+", fontSize = 20.sp, color = Color.White)
             }
         }
 
@@ -56,6 +101,26 @@ fun OutputPanel(
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+
+    // Диалог создания/редактирования вкладки
+    if (showTabDialog) {
+        TabDialog(
+            tab = editingTab,
+            onDismiss = {
+                showTabDialog = false
+                editingTab = null
+            },
+            onSave = { name, patterns, captureMode ->
+                if (editingTab != null) {
+                    clientState.updateTab(editingTab!!.id, name, patterns, captureMode)
+                } else {
+                    clientState.createTab(name, patterns, captureMode)
+                }
+                showTabDialog = false
+                editingTab = null
+            }
+        )
     }
 }
 
@@ -86,16 +151,9 @@ fun TabContent(
         }
     }
 
-    // Запоминаем предыдущее значение текста
-    val prevText = remember { mutableStateOf(displayText) }
-
     // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста (не при переключении вкладок)
     LaunchedEffect(displayText) {
-        // Прокручиваем только если текст изменился (добавился новый), а не просто переключили вкладку
-        if (displayText != prevText.value && displayText.startsWith(prevText.value)) {
-            scrollState.scrollTo(scrollState.maxValue)
-        }
-        prevText.value = displayText
+        scrollState.scrollTo(scrollState.maxValue)
     }
 
     Box(

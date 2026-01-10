@@ -41,6 +41,36 @@ class TabManager {
     }
 
     /**
+     * Обновляет вкладку
+     */
+    fun updateTab(id: String, name: String, filters: List<TabFilter>, captureMode: CaptureMode) {
+        if (id == "main") {
+            println("Cannot update main tab")
+            return
+        }
+        _tabs.value = _tabs.value.map { tab ->
+            if (tab.id == id) {
+                // Создаем новую вкладку с теми же параметрами, но новыми фильтрами
+                val newTab = Tab(
+                    id = tab.id,
+                    name = name,
+                    filters = filters,
+                    captureMode = captureMode,
+                    maxLines = tab.maxLines
+                )
+                // Копируем старое содержимое
+                val oldContent = tab.content.value
+                if (oldContent.isNotEmpty()) {
+                    newTab.appendText(oldContent)
+                }
+                newTab
+            } else {
+                tab
+            }
+        }
+    }
+
+    /**
      * Удаляет вкладку
      */
     fun removeTab(id: String) {
