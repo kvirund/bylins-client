@@ -148,7 +148,8 @@ fun TriggerDialog(
                                 checked = enabled,
                                 onCheckedChange = { enabled = it },
                                 colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF4CAF50)
+                                    checkedColor = Color(0xFF4CAF50),
+                                    uncheckedColor = Color.Gray
                                 )
                             )
                             Text(
@@ -171,7 +172,8 @@ fun TriggerDialog(
                                 checked = gag,
                                 onCheckedChange = { gag = it },
                                 colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF4CAF50)
+                                    checkedColor = Color(0xFF4CAF50),
+                                    uncheckedColor = Color.Gray
                                 )
                             )
                             Text(
@@ -188,7 +190,8 @@ fun TriggerDialog(
                                 checked = once,
                                 onCheckedChange = { once = it },
                                 colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF4CAF50)
+                                    checkedColor = Color(0xFF4CAF50),
+                                    uncheckedColor = Color.Gray
                                 )
                             )
                             Text(
@@ -205,7 +208,8 @@ fun TriggerDialog(
                                 checked = useColorize,
                                 onCheckedChange = { useColorize = it },
                                 colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF4CAF50)
+                                    checkedColor = Color(0xFF4CAF50),
+                                    uncheckedColor = Color.Gray
                                 )
                             )
                             Text(
@@ -225,36 +229,58 @@ fun TriggerDialog(
                             elevation = 2.dp
                         ) {
                             Column(
-                                modifier = Modifier.padding(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                FormField(
-                                    label = "Foreground (#RRGGBB)",
-                                    value = foreground,
-                                    onValueChange = { foreground = it },
-                                    placeholder = "#00FF00"
+                                Text(
+                                    text = "Цветовая подсветка",
+                                    color = Color(0xFFBBBBBB),
+                                    fontSize = 14.sp,
+                                    fontFamily = FontFamily.Monospace
                                 )
-                                FormField(
-                                    label = "Background (#RRGGBB, опционально)",
+
+                                // Foreground color
+                                ColorPicker(
+                                    label = "Цвет текста",
+                                    value = foreground,
+                                    onValueChange = { foreground = it }
+                                )
+
+                                // Background color
+                                ColorPicker(
+                                    label = "Цвет фона (опционально)",
                                     value = background,
                                     onValueChange = { background = it },
-                                    placeholder = "#000000"
+                                    allowEmpty = true
                                 )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+
+                                // Bold checkbox
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
                                     Checkbox(
                                         checked = bold,
                                         onCheckedChange = { bold = it },
                                         colors = CheckboxDefaults.colors(
-                                            checkedColor = Color(0xFF4CAF50)
+                                            checkedColor = Color(0xFF4CAF50),
+                                            uncheckedColor = Color.Gray
                                         )
                                     )
                                     Text(
-                                        text = "Bold",
+                                        text = "Жирный шрифт (Bold)",
                                         color = Color.White,
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 12.sp
                                     )
                                 }
+
+                                // Preview
+                                ColorPreview(
+                                    foreground = foreground,
+                                    background = background,
+                                    bold = bold
+                                )
                             }
                         }
                     }
@@ -347,6 +373,186 @@ fun TriggerDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ColorPicker(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    allowEmpty: Boolean = false
+) {
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    // Популярные цвета
+    val commonColors = listOf(
+        "" to "Нет" to null,
+        "#FFFFFF" to "Белый" to Color(0xFFFFFFFF),
+        "#FF0000" to "Красный" to Color(0xFFFF0000),
+        "#00FF00" to "Зелёный" to Color(0xFF00FF00),
+        "#0000FF" to "Синий" to Color(0xFF0000FF),
+        "#FFFF00" to "Жёлтый" to Color(0xFFFFFF00),
+        "#FF00FF" to "Пурпурный" to Color(0xFFFF00FF),
+        "#00FFFF" to "Голубой" to Color(0xFF00FFFF),
+        "#FFA500" to "Оранжевый" to Color(0xFFFFA500),
+        "#800080" to "Фиолетовый" to Color(0xFF800080),
+        "#808080" to "Серый" to Color(0xFF808080),
+        "#000000" to "Чёрный" to Color(0xFF000000)
+    ).let { if (allowEmpty) it else it.drop(1) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            color = Color(0xFFBBBBBB),
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Dropdown с популярными цветами
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = { dropdownExpanded = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        backgroundColor = Color(0xFF2D2D2D),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = commonColors.find { it.first.first == value }?.first?.second ?: "Свой цвет",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        )
+                        Text("▼", fontSize = 10.sp)
+                    }
+                }
+
+                MaterialTheme(
+                    colors = darkColors(
+                        surface = Color(0xFF2D2D2D),
+                        onSurface = Color.White,
+                        background = Color(0xFF2D2D2D)
+                    )
+                ) {
+                    DropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.8f)
+                    ) {
+                        commonColors.forEach { (colorHex, colorName, colorPreview) ->
+                            DropdownMenuItem(
+                                onClick = {
+                                    onValueChange(colorHex)
+                                    dropdownExpanded = false
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = colorName,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp,
+                                        color = if (colorHex == value) Color(0xFF00FF00) else Color.White
+                                    )
+                                    if (colorPreview != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .background(colorPreview)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Поле для ручного ввода
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+                colors = TextFieldDefaults.outlinedTextFieldColors(
+                    textColor = Color.White,
+                    backgroundColor = Color(0xFF2D2D2D),
+                    cursorColor = Color.White,
+                    focusedBorderColor = Color(0xFF4CAF50),
+                    unfocusedBorderColor = Color.Gray
+                ),
+                textStyle = LocalTextStyle.current.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp
+                ),
+                placeholder = {
+                    Text(
+                        text = "#RRGGBB",
+                        color = Color.Gray,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    )
+                },
+                singleLine = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun ColorPreview(
+    foreground: String,
+    background: String,
+    bold: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Предпросмотр:",
+            color = Color(0xFFBBBBBB),
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace
+        )
+
+        val fgColor = try {
+            if (foreground.isNotBlank()) Color(android.graphics.Color.parseColor(foreground))
+            else Color.White
+        } catch (e: Exception) {
+            Color.White
+        }
+
+        val bgColor = try {
+            if (background.isNotBlank()) Color(android.graphics.Color.parseColor(background))
+            else Color.Black
+        } catch (e: Exception) {
+            Color.Black
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(bgColor)
+                .padding(8.dp)
+        ) {
+            Text(
+                text = "Пример текста триггера",
+                color = fgColor,
+                fontSize = 14.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = if (bold) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+            )
         }
     }
 }
