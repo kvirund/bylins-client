@@ -154,5 +154,6 @@ data class ClientConfig(
     val triggers: List<TriggerDto> = emptyList(),
     val aliases: List<AliasDto> = emptyList(),
     val hotkeys: List<HotkeyDto> = emptyList(),
-    val variables: Map<String, String> = emptyMap()
+    val variables: Map<String, String> = emptyMap(),
+    val tabs: List<com.bylins.client.tabs.TabDto> = emptyList()
 )

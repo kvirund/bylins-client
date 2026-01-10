@@ -6,6 +6,7 @@ import com.bylins.client.hotkeys.HotkeyManager
 import com.bylins.client.logging.LogManager
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.stats.SessionStats
+import com.bylins.client.tabs.TabManager
 import com.bylins.client.triggers.TriggerManager
 import com.bylins.client.variables.VariableManager
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,7 @@ class ClientState {
     private val logManager = LogManager()
     private val sessionStats = SessionStats()
     private val variableManager = VariableManager()
+    private val tabManager = TabManager()
 
     private val telnetClient = TelnetClient(this)
 
@@ -65,21 +67,27 @@ class ClientState {
     // Доступ к переменным
     val variables = variableManager.variables
 
+    // Доступ к вкладкам
+    val tabs = tabManager.tabs
+    val activeTabId = tabManager.activeTabId
+
     init {
         // Пытаемся загрузить сохранённую конфигурацию
         val configData = configManager.loadConfig()
 
-        if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty()) {
-            // Если конфига нет, загружаем стандартные триггеры, алиасы и хоткеи
+        if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
+            // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
             loadDefaultAliases()
             loadDefaultTriggers()
             loadDefaultHotkeys()
+            loadDefaultTabs()
         } else {
             // Загружаем сохранённую конфигурацию
             configData.triggers.forEach { addTrigger(it) }
             configData.aliases.forEach { addAlias(it) }
             configData.hotkeys.forEach { addHotkey(it) }
             variableManager.loadVariables(configData.variables)
+            tabManager.loadTabs(configData.tabs)
         }
     }
 
@@ -254,6 +262,23 @@ class ClientState {
         )
     }
 
+    private fun loadDefaultTabs() {
+        // Вкладка для каналов связи
+        addTab(
+            com.bylins.client.tabs.Tab(
+                id = "channels",
+                name = "Каналы",
+                filters = listOf(
+                    com.bylins.client.tabs.TabFilter("^.+ говорит вам:".toRegex()),
+                    com.bylins.client.tabs.TabFilter("^.+ шепчет вам:".toRegex()),
+                    com.bylins.client.tabs.TabFilter("^\\[Болталка\\]".toRegex())
+                ),
+                captureMode = com.bylins.client.tabs.CaptureMode.COPY,
+                maxLines = 5000
+            )
+        )
+    }
+
     fun connect(host: String, port: Int) {
         scope.launch {
             try {
@@ -310,6 +335,9 @@ class ClientState {
         // Эхо команды в лог
         telnetClient.echoCommand(command)
 
+        // Логируем команду (без ANSI кодов)
+        logManager.log(command)
+
         // Увеличиваем счетчик отправленных команд
         sessionStats.incrementCommandsSent()
 
@@ -343,6 +371,9 @@ class ClientState {
             // Добавляем полученные байты в статистику
             sessionStats.addBytesReceived(text.toByteArray(Charsets.UTF_8).size)
         }
+
+        // Распределяем текст по вкладкам
+        tabManager.processText(text)
 
         // Разбиваем на строки и обрабатываем каждую триггерами
         val lines = text.split("\n")
@@ -455,29 +486,71 @@ class ClientState {
         return handled
     }
 
+    // Управление вкладками
+    fun addTab(tab: com.bylins.client.tabs.Tab) {
+        tabManager.addTab(tab)
+        saveConfig()
+    }
+
+    fun removeTab(id: String) {
+        tabManager.removeTab(id)
+        saveConfig()
+    }
+
+    fun setActiveTab(id: String) {
+        tabManager.setActiveTab(id)
+    }
+
+    fun getTab(id: String): com.bylins.client.tabs.Tab? {
+        return tabManager.getTab(id)
+    }
+
+    fun clearTab(id: String) {
+        tabManager.clearTab(id)
+    }
+
+    fun clearAllTabs() {
+        tabManager.clearAll()
+    }
+
     // Управление конфигурацией
     fun saveConfig() {
-        configManager.saveConfig(triggers.value, aliases.value, hotkeys.value, variableManager.getAllVariables())
+        configManager.saveConfig(
+            triggers.value,
+            aliases.value,
+            hotkeys.value,
+            variableManager.getAllVariables(),
+            tabManager.getTabsForSave()
+        )
     }
 
     fun exportConfig(file: File) {
-        configManager.exportConfig(file, triggers.value, aliases.value, hotkeys.value, variableManager.getAllVariables())
+        configManager.exportConfig(
+            file,
+            triggers.value,
+            aliases.value,
+            hotkeys.value,
+            variableManager.getAllVariables(),
+            tabManager.getTabsForSave()
+        )
     }
 
     fun importConfig(file: File) {
         val configData = configManager.importConfig(file)
 
-        // Очищаем текущие триггеры, алиасы, хоткеи и переменные
+        // Очищаем текущие триггеры, алиасы, хоткеи, переменные и вкладки
         triggerManager.clear()
         aliasManager.clear()
         hotkeyManager.clear()
         variableManager.clear()
+        // tabManager не очищаем полностью, т.к. главная вкладка всегда должна быть
 
         // Загружаем импортированные
         configData.triggers.forEach { addTrigger(it) }
         configData.aliases.forEach { addAlias(it) }
         configData.hotkeys.forEach { addHotkey(it) }
         variableManager.loadVariables(configData.variables)
+        tabManager.loadTabs(configData.tabs)
 
         // Сохраняем в основной конфиг
         saveConfig()

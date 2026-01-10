@@ -1,0 +1,145 @@
+package com.bylins.client.tabs
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * Менеджер вкладок
+ */
+class TabManager {
+    private val _tabs = MutableStateFlow<List<Tab>>(emptyList())
+    val tabs: StateFlow<List<Tab>> = _tabs
+
+    private val _activeTabId = MutableStateFlow<String?>(null)
+    val activeTabId: StateFlow<String?> = _activeTabId
+
+    /**
+     * Главная вкладка (всегда существует)
+     */
+    private val mainTab = Tab(
+        id = "main",
+        name = "Главная",
+        filters = emptyList(),
+        captureMode = CaptureMode.COPY
+    )
+
+    init {
+        // Добавляем главную вкладку
+        _tabs.value = listOf(mainTab)
+        _activeTabId.value = "main"
+    }
+
+    /**
+     * Добавляет новую вкладку
+     */
+    fun addTab(tab: Tab) {
+        if (_tabs.value.any { it.id == tab.id }) {
+            println("Tab with id ${tab.id} already exists")
+            return
+        }
+        _tabs.value = _tabs.value + tab
+    }
+
+    /**
+     * Удаляет вкладку
+     */
+    fun removeTab(id: String) {
+        if (id == "main") {
+            println("Cannot remove main tab")
+            return
+        }
+        _tabs.value = _tabs.value.filter { it.id != id }
+
+        // Если удалили активную вкладку, переключаемся на главную
+        if (_activeTabId.value == id) {
+            _activeTabId.value = "main"
+        }
+    }
+
+    /**
+     * Получает вкладку по ID
+     */
+    fun getTab(id: String): Tab? {
+        return _tabs.value.find { it.id == id }
+    }
+
+    /**
+     * Устанавливает активную вкладку
+     */
+    fun setActiveTab(id: String) {
+        if (_tabs.value.any { it.id == id }) {
+            _activeTabId.value = id
+        }
+    }
+
+    /**
+     * Обрабатывает входящий текст и распределяет его по вкладкам
+     * Возвращает текст, который должен остаться в главной вкладке
+     */
+    fun processText(text: String): String {
+        val lines = text.split("\n")
+        val mainLines = mutableListOf<String>()
+
+        for (line in lines) {
+            var capturedByMove = false
+
+            // Проверяем каждую вкладку (кроме главной)
+            for (tab in _tabs.value) {
+                if (tab.id == "main") continue
+
+                if (tab.shouldCapture(line)) {
+                    // Добавляем в эту вкладку
+                    tab.appendText(line)
+
+                    // Если режим MOVE, помечаем что не нужно добавлять в main
+                    if (tab.captureMode == CaptureMode.MOVE) {
+                        capturedByMove = true
+                    }
+                }
+            }
+
+            // Добавляем в главную вкладку, если не было захвачено с MOVE
+            if (!capturedByMove) {
+                mainLines.add(line)
+            }
+        }
+
+        val mainText = mainLines.joinToString("\n")
+
+        // Добавляем в главную вкладку
+        if (mainText.isNotEmpty()) {
+            mainTab.appendText(mainText)
+        }
+
+        return mainText
+    }
+
+    /**
+     * Очищает все вкладки
+     */
+    fun clearAll() {
+        _tabs.value.forEach { it.clear() }
+    }
+
+    /**
+     * Очищает конкретную вкладку
+     */
+    fun clearTab(id: String) {
+        getTab(id)?.clear()
+    }
+
+    /**
+     * Загружает вкладки из списка
+     */
+    fun loadTabs(tabs: List<Tab>) {
+        // Сохраняем главную вкладку и добавляем загруженные
+        _tabs.value = listOf(mainTab) + tabs
+    }
+
+    /**
+     * Возвращает все вкладки (кроме главной) для сохранения
+     */
+    fun getTabsForSave(): List<Tab> {
+        return _tabs.value.filter { it.id != "main" }
+    }
+}

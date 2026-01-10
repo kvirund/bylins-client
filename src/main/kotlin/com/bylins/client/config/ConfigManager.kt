@@ -2,6 +2,8 @@ package com.bylins.client.config
 
 import com.bylins.client.aliases.Alias
 import com.bylins.client.hotkeys.Hotkey
+import com.bylins.client.tabs.Tab
+import com.bylins.client.tabs.TabDto
 import com.bylins.client.triggers.Trigger
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -26,15 +28,16 @@ class ConfigManager {
     }
 
     /**
-     * Сохраняет триггеры, алиасы, хоткеи и переменные в файл
+     * Сохраняет триггеры, алиасы, хоткеи, переменные и вкладки в файл
      */
-    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>) {
+    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>) {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
                 aliases = aliases.map { AliasDto.fromAlias(it) },
                 hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) },
-                variables = variables
+                variables = variables,
+                tabs = tabs.map { TabDto.fromTab(it) }
             )
 
             val jsonString = json.encodeToString(config)
@@ -48,13 +51,13 @@ class ConfigManager {
     }
 
     /**
-     * Загружает триггеры, алиасы, хоткеи и переменные из файла
+     * Загружает триггеры, алиасы, хоткеи, переменные и вкладки из файла
      */
     fun loadConfig(): ConfigData {
         try {
             if (!Files.exists(configFile)) {
                 println("Config file not found: $configFile")
-                return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap())
+                return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList())
             }
 
             val jsonString = Files.readString(configFile)
@@ -64,26 +67,28 @@ class ConfigManager {
             val aliases = config.aliases.map { it.toAlias() }
             val hotkeys = config.hotkeys.mapNotNull { it.toHotkey() }
             val variables = config.variables
+            val tabs = config.tabs.map { it.toTab() }
 
-            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables)")
-            return ConfigData(triggers, aliases, hotkeys, variables)
+            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs)")
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs)
         } catch (e: Exception) {
             println("Failed to load config: ${e.message}")
             e.printStackTrace()
-            return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap())
+            return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList())
         }
     }
 
     /**
      * Экспортирует конфигурацию в указанный файл
      */
-    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>) {
+    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>) {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
                 aliases = aliases.map { AliasDto.fromAlias(it) },
                 hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) },
-                variables = variables
+                variables = variables,
+                tabs = tabs.map { TabDto.fromTab(it) }
             )
 
             val jsonString = json.encodeToString(config)
@@ -109,9 +114,10 @@ class ConfigManager {
             val aliases = config.aliases.map { it.toAlias() }
             val hotkeys = config.hotkeys.mapNotNull { it.toHotkey() }
             val variables = config.variables
+            val tabs = config.tabs.map { it.toTab() }
 
-            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables)")
-            return ConfigData(triggers, aliases, hotkeys, variables)
+            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs)")
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs)
         } catch (e: Exception) {
             println("Failed to import config: ${e.message}")
             e.printStackTrace()
@@ -137,5 +143,6 @@ data class ConfigData(
     val triggers: List<Trigger>,
     val aliases: List<Alias>,
     val hotkeys: List<Hotkey>,
-    val variables: Map<String, String>
+    val variables: Map<String, String>,
+    val tabs: List<Tab>
 )
