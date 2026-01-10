@@ -91,6 +91,11 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 5,
                         onClick = { selectedTab = 5 },
+                        text = { Text("Карта") }
+                    )
+                    Tab(
+                        selected = selectedTab == 6,
+                        onClick = { selectedTab = 6 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -153,6 +158,13 @@ fun MainWindow() {
                             )
                         }
                         5 -> {
+                            // Панель карты
+                            MapPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        6 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,
