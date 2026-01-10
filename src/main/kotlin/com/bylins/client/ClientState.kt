@@ -369,8 +369,9 @@ class ClientState {
 
     /**
      * Обрабатывает входящую строку текста (вызывается из TelnetClient)
+     * Возвращает модифицированный текст с примененными colorize от триггеров
      */
-    fun processIncomingText(text: String) {
+    fun processIncomingText(text: String): String {
         // Логируем весь полученный текст
         if (text.isNotEmpty()) {
             logManager.log(text)
@@ -383,15 +384,93 @@ class ClientState {
         tabManager.processText(text)
 
         // Разбиваем на строки и обрабатываем каждую триггерами
-        val lines = text.split("\n")
+        val ansiParser = com.bylins.client.ui.AnsiParser()
+        val lineDelimiter = Regex("(\r\n|\r|\n)")
+        val lines = text.split(lineDelimiter)
+        val modifiedLines = mutableListOf<String>()
+
         for (line in lines) {
-            if (line.isNotEmpty()) {
-                val matches = triggerManager.processLine(line)
-                // Увеличиваем счетчик на количество сработавших триггеров
-                if (matches.isNotEmpty()) {
-                    sessionStats.incrementTriggersActivated()
-                }
+            if (line.isEmpty() || line.matches(lineDelimiter)) {
+                // Сохраняем разделители как есть
+                modifiedLines.add(line)
+                continue
             }
+
+            // Удаляем ANSI-коды перед проверкой триггерами
+            val cleanLine = ansiParser.stripAnsi(line)
+            val matches = triggerManager.processLine(cleanLine)
+
+            // Увеличиваем счетчик на количество сработавших триггеров
+            if (matches.isNotEmpty()) {
+                sessionStats.incrementTriggersActivated()
+
+                // Применяем colorize от первого сработавшего триггера с colorize
+                val triggerWithColor = matches.firstOrNull { it.trigger.colorize != null }
+                if (triggerWithColor != null) {
+                    val colorize = triggerWithColor.trigger.colorize!!
+                    val colorizedLine = applyColorize(cleanLine, colorize)
+                    modifiedLines.add(colorizedLine)
+                } else {
+                    modifiedLines.add(line)
+                }
+            } else {
+                modifiedLines.add(line)
+            }
+        }
+
+        return modifiedLines.joinToString("")
+    }
+
+    /**
+     * Применяет colorize к строке, добавляя ANSI escape-коды
+     */
+    private fun applyColorize(text: String, colorize: com.bylins.client.triggers.TriggerColorize): String {
+        val codes = mutableListOf<Int>()
+
+        // Bold
+        if (colorize.bold) {
+            codes.add(1)
+        }
+
+        // Foreground color
+        if (colorize.foreground != null) {
+            val color = parseColor(colorize.foreground)
+            if (color != null) {
+                codes.addAll(listOf(38, 2, color.red, color.green, color.blue))
+            }
+        }
+
+        // Background color
+        if (colorize.background != null) {
+            val color = parseColor(colorize.background)
+            if (color != null) {
+                codes.addAll(listOf(48, 2, color.red, color.green, color.blue))
+            }
+        }
+
+        if (codes.isEmpty()) {
+            return text
+        }
+
+        val codeString = codes.joinToString(";")
+        return "\u001B[${codeString}m${text}\u001B[0m"
+    }
+
+    private data class RGB(val red: Int, val green: Int, val blue: Int)
+
+    /**
+     * Парсит hex-цвет в RGB
+     */
+    private fun parseColor(hex: String): RGB? {
+        return try {
+            val cleanHex = hex.trim().removePrefix("#")
+            if (cleanHex.length != 6) return null
+            val r = cleanHex.substring(0, 2).toInt(16)
+            val g = cleanHex.substring(2, 4).toInt(16)
+            val b = cleanHex.substring(4, 6).toInt(16)
+            RGB(r, g, b)
+        } catch (e: Exception) {
+            null
         }
     }
 

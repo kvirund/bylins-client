@@ -77,18 +77,22 @@ class TabManager {
      * Возвращает текст, который должен остаться в главной вкладке
      */
     fun processText(text: String): String {
+        val ansiParser = com.bylins.client.ui.AnsiParser()
         val lines = text.split("\n")
         val mainLines = mutableListOf<String>()
 
         for (line in lines) {
             var capturedByMove = false
 
+            // Удаляем ANSI-коды для проверки фильтров
+            val cleanLine = ansiParser.stripAnsi(line)
+
             // Проверяем каждую вкладку (кроме главной)
             for (tab in _tabs.value) {
                 if (tab.id == "main") continue
 
-                if (tab.shouldCapture(line)) {
-                    // Добавляем в эту вкладку
+                if (tab.shouldCapture(cleanLine)) {
+                    // Добавляем в эту вкладку (оригинальную строку с ANSI-кодами)
                     tab.appendText(line)
 
                     // Если режим MOVE, помечаем что не нужно добавлять в main

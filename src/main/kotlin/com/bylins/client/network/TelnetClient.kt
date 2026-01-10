@@ -97,7 +97,10 @@ class TelnetClient(private val clientState: ClientState? = null) {
      * Добавляет произвольный текст в output (для системных сообщений)
      */
     fun addToOutput(text: String) {
-        _receivedData.value += text + "\n"
+        val textWithNewline = text + "\n"
+        // Обрабатываем текст триггерами и получаем модифицированную версию с colorize
+        val modifiedText = clientState?.processIncomingText(textWithNewline) ?: textWithNewline
+        _receivedData.value += modifiedText
     }
 
     private fun startReading() {
@@ -116,10 +119,9 @@ class TelnetClient(private val clientState: ClientState? = null) {
                     val (text, telnetCommands) = telnetParser.parse(data)
 
                     if (text.isNotEmpty()) {
-                        _receivedData.value += text
-
-                        // Обрабатываем текст триггерами
-                        clientState?.processIncomingText(text)
+                        // Обрабатываем текст триггерами и получаем модифицированную версию с colorize
+                        val modifiedText = clientState?.processIncomingText(text) ?: text
+                        _receivedData.value += modifiedText
                     }
 
                     // Обработка telnet команд

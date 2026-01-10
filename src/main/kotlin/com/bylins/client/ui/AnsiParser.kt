@@ -194,4 +194,41 @@ class AnsiParser {
             textDecoration = if (underline) TextDecoration.Underline else null
         )
     }
+
+    /**
+     * Удаляет все ANSI escape последовательности из текста
+     */
+    fun stripAnsi(text: String): String {
+        val result = StringBuilder()
+        var currentPos = 0
+
+        while (currentPos < text.length) {
+            val escPos = text.indexOf(ESC, currentPos)
+
+            if (escPos == -1) {
+                // Нет больше escape последовательностей
+                result.append(text.substring(currentPos))
+                break
+            }
+
+            // Добавляем текст до escape последовательности
+            if (escPos > currentPos) {
+                result.append(text.substring(currentPos, escPos))
+            }
+
+            // Пропускаем escape последовательность
+            if (escPos + 1 < text.length && text[escPos + 1] == '[') {
+                val mPos = text.indexOf('m', escPos + 2)
+                if (mPos != -1) {
+                    currentPos = mPos + 1
+                } else {
+                    currentPos = escPos + 1
+                }
+            } else {
+                currentPos = escPos + 1
+            }
+        }
+
+        return result.toString()
+    }
 }
