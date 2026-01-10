@@ -1,194 +1,311 @@
-# Скрипты для Bylins MUD Client
+# Система скриптов Bylins MUD Client
 
-Эта директория для пользовательских скриптов на Python, Lua, JavaScript, или Perl.
+Клиент поддерживает скрипты на **JavaScript**, **Python**, **Lua** и **Perl**.
 
-## Поддерживаемые языки
+## Статус поддержки языков
 
-- **Python** (`.py`) - через GraalVM Python или Jython
-- **Lua** (`.lua`) - через LuaJ
-- **JavaScript** (`.js`) - через GraalVM JS
-- **Perl** (`.pl`) - через внешний интерпретатор
+- **JavaScript** (.js) - ✅ Полностью работает (Nashorn/GraalVM встроен в JVM)
+- **Python** (.py) - 🔄 Требует GraalVM Python или Jython (в разработке)
+- **Lua** (.lua) - 🔄 Требует LuaJ (в разработке)
+- **Perl** (.pl) - 🔄 Требует установленный Perl (в разработке)
 
-## Как использовать
+## Быстрый старт
 
-1. Положите свой скрипт в эту директорию
-2. Скрипт автоматически загрузится при запуске клиента
-3. Или используйте команду `/reload` для перезагрузки
+1. Поместите `.js` скрипты в директорию `scripts/`
+2. Скрипты загружаются автоматически при запуске клиента
+3. Или перезагрузите скрипт через UI панель
 
-## Структура скрипта
+## JavaScript API
 
-Каждый скрипт должен иметь функцию `on_load(api)`:
+### Базовые функции
 
-### Python пример
-```python
-# scripts/my_script.py
-def on_load(api):
-    api.echo("Script loaded!", "green")
-    api.add_trigger(r"pattern", on_trigger)
-
-def on_trigger(api, match):
-    api.send("some command")
-```
-
-### Lua пример
-```lua
--- scripts/my_script.lua
-function on_load(api)
-    api.echo("Script loaded!", "green")
-    api.add_trigger("pattern", on_trigger)
-end
-
-function on_trigger(api, match)
-    api.send("some command")
-end
-```
-
-### JavaScript пример
 ```javascript
-// scripts/my_script.js
+// Отправить команду на сервер
+send("look");
+
+// Вывести текст в лог клиента
+echo("Hello from script!");
+log("Debug message");
+print("Info message");
+```
+
+### События (хуки)
+
+```javascript
+// При загрузке скрипта
 function on_load(api) {
-    api.echo("Script loaded!", "green");
-    api.add_trigger("pattern", on_trigger);
+    log("Script loaded!");
 }
 
-function on_trigger(api, match) {
-    api.send("some command");
+// При выгрузке скрипта
+function on_unload() {
+    log("Script unloaded!");
+}
+
+// При подключении к серверу
+function on_connect() {
+    send("look");
+}
+
+// При отключении
+function on_disconnect() {
+    log("Disconnected");
+}
+
+// При получении строки от сервера
+function on_line(line) {
+    if (line.includes("мертв")) {
+        send("взять все труп");
+    }
+}
+
+// При отправке команды
+function on_command(command) {
+    log("Sending: " + command);
+}
+
+// При получении MSDP данных
+function on_msdp(data) {
+    var hp = api.getMsdpValue("HEALTH");
+    log("HP: " + hp);
+}
+
+// При входе в новую комнату
+function on_room_enter(room) {
+    log("Entered: " + room.name);
 }
 ```
 
-## API Reference
+### Триггеры
 
-### api.send(command)
-Отправить команду на сервер
-```python
-api.send("north")
-api.send("cast 'cure serious'")
+```javascript
+function on_load(api) {
+    // Простой триггер
+    addTrigger("^(.+) говорит вам: (.+)", function(line, groups) {
+        var who = groups[1];
+        var message = groups[2];
+        echo("Tell from " + who + ": " + message);
+    });
+
+    // Триггер на лут
+    addTrigger("^(.+) мертв\\.$", function(line, groups) {
+        send("взять все труп");
+    });
+}
 ```
 
-### api.echo(text, color?)
-Вывести текст в окно клиента
-```python
-api.echo("Hello, world!")
-api.echo("Warning!", "red")
+### Алиасы
+
+```javascript
+function on_load(api) {
+    // Простой алиас
+    addAlias("^gg$", "say Hi everyone!");
+
+    // Алиас с параметрами (regex $1, $2...)
+    addAlias("^k (.+)$", "kill $1");
+
+    // Speedwalk: #3n = север три раза
+    addAlias("^#(\\d+)([nsewud])$", "");
+}
+
+function on_command(command) {
+    var match = command.match(/^#(\d+)([nsewud])$/);
+    if (match) {
+        var count = parseInt(match[1]);
+        var dir = match[2];
+        for (var i = 0; i < count; i++) {
+            send(dir);
+        }
+        return true; // Блокируем отправку оригинальной команды
+    }
+    return false;
+}
 ```
 
-### api.add_trigger(pattern, callback)
-Добавить триггер на текст от сервера
-```python
-def on_hp_change(api, match):
-    hp = match.group(1)
-    api.echo(f"HP changed: {hp}")
+### Таймеры
 
-api.add_trigger(r"HP: (\d+)", on_hp_change)
+```javascript
+function on_load(api) {
+    // Одноразовый таймер (5 секунд)
+    setTimeout(function() {
+        send("look");
+    }, 5000);
+
+    // Повторяющийся таймер (каждые 10 секунд)
+    var intervalId = setInterval(function() {
+        send("score");
+    }, 10000);
+
+    // Остановить таймер
+    // clearTimer(intervalId);
+}
 ```
 
-### api.add_alias(pattern, callback)
-Добавить алиас (сокращение команды)
-```python
-def go_home(api, args):
-    api.send("recall")
-    api.send("north")
-    api.send("enter house")
+### Переменные
 
-api.add_alias("^gh$", go_home)
+```javascript
+function on_load(api) {
+    // Установить переменную
+    setVar("target", "goblin");
+
+    // Получить переменную
+    var target = getVar("target");
+
+    // Использовать в командах
+    send("kill " + target);
+
+    // Триггер сохраняет цель
+    addTrigger("^Вы атакуете (.+)!$", function(line, groups) {
+        setVar("current_target", groups[1]);
+    });
+}
 ```
 
-### api.get_variable(name) / api.set_variable(name, value)
-Глобальные переменные (общие между скриптами)
-```python
-count = api.get_variable("kill_count") or 0
-count += 1
-api.set_variable("kill_count", count)
+### MSDP данные
+
+```javascript
+function on_msdp(data) {
+    var hp = api.getMsdpValue("HEALTH");
+    var maxHp = api.getMsdpValue("HEALTH_MAX");
+    var mana = api.getMsdpValue("MANA");
+
+    if (hp < maxHp * 0.3 && mana > 50) {
+        send("cast 'cure serious'");
+    }
+}
 ```
 
-### api.get_msdp_value(key)
-Получить данные MSDP от сервера
-```python
-health = api.get_msdp_value("HEALTH")
-max_health = api.get_msdp_value("MAX_HEALTH")
-room_name = api.get_msdp_value("ROOM_NAME")
-```
+### Автомаппер
 
-### api.get_mapper_room()
-Получить текущую комнату от автомаппера
-```python
-room = api.get_mapper_room()
-if room:
-    api.echo(f"Current room: {room.name}")
+```javascript
+function on_room_enter(room) {
+    var roomData = api.getCurrentRoom();
+
+    log("Вошли в комнату: " + roomData.name);
+    log("Координаты: " + roomData.x + "," + roomData.y + "," + roomData.z);
+
+    // Установить заметку
+    api.setRoomNote(roomData.id, "Здесь водятся гоблины");
+
+    // Покрасить комнату
+    api.setRoomColor(roomData.id, "#FF0000");
+}
 ```
 
 ## Примеры скриптов
 
-### Auto-Heal
-```python
-# scripts/auto_heal.py
-def on_load(api):
-    api.add_trigger(r"HP: (\d+)/(\d+)", check_hp)
+### Пример 1: Автохил
 
-def check_hp(api, match):
-    hp = int(match.group(1))
-    max_hp = int(match.group(2))
+```javascript
+// scripts/auto_heal.js
+function on_load(api) {
+    log("Auto-heal script loaded");
+}
 
-    if hp < max_hp * 0.3:
-        api.send("cast 'cure serious'")
+function on_msdp(data) {
+    var hp = api.getMsdpValue("HEALTH");
+    var maxHp = api.getMsdpValue("HEALTH_MAX");
+    var mana = api.getMsdpValue("MANA");
+
+    if (hp && maxHp && mana) {
+        var hpPercent = (hp / maxHp) * 100;
+        if (hpPercent < 30 && mana > 50) {
+            send("cast 'cure serious'");
+        }
+    }
+}
 ```
 
-### Kill Counter
-```python
-# scripts/kill_counter.py
-def on_load(api):
-    api.set_variable("kills", 0)
-    api.add_trigger(r"^(.+) мертв", on_kill)
-    api.add_alias("^kills$", show_kills)
+### Пример 2: Автолут
 
-def on_kill(api, match):
-    kills = api.get_variable("kills") or 0
-    kills += 1
-    api.set_variable("kills", kills)
-    api.echo(f"Total kills: {kills}", "yellow")
-
-def show_kills(api, args):
-    kills = api.get_variable("kills") or 0
-    api.echo(f"You have {kills} kills this session", "green")
+```javascript
+// scripts/auto_loot.js
+function on_load(api) {
+    addTrigger("^(.+) мертв\\.$", function(line, groups) {
+        var mob = groups[1];
+        send("взять все труп");
+        echo("Собираем лут с: " + mob);
+    });
+}
 ```
 
-### Auto-Loot
-```lua
--- scripts/auto_loot.lua
-function on_load(api)
-    api.add_trigger("^(.+) мертв", on_kill)
-end
+### Пример 3: Статистика боя
 
-function on_kill(api, match)
-    local corpse = match[1]
-    api.send("взять все " .. corpse)
-    api.send("взять все.монета труп")
-end
+```javascript
+// scripts/combat_stats.js
+var damageDealt = 0;
+var damageReceived = 0;
+var killsCount = 0;
+
+function on_load(api) {
+    // Урон нанесенный
+    addTrigger("^Вы попали по .+ на (\\d+) урона\\.$", function(line, groups) {
+        damageDealt += parseInt(groups[1]);
+    });
+
+    // Урон полученный
+    addTrigger("^.+ попал по вам на (\\d+) урона\\.$", function(line, groups) {
+        damageReceived += parseInt(groups[1]);
+    });
+
+    // Убийства
+    addTrigger("^(.+) мертв\\.$", function(line, groups) {
+        killsCount++;
+    });
+
+    // Показать статистику
+    addAlias("^stats$", "");
+}
+
+function on_command(command) {
+    if (command === "stats") {
+        echo("=== Статистика боя ===");
+        echo("Убито мобов: " + killsCount);
+        echo("Нанесено урона: " + damageDealt);
+        echo("Получено урона: " + damageReceived);
+        return true;
+    }
+    return false;
+}
 ```
 
-## Зависимости
+### Пример 4: Speedwalk
 
-Для Python скриптов можно использовать `requirements.txt`:
-```
-# scripts/requirements.txt
-requests==2.31.0
-pandas==2.0.0
-```
+```javascript
+// scripts/speedwalk.js
+function on_load(api) {
+    addAlias("^#(\\d+)([nsewud]+)$", "");
+}
 
-Клиент автоматически установит зависимости при первой загрузке.
+function on_command(command) {
+    var match = command.match(/^#(\d+)([nsewud]+)$/);
+    if (match) {
+        var count = parseInt(match[1]);
+        var dirs = match[2];
+
+        for (var i = 0; i < count; i++) {
+            for (var j = 0; j < dirs.length; j++) {
+                send(dirs[j]);
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+// Использование: #5n2e = 5 раз север, 2 раза восток
+```
 
 ## Отладка
 
-Используйте `print()` или `api.echo()` для отладки:
-```python
-def on_trigger(api, match):
-    api.echo(f"Debug: matched {match.group(0)}", "cyan")
-    # Ваш код
-```
+- Используйте `log(message)` для вывода отладочной информации
+- Ошибки в скриптах выводятся в консоль клиента
+- Перезагружайте скрипты после изменений
 
 ## Примечания
 
-- Скрипты выполняются в песочнице (sandbox) для безопасности
-- Не используйте блокирующие операции (time.sleep, бесконечные циклы)
-- Используйте регулярные выражения для триггеров
-- Скрипты можно перезагружать на лету без перезапуска клиента
+- Скрипты выполняются в изолированной среде
+- JavaScript работает из коробки (встроен в JVM)
+- Python, Lua, Perl требуют дополнительных библиотек (в разработке)
+- Скрипты загружаются автоматически при запуске клиента
+- Hot reload поддерживается
