@@ -48,6 +48,7 @@ fun OutputPanel(
         if (activeTab != null) {
             TabContent(
                 tab = activeTab,
+                tabId = activeTabId,
                 receivedData = receivedData,
                 modifier = Modifier.fillMaxSize()
             )
@@ -58,6 +59,7 @@ fun OutputPanel(
 @Composable
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
+    tabId: String?, // Активный ID вкладки для отслеживания переключений
     receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier
 ) {
@@ -82,12 +84,24 @@ fun TabContent(
         }
     }
 
+    // Запоминаем ID вкладки для отслеживания переключения
+    val prevTabId = remember { mutableStateOf<String?>(null) }
+
+    // Автопрокрутка вниз при переключении вкладки
+    LaunchedEffect(tabId) {
+        if (prevTabId.value != null && tabId != prevTabId.value) {
+            // Переключились на другую вкладку - прокручиваем в конец
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+        prevTabId.value = tabId
+    }
+
     // Запоминаем предыдущее значение текста
     val prevText = remember { mutableStateOf(displayText) }
 
-    // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста (не при переключении вкладок)
+    // Автопрокрутка вниз при добавлении нового текста
     LaunchedEffect(displayText) {
-        // Прокручиваем только если текст изменился (добавился новый), а не просто переключили вкладку
+        // Прокручиваем только если текст изменился (добавился новый)
         if (displayText != prevText.value && displayText.startsWith(prevText.value)) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
