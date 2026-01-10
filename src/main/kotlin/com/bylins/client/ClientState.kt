@@ -170,6 +170,18 @@ class ClientState {
             )
         )
 
+        // Пример сохранения переменной из триггера (выключен по умолчанию)
+        addTrigger(
+            com.bylins.client.triggers.Trigger(
+                id = "capture-target",
+                name = "Capture Target",
+                pattern = "Вы атакуете (.+)!".toRegex(),
+                commands = listOf("#var target $1"),
+                enabled = false, // Выключен по умолчанию - пример
+                priority = 10
+            )
+        )
+
         // Триггер для gag болталки (выключен по умолчанию)
         addTrigger(
             com.bylins.client.triggers.Trigger(
@@ -251,6 +263,10 @@ class ClientState {
                 sessionStats.startSession()
                 // Автоматически запускаем логирование
                 logManager.startLogging(stripAnsi = true)
+                // Устанавливаем системные переменные
+                variableManager.setVariable("host", host)
+                variableManager.setVariable("port", port.toString())
+                variableManager.setVariable("connected", "1")
             } catch (e: Exception) {
                 _errorMessage.value = "Ошибка подключения: ${e.message}"
                 e.printStackTrace()
@@ -309,6 +325,11 @@ class ClientState {
 
     fun updateMsdpData(data: Map<String, Any>) {
         _msdpData.value = _msdpData.value + data
+
+        // Автоматически обновляем переменные из MSDP
+        data.forEach { (key, value) ->
+            variableManager.setVariable(key.lowercase(), value.toString())
+        }
     }
 
     /**
