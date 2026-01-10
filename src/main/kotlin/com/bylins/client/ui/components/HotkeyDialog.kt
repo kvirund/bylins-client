@@ -112,25 +112,33 @@ fun HotkeyDialog(
                             )
                         }
 
-                        DropdownMenu(
-                            expanded = keyDropdownExpanded,
-                            onDismissRequest = { keyDropdownExpanded = false },
-                            modifier = Modifier
-                                .fillMaxWidth(0.8f)
-                                .heightIn(max = 300.dp)
+                        MaterialTheme(
+                            colors = darkColors(
+                                surface = Color(0xFF2D2D2D),
+                                onSurface = Color.White,
+                                background = Color(0xFF2D2D2D)
+                            )
                         ) {
-                            availableKeys.forEach { key ->
-                                DropdownMenuItem(
-                                    onClick = {
-                                        selectedKey = key
-                                        keyDropdownExpanded = false
+                            DropdownMenu(
+                                expanded = keyDropdownExpanded,
+                                onDismissRequest = { keyDropdownExpanded = false },
+                                modifier = Modifier
+                                    .fillMaxWidth(0.8f)
+                                    .heightIn(max = 300.dp)
+                            ) {
+                                availableKeys.forEach { key ->
+                                    DropdownMenuItem(
+                                        onClick = {
+                                            selectedKey = key
+                                            keyDropdownExpanded = false
+                                        }
+                                    ) {
+                                        Text(
+                                            text = Hotkey.getKeyName(key),
+                                            fontFamily = FontFamily.Monospace,
+                                            color = if (key == selectedKey) Color(0xFF00FF00) else Color.White
+                                        )
                                     }
-                                ) {
-                                    Text(
-                                        text = Hotkey.getKeyName(key),
-                                        fontFamily = FontFamily.Monospace,
-                                        color = if (key == selectedKey) Color(0xFF00FF00) else Color.White
-                                    )
                                 }
                             }
                         }
@@ -257,7 +265,8 @@ fun HotkeyDialog(
                     // Enabled
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 8.dp)
                     ) {
                         Checkbox(
                             checked = enabled,
@@ -274,16 +283,17 @@ fun HotkeyDialog(
                             fontFamily = FontFamily.Monospace
                         )
                     }
+                }
 
-                    // Error message
-                    if (errorMessage != null) {
-                        Text(
-                            text = errorMessage!!,
-                            color = Color(0xFFFF5555),
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
+                // Error message (вне формы)
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = Color(0xFFFF5555),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
 
                 // Кнопки
