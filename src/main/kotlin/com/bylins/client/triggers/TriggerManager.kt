@@ -4,7 +4,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class TriggerManager(
-    private val onCommand: (String) -> Unit
+    private val onCommand: (String) -> Unit,
+    private val onTriggerFired: ((Trigger, String, Map<Int, String>) -> Unit)? = null
 ) {
     private val _triggers = MutableStateFlow<List<Trigger>>(emptyList())
     val triggers: StateFlow<List<Trigger>> = _triggers
@@ -47,6 +48,10 @@ class TriggerManager(
             val matchResult = trigger.pattern.find(line)
             if (matchResult != null) {
                 matches.add(TriggerMatch(trigger, matchResult, line))
+
+                // Уведомляем о срабатывании триггера
+                val groups = matchResult.groupValues.mapIndexed { index, value -> index to value }.toMap()
+                onTriggerFired?.invoke(trigger, line, groups)
 
                 // Выполняем команды триггера
                 executeTrigger(trigger, matchResult)

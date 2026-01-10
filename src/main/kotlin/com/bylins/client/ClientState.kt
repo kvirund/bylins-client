@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -24,15 +25,31 @@ class ClientState {
     private var isInitializing = true
 
     // Менеджеры инициализируются первыми
-    private val aliasManager = AliasManager { command ->
-        // Callback для отправки команд из алиасов (без рекурсии)
-        sendRaw(command)
-    }
+    private val aliasManager = AliasManager(
+        onCommand = { command ->
+            // Callback для отправки команд из алиасов (без рекурсии)
+            sendRaw(command)
+        },
+        onAliasFired = { alias, command, groups ->
+            // Уведомляем скрипты о срабатывании алиаса
+            if (::scriptManager.isInitialized) {
+                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ALIAS, alias, command, groups)
+            }
+        }
+    )
 
-    private val triggerManager = TriggerManager { command ->
-        // Callback для отправки команд из триггеров
-        send(command)
-    }
+    private val triggerManager = TriggerManager(
+        onCommand = { command ->
+            // Callback для отправки команд из триггеров
+            send(command)
+        },
+        onTriggerFired = { trigger, line, groups ->
+            // Уведомляем скрипты о срабатывании триггера
+            if (::scriptManager.isInitialized) {
+                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_TRIGGER, trigger, line, groups)
+            }
+        }
+    )
 
     private val hotkeyManager = HotkeyManager { command ->
         // Callback для отправки команд из хоткеев
@@ -43,12 +60,22 @@ class ClientState {
     private val sessionStats = SessionStats()
     private val variableManager = VariableManager()
     private val tabManager = TabManager()
-    private val mapManager = com.bylins.client.mapper.MapManager()
+    private val mapManager = com.bylins.client.mapper.MapManager(
+        onRoomEnter = { room ->
+            // Уведомляем скрипты о входе в комнату
+            if (::scriptManager.isInitialized) {
+                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ROOM_ENTER, room)
+            }
+        }
+    )
     private val roomParser = com.bylins.client.mapper.RoomParser()
 
     private var lastCommand: String? = null
 
     private val telnetClient = TelnetClient(this)
+
+    // Скриптинг - инициализируется позже
+    private lateinit var scriptManager: com.bylins.client.scripting.ScriptManager
 
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
     val receivedData: StateFlow<String> = telnetClient.receivedData
@@ -84,6 +111,10 @@ class ClientState {
     val mapEnabled = mapManager.mapEnabled
 
     init {
+        // Инициализируем скриптинг
+        initializeScripting()
+
+        // Продолжаем стандартную инициализацию
         // Пытаемся загрузить сохранённую конфигурацию
         val configData = configManager.loadConfig()
 
@@ -308,6 +339,10 @@ class ClientState {
                 variableManager.setVariable("host", host)
                 variableManager.setVariable("port", port.toString())
                 variableManager.setVariable("connected", "1")
+                // Уведомляем скрипты о подключении
+                if (::scriptManager.isInitialized) {
+                    scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_CONNECT)
+                }
             } catch (e: Exception) {
                 _errorMessage.value = "Ошибка подключения: ${e.message}"
                 e.printStackTrace()
@@ -321,6 +356,10 @@ class ClientState {
         sessionStats.stopSession()
         // Останавливаем логирование
         logManager.stopLogging()
+        // Уведомляем скрипты
+        if (::scriptManager.isInitialized) {
+            scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_DISCONNECT)
+        }
     }
 
     fun send(command: String) {
@@ -351,6 +390,11 @@ class ClientState {
         // Сохраняем команду для автомаппера
         lastCommand = command
 
+        // Уведомляем скрипты
+        if (::scriptManager.isInitialized) {
+            scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_COMMAND, command)
+        }
+
         // Эхо команды в лог
         telnetClient.echoCommand(command)
 
@@ -376,6 +420,11 @@ class ClientState {
         // Автоматически обновляем переменные из MSDP
         data.forEach { (key, value) ->
             variableManager.setVariable(key.lowercase(), value.toString())
+        }
+
+        // Уведомляем скрипты
+        if (::scriptManager.isInitialized) {
+            scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_MSDP, data)
         }
     }
 
@@ -413,6 +462,12 @@ class ClientState {
 
             // Удаляем ANSI-коды перед проверкой триггерами
             val cleanLine = ansiParser.stripAnsi(line)
+
+            // Уведомляем скрипты о новой строке
+            if (::scriptManager.isInitialized) {
+                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_LINE, cleanLine)
+            }
+
             val matches = triggerManager.processLine(cleanLine)
 
             // Увеличиваем счетчик на количество сработавших триггеров
@@ -812,4 +867,177 @@ class ClientState {
     fun importMap(rooms: Map<String, com.bylins.client.mapper.Room>) {
         mapManager.importMap(rooms)
     }
+
+    // Управление скриптами
+    private fun initializeScripting() {
+        // Создаем реализацию ScriptAPI
+        val scriptAPI = com.bylins.client.scripting.ScriptAPIImpl(
+            sendCommand = { command -> send(command) },
+            echoText = { text -> telnetClient.addToOutput(text) },
+            logMessage = { message -> println(message) },
+            triggerActions = createTriggerActions(),
+            aliasActions = createAliasActions(),
+            timerActions = createTimerActions(),
+            variableActions = createVariableActions(),
+            msdpActions = createMsdpActions(),
+            mapperActions = createMapperActions()
+        )
+
+        // Создаем ScriptManager
+        scriptManager = com.bylins.client.scripting.ScriptManager(scriptAPI)
+
+        // Регистрируем движки
+        scriptManager.registerEngine(com.bylins.client.scripting.engines.JavaScriptEngine())
+        scriptManager.registerEngine(com.bylins.client.scripting.engines.PythonEngine())
+        scriptManager.registerEngine(com.bylins.client.scripting.engines.LuaEngine())
+        scriptManager.registerEngine(com.bylins.client.scripting.engines.PerlEngine())
+
+        // Автозагрузка скриптов
+        scriptManager.autoLoadScripts()
+    }
+
+    private fun createTriggerActions() = object : com.bylins.client.scripting.TriggerActions {
+        override fun addTrigger(pattern: String, callback: (String, Map<Int, String>) -> Unit): String {
+            val triggerId = java.util.UUID.randomUUID().toString()
+            // TODO: Добавить триггер из скрипта
+            return triggerId
+        }
+
+        override fun removeTrigger(id: String) {
+            removeTrigger(id)
+        }
+
+        override fun enableTrigger(id: String) {
+            enableTrigger(id)
+        }
+
+        override fun disableTrigger(id: String) {
+            disableTrigger(id)
+        }
+    }
+
+    private fun createAliasActions() = object : com.bylins.client.scripting.AliasActions {
+        override fun addAlias(pattern: String, replacement: String): String {
+            val aliasId = java.util.UUID.randomUUID().toString()
+            // TODO: Добавить алиас из скрипта
+            return aliasId
+        }
+
+        override fun removeAlias(id: String) {
+            removeAlias(id)
+        }
+    }
+
+    private fun createTimerActions() = object : com.bylins.client.scripting.TimerActions {
+        private val timers = mutableMapOf<String, kotlinx.coroutines.Job>()
+
+        override fun setTimeout(delayMs: Long, callback: () -> Unit): String {
+            val timerId = java.util.UUID.randomUUID().toString()
+            val job = scope.launch {
+                kotlinx.coroutines.delay(delayMs)
+                try {
+                    callback()
+                } catch (e: Exception) {
+                    println("[Timer] Error in setTimeout: ${e.message}")
+                }
+                timers.remove(timerId)
+            }
+            timers[timerId] = job
+            return timerId
+        }
+
+        override fun setInterval(intervalMs: Long, callback: () -> Unit): String {
+            val timerId = java.util.UUID.randomUUID().toString()
+            val job = scope.launch {
+                while (coroutineContext.isActive) {
+                    kotlinx.coroutines.delay(intervalMs)
+                    try {
+                        callback()
+                    } catch (e: Exception) {
+                        println("[Timer] Error in setInterval: ${e.message}")
+                    }
+                }
+            }
+            timers[timerId] = job
+            return timerId
+        }
+
+        override fun clearTimer(id: String) {
+            timers[id]?.cancel()
+            timers.remove(id)
+        }
+    }
+
+    private fun createVariableActions() = object : com.bylins.client.scripting.VariableActions {
+        override fun getVariable(name: String): String? {
+            return variableManager.getVariable(name)
+        }
+
+        override fun setVariable(name: String, value: String) {
+            variableManager.setVariable(name, value)
+        }
+
+        override fun deleteVariable(name: String) {
+            variableManager.removeVariable(name)
+        }
+
+        override fun getAllVariables(): Map<String, String> {
+            return variableManager.getAllVariables()
+        }
+    }
+
+    private fun createMsdpActions() = object : com.bylins.client.scripting.MsdpActions {
+        override fun getMsdpValue(key: String): Any? {
+            return _msdpData.value[key]
+        }
+
+        override fun getAllMsdpData(): Map<String, Any> {
+            return _msdpData.value
+        }
+    }
+
+    private fun createMapperActions() = object : com.bylins.client.scripting.MapperActions {
+        override fun getCurrentRoom(): Map<String, Any>? {
+            val room = mapManager.getCurrentRoom() ?: return null
+            return mapOf(
+                "id" to room.id,
+                "name" to room.name,
+                "x" to room.x,
+                "y" to room.y,
+                "z" to room.z,
+                "exits" to room.getAvailableDirections().map { it.name },
+                "notes" to room.notes
+            )
+        }
+
+        override fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>? {
+            val room = mapManager.findRoomAt(x, y, z) ?: return null
+            return mapOf(
+                "id" to room.id,
+                "name" to room.name,
+                "x" to room.x,
+                "y" to room.y,
+                "z" to room.z,
+                "exits" to room.getAvailableDirections().map { it.name },
+                "notes" to room.notes
+            )
+        }
+
+        override fun setRoomNote(roomId: String, note: String) {
+            mapManager.setRoomNote(roomId, note)
+        }
+
+        override fun setRoomColor(roomId: String, color: String?) {
+            mapManager.setRoomColor(roomId, color)
+        }
+    }
+
+    fun getScripts() = if (::scriptManager.isInitialized) scriptManager.scripts else kotlinx.coroutines.flow.MutableStateFlow(emptyList())
+    fun getAvailableScriptEngines() = if (::scriptManager.isInitialized) scriptManager.getAvailableEngines() else emptyList()
+    fun loadScript(file: java.io.File) = if (::scriptManager.isInitialized) scriptManager.loadScript(file) else null
+    fun unloadScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.unloadScript(scriptId) else Unit
+    fun enableScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.enableScript(scriptId) else Unit
+    fun disableScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.disableScript(scriptId) else Unit
+    fun reloadScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.reloadScript(scriptId) else Unit
+    fun getScriptsDirectory() = if (::scriptManager.isInitialized) scriptManager.getScriptsDirectory() else "scripts"
 }

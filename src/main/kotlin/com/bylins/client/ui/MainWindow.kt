@@ -96,6 +96,11 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 6,
                         onClick = { selectedTab = 6 },
+                        text = { Text("Скрипты") }
+                    )
+                    Tab(
+                        selected = selectedTab == 7,
+                        onClick = { selectedTab = 7 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -165,6 +170,13 @@ fun MainWindow() {
                             )
                         }
                         6 -> {
+                            // Панель скриптов
+                            ScriptsPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        7 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,

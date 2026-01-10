@@ -4,7 +4,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class AliasManager(
-    private val onCommand: (String) -> Unit
+    private val onCommand: (String) -> Unit,
+    private val onAliasFired: ((Alias, String, Map<Int, String>) -> Unit)? = null
 ) {
     private val _aliases = MutableStateFlow<List<Alias>>(emptyList())
     val aliases: StateFlow<List<Alias>> = _aliases
@@ -41,6 +42,10 @@ class AliasManager(
 
             val matchResult = alias.pattern.matchEntire(command)
             if (matchResult != null) {
+                // Уведомляем о срабатывании алиаса
+                val groups = matchResult.groupValues.mapIndexed { index, value -> index to value }.toMap()
+                onAliasFired?.invoke(alias, command, groups)
+
                 executeAlias(alias, matchResult)
                 return true
             }

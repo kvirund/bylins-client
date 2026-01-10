@@ -6,7 +6,9 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Управляет картой мира MUD
  */
-class MapManager {
+class MapManager(
+    private val onRoomEnter: ((Room) -> Unit)? = null
+) {
     private val _rooms = MutableStateFlow<Map<String, Room>>(emptyMap())
     val rooms: StateFlow<Map<String, Room>> = _rooms
 
@@ -52,6 +54,12 @@ class MapManager {
             if (room != null && !room.visited) {
                 val updatedRoom = room.copy(visited = true)
                 _rooms.value = _rooms.value + (roomId to updatedRoom)
+
+                // Уведомляем о входе в комнату
+                onRoomEnter?.invoke(updatedRoom)
+            } else if (room != null) {
+                // Уведомляем о входе в комнату даже если уже посещали
+                onRoomEnter?.invoke(room)
             }
         }
     }
