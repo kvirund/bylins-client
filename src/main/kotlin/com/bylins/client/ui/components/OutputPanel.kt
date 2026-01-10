@@ -10,11 +10,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.bylins.client.ClientState
 import com.bylins.client.ui.AnsiParser
 
@@ -45,14 +47,19 @@ fun OutputPanel(
             }
         }
 
-        // Содержимое активной вкладки
-        val activeTab = tabs.find { it.id == activeTabId }
-        if (activeTab != null) {
-            TabContent(
-                tab = activeTab,
-                receivedData = receivedData,
-                modifier = Modifier.fillMaxSize()
-            )
+        // Рендерим все вкладки одновременно, показываем только активную
+        Box(modifier = Modifier.fillMaxSize()) {
+            tabs.forEach { tab ->
+                val isActive = tab.id == activeTabId
+                TabContent(
+                    tab = tab,
+                    receivedData = receivedData,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(if (isActive) 1f else 0f)
+                        .alpha(if (isActive) 1f else 0f)
+                )
+            }
         }
     }
 }
@@ -63,15 +70,9 @@ fun TabContent(
     receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier
 ) {
-    // Сохраняем позицию прокрутки с уникальным ключом для каждой вкладки
-    val scrollValue = rememberSaveable(key = "scroll_${tab.id}") { mutableStateOf(0) }
-    val scrollState = rememberScrollState(initial = scrollValue.value)
+    // Просто rememberScrollState - компонент не уничтожается, поэтому состояние сохраняется
+    val scrollState = rememberScrollState()
     val ansiParser = remember { AnsiParser() }
-
-    // Сохраняем позицию прокрутки при изменении
-    LaunchedEffect(scrollState.value) {
-        scrollValue.value = scrollState.value
-    }
 
     // Получаем содержимое вкладки
     val tabContent by tab.content.collectAsState()
