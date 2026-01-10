@@ -50,25 +50,18 @@ fun OutputPanel(
             }
         }
 
-        // Рендерим все вкладки одновременно, показываем только активную
-        Box(modifier = Modifier.fillMaxSize()) {
-            tabs.forEach { tab ->
-                key(tab.id) {
-                    // Получаем или создаём ScrollState для этой вкладки
-                    val scrollState = scrollStates.getOrPut(tab.id) { ScrollState(0) }
-                    val isActive = tab.id == activeTabId
+        // Рендерим только активную вкладку, но ScrollState хранится в Map
+        val activeTab = tabs.find { it.id == activeTabId }
+        if (activeTab != null) {
+            // Получаем или создаём ScrollState для активной вкладки
+            val scrollState = scrollStates.getOrPut(activeTab.id) { ScrollState(0) }
 
-                    TabContent(
-                        tab = tab,
-                        scrollState = scrollState,
-                        receivedData = receivedData,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(if (isActive) 1f else 0f)
-                            .alpha(if (isActive) 1f else 0f)
-                    )
-                }
-            }
+            TabContent(
+                tab = activeTab,
+                scrollState = scrollState,
+                receivedData = receivedData,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }
