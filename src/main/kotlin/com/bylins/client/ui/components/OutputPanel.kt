@@ -29,8 +29,8 @@ fun OutputPanel(
     val activeTabId by clientState.activeTabId.collectAsState()
     val receivedData by clientState.receivedData.collectAsState()
 
-    // Храним ScrollState для каждой вкладки
-    val scrollStates = remember { mutableMapOf<String, ScrollState>() }
+    // Храним ПОЗИЦИЮ прокрутки (Int) для каждой вкладки
+    val scrollPositions = remember { mutableMapOf<String, Int>() }
 
     Column(modifier = modifier) {
         // Вкладки
@@ -50,15 +50,12 @@ fun OutputPanel(
             }
         }
 
-        // Рендерим только активную вкладку, но ScrollState хранится в Map
+        // Рендерим только активную вкладку
         val activeTab = tabs.find { it.id == activeTabId }
         if (activeTab != null) {
-            // Получаем или создаём ScrollState для активной вкладки
-            val scrollState = scrollStates.getOrPut(activeTab.id) { ScrollState(0) }
-
             TabContent(
                 tab = activeTab,
-                scrollState = scrollState,
+                scrollPositions = scrollPositions,
                 receivedData = receivedData,
                 modifier = Modifier.fillMaxSize()
             )
@@ -69,11 +66,21 @@ fun OutputPanel(
 @Composable
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
-    scrollState: ScrollState,
+    scrollPositions: MutableMap<String, Int>,
     receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier
 ) {
+    // Получаем сохранённую позицию или 0
+    val savedPosition = scrollPositions[tab.id] ?: 0
+    val scrollState = rememberScrollState(initial = savedPosition)
     val ansiParser = remember(tab.id) { AnsiParser() }
+
+    // Сохраняем позицию при каждом изменении
+    DisposableEffect(scrollState) {
+        onDispose {
+            scrollPositions[tab.id] = scrollState.value
+        }
+    }
 
     // Получаем содержимое вкладки
     val tabContent by tab.content.collectAsState()
