@@ -20,6 +20,9 @@ class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val configManager = ConfigManager()
 
+    // Флаг для предотвращения множественного сохранения при инициализации
+    private var isInitializing = true
+
     // Менеджеры инициализируются первыми
     private val aliasManager = AliasManager { command ->
         // Callback для отправки команд из алиасов (без рекурсии)
@@ -89,6 +92,10 @@ class ClientState {
             variableManager.loadVariables(configData.variables)
             tabManager.loadTabs(configData.tabs)
         }
+
+        // Завершаем инициализацию и сохраняем конфиг один раз
+        isInitializing = false
+        saveConfig()
     }
 
     private fun loadDefaultAliases() {
@@ -515,6 +522,9 @@ class ClientState {
 
     // Управление конфигурацией
     fun saveConfig() {
+        // Не сохраняем во время инициализации, чтобы не создавать множество записей
+        if (isInitializing) return
+
         configManager.saveConfig(
             triggers.value,
             aliases.value,
