@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -43,16 +44,20 @@ fun OutputPanel(
             }
         }
 
-        // Содержимое активной вкладки
-        val activeTab = tabs.find { it.id == activeTabId }
-        if (activeTab != null) {
-            // Используем key() чтобы сохранять scrollState для каждой вкладки
-            key(activeTab.id) {
-                TabContent(
-                    tab = activeTab,
-                    receivedData = receivedData,
-                    modifier = Modifier.fillMaxSize()
-                )
+        // Содержимое вкладок - рендерим все, но показываем только активную
+        Box(modifier = Modifier.fillMaxSize()) {
+            tabs.forEach { tab ->
+                Box(
+                    modifier = Modifier.fillMaxSize().then(
+                        if (tab.id == activeTabId) Modifier else Modifier.height(0.dp)
+                    )
+                ) {
+                    TabContent(
+                        tab = tab,
+                        receivedData = receivedData,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }
@@ -64,8 +69,29 @@ fun TabContent(
     receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
-    val ansiParser = remember { AnsiParser() }
+    // Используем key для сохранения scrollState при переключении вкладок
+    key(tab.id) {
+        val scrollState = rememberScrollState()
+        val ansiParser = remember { AnsiParser() }
+
+        TabContentInternal(
+            tab = tab,
+            scrollState = scrollState,
+            ansiParser = ansiParser,
+            receivedData = receivedData,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+private fun TabContentInternal(
+    tab: com.bylins.client.tabs.Tab,
+    scrollState: ScrollState,
+    ansiParser: AnsiParser,
+    receivedData: String,
+    modifier: Modifier = Modifier
+) {
 
     // Получаем содержимое вкладки
     val tabContent by tab.content.collectAsState()
