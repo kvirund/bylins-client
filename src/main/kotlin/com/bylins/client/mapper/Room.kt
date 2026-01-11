@@ -18,7 +18,8 @@ data class Room(
     val zone: String = "",
     val notes: String = "",
     val color: String? = null,
-    val visited: Boolean = false
+    val visited: Boolean = false,
+    val tags: Set<String> = emptySet()  // Теги для группировки комнат (магазины, тренеры, квесты и т.д.)
 ) {
     /**
      * Добавляет выход в указанном направлении

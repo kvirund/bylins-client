@@ -30,10 +30,13 @@ fun RoomDetailsDialog(
     room: Room,
     onDismiss: () -> Unit,
     onSaveNote: (String) -> Unit,
-    onSaveColor: (String?) -> Unit
+    onSaveColor: (String?) -> Unit,
+    onSaveTags: (Set<String>) -> Unit
 ) {
     var note by remember { mutableStateOf(room.notes) }
     var selectedColor by remember { mutableStateOf(room.color) }
+    var tags by remember { mutableStateOf(room.tags) }
+    var newTag by remember { mutableStateOf("") }
 
     val availableColors = listOf(
         null to "Без цвета",
@@ -166,6 +169,84 @@ fun RoomDetailsDialog(
                     }
                 }
 
+                // Теги
+                Column {
+                    Text(
+                        text = "Теги (магазин, тренер, квест и т.д.):",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+
+                    // Существующие теги
+                    if (tags.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            tags.forEach { tag ->
+                                Button(
+                                    onClick = { tags = tags - tag },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF424242)
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text(tag, color = Color.White, style = MaterialTheme.typography.bodySmall)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("✕", color = Color(0xFFFF5252), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "Нет тегов",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+
+                    // Добавление нового тега
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newTag,
+                            onValueChange = { newTag = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Новый тег...") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF4CAF50),
+                                unfocusedBorderColor = Color.Gray,
+                                focusedPlaceholderColor = Color.Gray,
+                                unfocusedPlaceholderColor = Color.Gray
+                            ),
+                            singleLine = true
+                        )
+                        Button(
+                            onClick = {
+                                if (newTag.isNotBlank() && newTag !in tags) {
+                                    tags = tags + newTag.trim()
+                                    newTag = ""
+                                }
+                            },
+                            enabled = newTag.isNotBlank() && newTag !in tags,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF4CAF50)
+                            )
+                        ) {
+                            Text("Добавить")
+                        }
+                    }
+                }
+
                 Divider(color = Color.Gray)
 
                 // Кнопки
@@ -186,6 +267,7 @@ fun RoomDetailsDialog(
                         onClick = {
                             onSaveNote(note)
                             onSaveColor(selectedColor)
+                            onSaveTags(tags)
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(

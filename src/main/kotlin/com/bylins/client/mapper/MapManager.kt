@@ -231,6 +231,49 @@ class MapManager(
     }
 
     /**
+     * Добавляет тег к комнате
+     */
+    fun addRoomTag(roomId: String, tag: String) {
+        val room = _rooms.value[roomId] ?: return
+        val updatedTags = room.tags + tag
+        val updated = room.copy(tags = updatedTags)
+        addRoom(updated)
+    }
+
+    /**
+     * Удаляет тег у комнаты
+     */
+    fun removeRoomTag(roomId: String, tag: String) {
+        val room = _rooms.value[roomId] ?: return
+        val updatedTags = room.tags - tag
+        val updated = room.copy(tags = updatedTags)
+        addRoom(updated)
+    }
+
+    /**
+     * Устанавливает теги для комнаты
+     */
+    fun setRoomTags(roomId: String, tags: Set<String>) {
+        val room = _rooms.value[roomId] ?: return
+        val updated = room.copy(tags = tags)
+        addRoom(updated)
+    }
+
+    /**
+     * Получает все уникальные теги со всех комнат
+     */
+    fun getAllTags(): Set<String> {
+        return _rooms.value.values.flatMap { it.tags }.toSet()
+    }
+
+    /**
+     * Фильтрует комнаты по тегу
+     */
+    fun getRoomsByTag(tag: String): List<Room> {
+        return _rooms.value.values.filter { tag in it.tags }
+    }
+
+    /**
      * Экспортирует карту в JSON
      */
     fun exportMap(): Map<String, Room> {

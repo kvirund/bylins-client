@@ -1213,6 +1213,10 @@ class ClientState {
         mapManager.setRoomColor(roomId, color)
     }
 
+    fun setRoomTags(roomId: String, tags: Set<String>) {
+        mapManager.setRoomTags(roomId, tags)
+    }
+
     fun getMapBounds(level: Int): com.bylins.client.mapper.MapBounds? {
         return mapManager.getMapBounds(level)
     }

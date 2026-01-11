@@ -414,6 +414,9 @@ fun MapPanel(
             },
             onSaveColor = { color ->
                 clientState.setRoomColor(selectedRoom!!.id, color)
+            },
+            onSaveTags = { tags ->
+                clientState.setRoomTags(selectedRoom!!.id, tags)
             }
         )
     }
