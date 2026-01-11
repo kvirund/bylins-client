@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 import java.io.File
 
 class ClientState {
@@ -496,7 +497,7 @@ class ClientState {
      */
     private suspend fun walkPath(path: List<com.bylins.client.mapper.Direction>) {
         for (direction in path) {
-            if (!isActive) break
+            if (!coroutineContext.isActive) break
 
             // Отправляем команду движения
             sendRaw(direction.shortName)
