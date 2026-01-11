@@ -74,7 +74,12 @@ class ClientState {
 
     private var lastCommand: String? = null
 
-    private val telnetClient = TelnetClient(this)
+    // Кодировка для telnet (конфигурируется пользователем)
+    private var _encoding = "UTF-8"
+    val encoding: String
+        get() = _encoding
+
+    private val telnetClient = TelnetClient(this, _encoding)
 
     // Скриптинг - инициализируется позже
     private lateinit var scriptManager: com.bylins.client.scripting.ScriptManager
@@ -119,6 +124,10 @@ class ClientState {
         // Продолжаем стандартную инициализацию
         // Пытаемся загрузить сохранённую конфигурацию
         val configData = configManager.loadConfig()
+
+        // Загружаем кодировку из конфига
+        _encoding = configData.encoding
+        telnetClient.setEncoding(_encoding)
 
         if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
@@ -813,8 +822,18 @@ class ClientState {
             aliases.value,
             hotkeys.value,
             variableManager.getAllVariables(),
-            tabManager.getTabsForSave()
+            tabManager.getTabsForSave(),
+            _encoding
         )
+    }
+
+    /**
+     * Устанавливает кодировку для telnet соединения
+     */
+    fun setEncoding(newEncoding: String) {
+        _encoding = newEncoding
+        telnetClient.setEncoding(newEncoding)
+        saveConfig()
     }
 
     fun exportConfig(file: File) {
@@ -824,7 +843,8 @@ class ClientState {
             aliases.value,
             hotkeys.value,
             variableManager.getAllVariables(),
-            tabManager.getTabsForSave()
+            tabManager.getTabsForSave(),
+            _encoding
         )
     }
 
@@ -844,6 +864,10 @@ class ClientState {
         configData.hotkeys.forEach { addHotkey(it) }
         variableManager.loadVariables(configData.variables)
         tabManager.loadTabs(configData.tabs)
+
+        // Загружаем кодировку
+        _encoding = configData.encoding
+        telnetClient.setEncoding(_encoding)
 
         // Сохраняем в основной конфиг
         saveConfig()

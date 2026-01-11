@@ -155,5 +155,6 @@ data class ClientConfig(
     val aliases: List<AliasDto> = emptyList(),
     val hotkeys: List<HotkeyDto> = emptyList(),
     val variables: Map<String, String> = emptyMap(),
-    val tabs: List<com.bylins.client.tabs.TabDto> = emptyList()
+    val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
+    val encoding: String = "UTF-8"  // Кодировка для telnet (UTF-8, windows-1251, и т.д.)
 )

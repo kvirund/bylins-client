@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Link
@@ -18,8 +19,12 @@ fun ConnectionPanel(
 ) {
     var host by remember { mutableStateOf("bylins.su") }
     var port by remember { mutableStateOf("4000") }
+    var encoding by remember { mutableStateOf(clientState.encoding) }
+    var encodingMenuExpanded by remember { mutableStateOf(false) }
     val isConnected by clientState.isConnected.collectAsState()
     val errorMessage by clientState.errorMessage.collectAsState()
+
+    val availableEncodings = listOf("UTF-8", "windows-1251", "KOI8-R", "ISO-8859-1")
 
     Column(modifier = modifier) {
         Row(
@@ -42,6 +47,41 @@ fun ConnectionPanel(
                 enabled = !isConnected,
                 modifier = Modifier.width(100.dp)
             )
+
+            // Dropdown для выбора кодировки
+            Box(modifier = Modifier.width(150.dp)) {
+                OutlinedTextField(
+                    value = encoding,
+                    onValueChange = { },
+                    label = { Text("Кодировка") },
+                    enabled = !isConnected,
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = encodingMenuExpanded && !isConnected,
+                    onDismissRequest = { encodingMenuExpanded = false }
+                ) {
+                    availableEncodings.forEach { enc ->
+                        DropdownMenuItem(
+                            text = { Text(enc) },
+                            onClick = {
+                                encoding = enc
+                                clientState.setEncoding(enc)
+                                encodingMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+                // Кликабельная область для открытия меню
+                if (!isConnected) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { encodingMenuExpanded = true }
+                    )
+                }
+            }
 
             Button(
                 onClick = {

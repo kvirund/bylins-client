@@ -9,7 +9,10 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 
-class TelnetClient(private val clientState: ClientState? = null) {
+class TelnetClient(
+    private val clientState: ClientState? = null,
+    encoding: String = "UTF-8"
+) {
     private var socket: Socket? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
@@ -21,8 +24,16 @@ class TelnetClient(private val clientState: ClientState? = null) {
     private val _receivedData = MutableStateFlow("")
     val receivedData: StateFlow<String> = _receivedData
 
-    private val telnetParser = TelnetParser()
+    private val telnetParser = TelnetParser(encoding)
     private val msdpParser = MsdpParser()
+
+    /**
+     * Устанавливает кодировку для telnet соединения
+     */
+    fun setEncoding(encoding: String) {
+        telnetParser.setEncoding(encoding)
+        println("Кодировка telnet изменена на: $encoding")
+    }
 
     // Ограничение на размер буфера вывода (1 МБ)
     // Уменьшено для экономии памяти - вкладки хранят свою историю отдельно

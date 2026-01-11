@@ -122,8 +122,9 @@ def clear_timer(timer_id):
             val func = interpreter?.get(functionName)
             if (func is PyFunction) {
                 // Конвертируем аргументы в Python объекты
-                val pyArgs = args.map { interpreter?.eval(it?.toString() ?: "None") }.toTypedArray()
-                func.__call__(*pyArgs)
+                val pyArgs = args.map { interpreter?.eval(it?.toString() ?: "None") as org.python.core.PyObject }.toTypedArray()
+                // __call__ принимает Array<PyObject>, а не vararg
+                func.__call__(pyArgs)
             } else {
                 null
             }

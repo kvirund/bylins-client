@@ -13,7 +13,9 @@ data class TelnetCommand(
     val data: ByteArray = byteArrayOf()
 )
 
-class TelnetParser {
+class TelnetParser(
+    private var encoding: String = "UTF-8"  // Конфигурируемая кодировка
+) {
     private enum class State {
         NORMAL, IAC, COMMAND, SUBNEGOTIATION, SUBNEG_IAC
     }
@@ -25,6 +27,13 @@ class TelnetParser {
 
     private val textBuffer = ByteArrayOutputStream()
     private val commands = mutableListOf<TelnetCommand>()
+
+    /**
+     * Устанавливает кодировку для парсинга текста
+     */
+    fun setEncoding(newEncoding: String) {
+        encoding = newEncoding
+    }
 
     fun parse(data: ByteArray): Pair<String, List<TelnetCommand>> {
         textBuffer.reset()
@@ -120,8 +129,14 @@ class TelnetParser {
             }
         }
 
-        // Былины MUD использует кодировку Windows-1251 (CP1251)
-        val text = textBuffer.toString(Charset.forName("windows-1251"))
+        // Используем конфигурируемую кодировку (по умолчанию UTF-8)
+        val charset = try {
+            Charset.forName(encoding)
+        } catch (e: Exception) {
+            println("Неподдерживаемая кодировка: $encoding, используется UTF-8")
+            Charsets.UTF_8
+        }
+        val text = textBuffer.toString(charset)
         return Pair(text, commands.toList())
     }
 }
