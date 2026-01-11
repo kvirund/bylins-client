@@ -4,7 +4,7 @@
 
 ## Возможности
 
-### Реализовано (v0.15)
+### Реализовано (v0.16)
 - ✅ Современный UI на Compose for Desktop
 - ✅ Подключение по Telnet к bylins.su:4000
 - ✅ **ANSI цвета** - полная поддержка (16/256/RGB), правильная VGA палитра
@@ -47,27 +47,26 @@
     - `#goto <room_id>` - автоматический переход к указанной комнате
     - `#run` - автоматический переход к ближайшей непосещенной комнате
   - Управление: включение/выключение, очистка
-- ✅ **Система скриптов** - поддержка JavaScript (Python/Lua/Perl в разработке)
-  - JavaScript движок (Nashorn/GraalVM) работает из коробки
+- ✅ **Система скриптов** - мультиязычная поддержка
+  - **JavaScript** - Nashorn/GraalVM (работает из коробки)
+  - **Python** - Jython 2.7 (полная поддержка)
+  - **Lua** - LuaJ 5.2 (полная поддержка)
+  - **Perl** - внешний процесс (ограниченная поддержка)
   - События: on_load, on_connect, on_disconnect, on_line, on_command, on_msdp, on_trigger, on_alias, on_room_enter
   - API: send(), echo(), addTrigger(), addAlias(), setTimeout(), setInterval(), getVariable(), setVariable()
   - MSDP API: getMsdpValue(), getAllMsdpData()
   - Mapper API: getCurrentRoom(), getRoomAt(), setRoomNote(), setRoomColor()
   - Автозагрузка скриптов из директории scripts/
   - UI для управления: загрузка, выгрузка, включение/выключение, перезагрузка
-  - **5 готовых примеров** в scripts/examples/:
-    - test.js - демонстрация всех событий
-    - auto_heal.js - автолечение при низком HP
+  - **Готовые примеры** в scripts/examples/:
+    - test.js/py/lua - демонстрация всех событий
+    - auto_heal.js/py/lua - автолечение при низком HP
     - auto_loot.js - автосбор лута
     - combat_stats.js - статистика боя
     - speedwalk.js - быстрое перемещение (#5n2e)
   - Подробная документация в scripts/README.md
 
 ### В планах
-- 🔄 **Завершение поддержки скриптинга**:
-  - Python движок (GraalVM Python или Jython)
-  - Lua движок (LuaJ)
-  - Perl движок (внешний процесс)
 - 🔄 Улучшения автомаппера:
   - База данных карт (SQLite)
   - Улучшенный парсинг описаний комнат
@@ -141,29 +140,55 @@ dependencies {
 
 ### Создание скриптов
 
-Клиент поддерживает скрипты на **Python, Lua, JavaScript и Perl**!
+Клиент поддерживает скрипты на **JavaScript, Python, Lua и Perl**!
 
 Положите свои скрипты в директорию `scripts/`:
 
-**Python пример** (`scripts/auto_heal.py`):
-```python
-def on_load(api):
-    api.add_trigger(r"HP: (\d+)/(\d+)", check_hp)
+**JavaScript пример** (`scripts/auto_heal.js`):
+```javascript
+var HEAL_THRESHOLD = 30;
 
-def check_hp(api, match):
-    hp, max_hp = int(match.group(1)), int(match.group(2))
-    if hp < max_hp * 0.3:
-        api.send("cast 'cure serious'")
+function on_msdp(data) {
+    var hp = api.getMsdpValue("HEALTH");
+    var maxHp = api.getMsdpValue("HEALTH_MAX");
+
+    if (hp && maxHp) {
+        var hpPercent = (hp / maxHp) * 100;
+        if (hpPercent < HEAL_THRESHOLD) {
+            send("cast 'cure serious'");
+        }
+    }
+}
 ```
 
-**Lua пример** (`scripts/auto_loot.lua`):
-```lua
-function on_load(api)
-    api.add_trigger("^(.+) мертв", on_kill)
-end
+**Python пример** (`scripts/auto_heal.py`):
+```python
+HEAL_THRESHOLD = 30
 
-function on_kill(api, match)
-    api.send("взять все " .. match[1])
+def on_msdp(data):
+    hp = api.getMsdpValue("HEALTH")
+    max_hp = api.getMsdpValue("HEALTH_MAX")
+
+    if hp and max_hp:
+        hp_percent = (float(hp) / float(max_hp)) * 100
+        if hp_percent < HEAL_THRESHOLD:
+            send("cast 'cure serious'")
+```
+
+**Lua пример** (`scripts/auto_heal.lua`):
+```lua
+local HEAL_THRESHOLD = 30
+
+function on_msdp(data)
+    local hp = api:getMsdpValue("HEALTH")
+    local max_hp = api:getMsdpValue("HEALTH_MAX")
+
+    if hp and max_hp then
+        local hp_percent = (tonumber(hp) / tonumber(max_hp)) * 100
+        if hp_percent < HEAL_THRESHOLD then
+            send("cast 'cure serious'")
+        end
+    end
 end
 ```
 

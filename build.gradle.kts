@@ -34,6 +34,12 @@ dependencies {
 
     // Apache Commons для telnet (базовая поддержка)
     implementation("commons-net:commons-net:3.10.0")
+
+    // Scripting engines
+    // Jython для Python скриптов
+    implementation("org.python:jython-standalone:2.7.3")
+    // LuaJ для Lua скриптов
+    implementation("org.luaj:luaj-jse:3.0.1")
 }
 
 kotlin {

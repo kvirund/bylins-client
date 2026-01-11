@@ -9,7 +9,13 @@ import java.io.InputStreamReader
 /**
  * Perl движок (использует внешний perl интерпретатор)
  *
- * Требует установленный Perl в системе
+ * ОГРАНИЧЕНИЯ:
+ * - Требует установленный Perl в системе
+ * - Ограниченная функциональность: нет полной интеграции с API
+ * - Не поддерживается loadScript и callFunction из-за отсутствия IPC
+ * - Работает только execute() для простых Perl команд
+ *
+ * Для полноценной работы требуется реализация JSON-RPC или аналогичного IPC механизма
  */
 class PerlEngine : ScriptEngine {
     override val name: String = "perl"
