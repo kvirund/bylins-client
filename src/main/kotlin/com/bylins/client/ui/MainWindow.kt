@@ -91,16 +91,21 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 5,
                         onClick = { selectedTab = 5 },
-                        text = { Text("Карта") }
+                        text = { Text("Графики") }
                     )
                     Tab(
                         selected = selectedTab == 6,
                         onClick = { selectedTab = 6 },
-                        text = { Text("Скрипты") }
+                        text = { Text("Карта") }
                     )
                     Tab(
                         selected = selectedTab == 7,
                         onClick = { selectedTab = 7 },
+                        text = { Text("Скрипты") }
+                    )
+                    Tab(
+                        selected = selectedTab == 8,
+                        onClick = { selectedTab = 8 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -180,20 +185,27 @@ fun MainWindow() {
                             )
                         }
                         5 -> {
+                            // Панель графиков
+                            StatsGraphPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        6 -> {
                             // Панель карты
                             MapPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        6 -> {
+                        7 -> {
                             // Панель скриптов
                             ScriptsPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        7 -> {
+                        8 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,

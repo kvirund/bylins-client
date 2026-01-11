@@ -60,6 +60,7 @@ class ClientState {
 
     private val logManager = LogManager()
     private val sessionStats = SessionStats()
+    private val statsHistory = com.bylins.client.stats.StatsHistory()
     private val variableManager = VariableManager()
     private val tabManager = TabManager()
     private val mapManager = com.bylins.client.mapper.MapManager(
@@ -104,6 +105,9 @@ class ClientState {
 
     // Доступ к статистике
     val stats = sessionStats.stats
+    val hpHistory = statsHistory.hpHistory
+    val manaHistory = statsHistory.manaHistory
+    val movementHistory = statsHistory.movementHistory
 
     // Доступ к переменным
     val variables = variableManager.variables
@@ -708,6 +712,21 @@ class ClientState {
         // Автоматически обновляем переменные из MSDP
         data.forEach { (key, value) ->
             variableManager.setVariable(key.lowercase(), value.toString())
+        }
+
+        // Обновляем историю статистики для графиков
+        val allData = _msdpData.value
+        val hp = (allData["HEALTH"] as? String)?.toIntOrNull() ?: 0
+        val maxHp = (allData["HEALTH_MAX"] as? String)?.toIntOrNull() ?: 1
+        val mana = (allData["MANA"] as? String)?.toIntOrNull() ?: 0
+        val maxMana = (allData["MANA_MAX"] as? String)?.toIntOrNull() ?: 1
+        val movement = (allData["MOVEMENT"] as? String)?.toIntOrNull() ?: 0
+        val maxMovement = (allData["MOVEMENT_MAX"] as? String)?.toIntOrNull() ?: 1
+
+        if (hp > 0 || mana > 0 || movement > 0) {
+            statsHistory.addHpData(hp, maxHp)
+            statsHistory.addManaData(mana, maxMana)
+            statsHistory.addMovementData(movement, maxMovement)
         }
 
         // Уведомляем скрипты
