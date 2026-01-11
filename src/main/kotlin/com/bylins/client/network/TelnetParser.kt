@@ -31,8 +31,12 @@ class TelnetParser(
     private var currentOption: Byte = 0
     private val subnegBuffer = ByteArrayOutputStream()
 
+    // Буфер для накопления текстовых байтов (НЕ сбрасывается между вызовами parse)
     private val textBuffer = ByteArrayOutputStream()
     private val commands = mutableListOf<TelnetCommand>()
+
+    // Буфер для неполных многобайтовых последовательностей
+    private val incompleteBytes = ByteArrayOutputStream()
 
     /**
      * Устанавливает кодировку для парсинга текста
@@ -40,6 +44,7 @@ class TelnetParser(
     fun setEncoding(newEncoding: String) {
         encoding = newEncoding
         decoder = createDecoder(newEncoding)
+        incompleteBytes.reset()
     }
 
     private fun createDecoder(charsetName: String): CharsetDecoder {
@@ -58,6 +63,12 @@ class TelnetParser(
     fun parse(data: ByteArray): Pair<String, List<TelnetCommand>> {
         textBuffer.reset()
         commands.clear()
+
+        // Сначала добавляем неполные байты из предыдущего вызова
+        if (incompleteBytes.size() > 0) {
+            textBuffer.write(incompleteBytes.toByteArray())
+            incompleteBytes.reset()
+        }
 
         for (byte in data) {
             when (state) {
@@ -149,20 +160,40 @@ class TelnetParser(
             }
         }
 
-        // Используем stateful decoder для правильной обработки многобайтовых символов
+        // Декодируем накопленные байты
         val bytes = textBuffer.toByteArray()
         if (bytes.isEmpty()) {
             return Pair("", commands.toList())
         }
 
         val inputBuffer = ByteBuffer.wrap(bytes)
-        val outputBuffer = CharBuffer.allocate((bytes.size * decoder.maxCharsPerByte()).toInt())
+        val outputBuffer = CharBuffer.allocate((bytes.size * decoder.maxCharsPerByte()).toInt() + 10)
 
         // decode() сохраняет состояние для неполных последовательностей
+        // false означает "не конец потока" - decoder сохранит неполные последовательности во внутреннем состоянии
         val result = decoder.decode(inputBuffer, outputBuffer, false)
 
-        if (result.isError) {
-            println("[TelnetParser] Decoding error: $result")
+        // Проверяем результат декодирования
+        when {
+            result.isUnderflow -> {
+                // Decoder прочитал всё что смог
+                // Если остались байты, значит это неполная UTF-8 последовательность
+                if (inputBuffer.hasRemaining()) {
+                    val remaining = ByteArray(inputBuffer.remaining())
+                    inputBuffer.get(remaining)
+                    incompleteBytes.write(remaining)
+                }
+            }
+            result.isOverflow -> {
+                // Output buffer переполнен (не должно происходить с нашим размером)
+                println("[TelnetParser] Output buffer overflow - this should not happen")
+            }
+            result.isMalformed -> {
+                println("[TelnetParser] Malformed input at position ${inputBuffer.position()}")
+            }
+            result.isUnmappable -> {
+                println("[TelnetParser] Unmappable character at position ${inputBuffer.position()}")
+            }
         }
 
         outputBuffer.flip()
