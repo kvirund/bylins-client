@@ -88,6 +88,10 @@ class ClientState {
     private val _miniMapWidth = MutableStateFlow(250)
     val miniMapWidth: StateFlow<Int> = _miniMapWidth
 
+    // Тема оформления (DARK, LIGHT, DARK_BLUE, SOLARIZED_DARK, MONOKAI)
+    private val _currentTheme = MutableStateFlow("DARK")
+    val currentTheme: StateFlow<String> = _currentTheme
+
     private val telnetClient = TelnetClient(this, _encoding)
 
     // Скриптинг - инициализируется позже
@@ -147,6 +151,9 @@ class ClientState {
 
         // Загружаем ширину миникарты из конфига
         _miniMapWidth.value = configData.miniMapWidth
+
+        // Загружаем тему из конфига
+        _currentTheme.value = configData.theme
 
         if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
@@ -1167,7 +1174,8 @@ class ClientState {
             variableManager.getAllVariables(),
             tabManager.getTabsForSave(),
             _encoding,
-            _miniMapWidth.value
+            _miniMapWidth.value,
+            _currentTheme.value
         )
     }
 
@@ -1189,6 +1197,15 @@ class ClientState {
         saveConfig()
     }
 
+    /**
+     * Устанавливает тему оформления
+     */
+    fun setTheme(themeName: String) {
+        _currentTheme.value = themeName
+        saveConfig()
+        println("[ClientState] Theme changed to: $themeName")
+    }
+
     fun exportConfig(file: File) {
         configManager.exportConfig(
             file,
@@ -1198,7 +1215,8 @@ class ClientState {
             variableManager.getAllVariables(),
             tabManager.getTabsForSave(),
             _encoding,
-            _miniMapWidth.value
+            _miniMapWidth.value,
+            _currentTheme.value
         )
     }
 
@@ -1225,6 +1243,9 @@ class ClientState {
 
         // Загружаем ширину миникарты
         _miniMapWidth.value = configData.miniMapWidth
+
+        // Загружаем тему
+        _currentTheme.value = configData.theme
 
         // Сохраняем в основной конфиг
         saveConfig()

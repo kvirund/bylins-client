@@ -30,7 +30,7 @@ class ConfigManager {
     /**
      * Сохраняет триггеры, алиасы, хоткеи, переменные, вкладки и настройки в файл
      */
-    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250) {
+    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250, theme: String = "DARK") {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
@@ -39,7 +39,8 @@ class ConfigManager {
                 variables = variables,
                 tabs = tabs.map { TabDto.fromTab(it) },
                 encoding = encoding,
-                miniMapWidth = miniMapWidth
+                miniMapWidth = miniMapWidth,
+                theme = theme
             )
 
             val jsonString = json.encodeToString(config)
@@ -59,7 +60,7 @@ class ConfigManager {
         try {
             if (!Files.exists(configFile)) {
                 println("Config file not found: $configFile")
-                return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(), "UTF-8", 250)
+                return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(), "UTF-8", 250, "DARK")
             }
 
             val jsonString = Files.readString(configFile)
@@ -72,20 +73,21 @@ class ConfigManager {
             val tabs = config.tabs.map { it.toTab() }
             val encoding = config.encoding
             val miniMapWidth = config.miniMapWidth
+            val theme = config.theme
 
-            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth)")
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth)
+            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme)")
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme)
         } catch (e: Exception) {
             println("Failed to load config: ${e.message}")
             e.printStackTrace()
-            return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(), "UTF-8", 250)
+            return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(), "UTF-8", 250, "DARK")
         }
     }
 
     /**
      * Экспортирует конфигурацию в указанный файл
      */
-    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250) {
+    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250, theme: String = "DARK") {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
@@ -94,7 +96,8 @@ class ConfigManager {
                 variables = variables,
                 tabs = tabs.map { TabDto.fromTab(it) },
                 encoding = encoding,
-                miniMapWidth = miniMapWidth
+                miniMapWidth = miniMapWidth,
+                theme = theme
             )
 
             val jsonString = json.encodeToString(config)
@@ -122,9 +125,11 @@ class ConfigManager {
             val variables = config.variables
             val tabs = config.tabs.map { it.toTab() }
             val encoding = config.encoding
+            val miniMapWidth = config.miniMapWidth
+            val theme = config.theme
 
-            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding)")
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding)
+            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme)")
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme)
         } catch (e: Exception) {
             println("Failed to import config: ${e.message}")
             e.printStackTrace()
@@ -153,5 +158,6 @@ data class ConfigData(
     val variables: Map<String, String>,
     val tabs: List<Tab>,
     val encoding: String = "UTF-8",
-    val miniMapWidth: Int = 250
+    val miniMapWidth: Int = 250,
+    val theme: String = "DARK"
 )

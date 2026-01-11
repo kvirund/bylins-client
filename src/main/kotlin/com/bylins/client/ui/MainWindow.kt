@@ -11,6 +11,9 @@ import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import com.bylins.client.ClientState
 import com.bylins.client.ui.components.*
+import com.bylins.client.ui.theme.AppTheme
+import com.bylins.client.ui.theme.LocalAppColorScheme
+import androidx.compose.runtime.CompositionLocalProvider
 
 @Composable
 fun MainWindow() {
@@ -18,9 +21,19 @@ fun MainWindow() {
     var selectedTab by remember { mutableStateOf(0) }
     val inputFocusRequester = remember { FocusRequester() }
 
-    MaterialTheme(
-        colorScheme = darkColorScheme()
-    ) {
+    // Получаем текущую тему
+    val currentThemeName by clientState.currentTheme.collectAsState()
+    val appColorScheme = remember(currentThemeName) {
+        AppTheme.getColorScheme(currentThemeName)
+    }
+    val materialColorScheme = remember(appColorScheme, currentThemeName) {
+        AppTheme.toMaterialColorScheme(appColorScheme, isDark = currentThemeName != "LIGHT")
+    }
+
+    CompositionLocalProvider(LocalAppColorScheme provides appColorScheme) {
+        MaterialTheme(
+            colorScheme = materialColorScheme
+        ) {
         Surface(
             modifier = Modifier
                 .fillMaxSize()
@@ -60,8 +73,8 @@ fun MainWindow() {
                 // Вкладки
                 TabRow(
                     selectedTabIndex = selectedTab,
-                    containerColor = Color(0xFF2D2D2D),
-                    contentColor = Color.White
+                    containerColor = appColorScheme.surface,
+                    contentColor = appColorScheme.onSurface
                 ) {
                     Tab(
                         selected = selectedTab == 0,
@@ -228,6 +241,7 @@ fun MainWindow() {
                         .padding(8.dp)
                 )
             }
+        }
         }
     }
 }

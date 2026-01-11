@@ -283,6 +283,90 @@ fun SettingsPanel(
             }
         }
 
+        // Выбор темы оформления
+        val currentTheme by clientState.currentTheme.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color(0xFF2D2D2D),
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Тема оформления",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Divider(color = Color.Gray, thickness = 1.dp)
+
+                Text(
+                    text = "Выберите цветовую схему:",
+                    color = Color(0xFFBBBBBB),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                val themes = listOf(
+                    "DARK" to "Тёмная",
+                    "LIGHT" to "Светлая",
+                    "DARK_BLUE" to "Тёмно-синяя",
+                    "SOLARIZED_DARK" to "Solarized Dark",
+                    "MONOKAI" to "Monokai"
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    themes.forEach { (themeId, themeName) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentTheme == themeId,
+                                onClick = {
+                                    clientState.setTheme(themeId)
+                                    statusMessage = "Тема изменена на: $themeName"
+                                    statusColor = Color(0xFF00FF00)
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = Color(0xFF4CAF50),
+                                    unselectedColor = Color.Gray
+                                )
+                            )
+                            Text(
+                                text = themeName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Текущая тема: ${themes.find { it.first == currentTheme }?.second ?: currentTheme}",
+                    color = Color(0xFF888888),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Text(
+                    text = "Примечание: изменение темы требует перезапуска приложения",
+                    color = Color(0xFFFFAA00),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
         // Информация о конфигурации
         Card(
             modifier = Modifier.fillMaxWidth(),
