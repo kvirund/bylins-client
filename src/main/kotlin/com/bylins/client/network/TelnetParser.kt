@@ -1,7 +1,11 @@
 package com.bylins.client.network
 
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
 import java.nio.charset.Charset
+import java.nio.charset.CharsetDecoder
+import java.nio.charset.CodingErrorAction
 
 enum class TelnetCommandType {
     DO, DONT, WILL, WONT, SUBNEGOTIATION
@@ -16,6 +20,8 @@ data class TelnetCommand(
 class TelnetParser(
     private var encoding: String = "UTF-8"  // Конфигурируемая кодировка
 ) {
+    // Stateful decoder для правильной обработки многобайтовых символов между буферами
+    private var decoder: CharsetDecoder = createDecoder(encoding)
     private enum class State {
         NORMAL, IAC, COMMAND, SUBNEGOTIATION, SUBNEG_IAC
     }
@@ -33,6 +39,20 @@ class TelnetParser(
      */
     fun setEncoding(newEncoding: String) {
         encoding = newEncoding
+        decoder = createDecoder(newEncoding)
+    }
+
+    private fun createDecoder(charsetName: String): CharsetDecoder {
+        val charset = try {
+            Charset.forName(charsetName)
+        } catch (e: Exception) {
+            println("[TelnetParser] Unsupported encoding: $charsetName, falling back to UTF-8")
+            Charsets.UTF_8
+        }
+
+        return charset.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
     }
 
     fun parse(data: ByteArray): Pair<String, List<TelnetCommand>> {
@@ -129,14 +149,25 @@ class TelnetParser(
             }
         }
 
-        // Используем конфигурируемую кодировку (по умолчанию UTF-8)
-        val charset = try {
-            Charset.forName(encoding)
-        } catch (e: Exception) {
-            println("[TelnetParser] Unsupported encoding: $encoding, falling back to UTF-8")
-            Charsets.UTF_8
+        // Используем stateful decoder для правильной обработки многобайтовых символов
+        val bytes = textBuffer.toByteArray()
+        if (bytes.isEmpty()) {
+            return Pair("", commands.toList())
         }
-        val text = textBuffer.toString(charset)
+
+        val inputBuffer = ByteBuffer.wrap(bytes)
+        val outputBuffer = CharBuffer.allocate((bytes.size * decoder.maxCharsPerByte()).toInt())
+
+        // decode() сохраняет состояние для неполных последовательностей
+        val result = decoder.decode(inputBuffer, outputBuffer, false)
+
+        if (result.isError) {
+            println("[TelnetParser] Decoding error: $result")
+        }
+
+        outputBuffer.flip()
+        val text = outputBuffer.toString()
+
         return Pair(text, commands.toList())
     }
 }
