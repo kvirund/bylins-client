@@ -557,8 +557,78 @@ class ClientState {
                 return true
             }
 
+            // Speedwalk: распознаём паттерн типа 5n2e3w
+            command.matches(Regex("^[0-9]*[nsewud]{1,2}([0-9]+[nsewud]{1,2})*$", RegexOption.IGNORE_CASE)) -> {
+                val directions = parseSpeedwalk(command)
+                if (directions.isEmpty()) {
+                    return false
+                }
+
+                telnetClient.addToOutput("\u001B[1;32m[Speedwalk] ${directions.size} шагов: ${directions.joinToString(", ")}\u001B[0m")
+
+                scope.launch {
+                    walkPath(directions)
+                }
+                return true
+            }
+
             else -> return false
         }
+    }
+
+    /**
+     * Парсит строку speedwalk (например, "5n2e3w") в список направлений
+     */
+    private fun parseSpeedwalk(text: String): List<com.bylins.client.mapper.Direction> {
+        val directions = mutableListOf<com.bylins.client.mapper.Direction>()
+        var i = 0
+
+        while (i < text.length) {
+            // Читаем число (если есть)
+            var numStr = ""
+            while (i < text.length && text[i].isDigit()) {
+                numStr += text[i]
+                i++
+            }
+            val count = if (numStr.isEmpty()) 1 else numStr.toInt()
+
+            // Читаем направление (1-2 символа)
+            if (i >= text.length) break
+
+            var dirStr = text[i].toString()
+            i++
+
+            // Проверяем двухбуквенные направления (ne, nw, se, sw)
+            if (i < text.length) {
+                val twoChar = dirStr + text[i]
+                if (twoChar.lowercase() in listOf("ne", "nw", "se", "sw")) {
+                    dirStr = twoChar
+                    i++
+                }
+            }
+
+            // Конвертируем в Direction
+            val direction = when (dirStr.lowercase()) {
+                "n" -> com.bylins.client.mapper.Direction.NORTH
+                "s" -> com.bylins.client.mapper.Direction.SOUTH
+                "e" -> com.bylins.client.mapper.Direction.EAST
+                "w" -> com.bylins.client.mapper.Direction.WEST
+                "ne" -> com.bylins.client.mapper.Direction.NORTHEAST
+                "nw" -> com.bylins.client.mapper.Direction.NORTHWEST
+                "se" -> com.bylins.client.mapper.Direction.SOUTHEAST
+                "sw" -> com.bylins.client.mapper.Direction.SOUTHWEST
+                "u" -> com.bylins.client.mapper.Direction.UP
+                "d" -> com.bylins.client.mapper.Direction.DOWN
+                else -> return emptyList() // Неверное направление
+            }
+
+            // Добавляем count раз
+            repeat(count) {
+                directions.add(direction)
+            }
+        }
+
+        return directions
     }
 
     /**
