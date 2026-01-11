@@ -33,6 +33,10 @@ interface ScriptAPI {
     fun getMsdpValue(key: String): Any?
     fun getAllMsdpData(): Map<String, Any>
 
+    // GMCP данные
+    fun getGmcpValue(packageName: String): String?
+    fun getAllGmcpData(): Map<String, String>
+
     // Маппер
     fun getCurrentRoom(): Map<String, Any>?
     fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>?
@@ -56,6 +60,7 @@ class ScriptAPIImpl(
     private val timerActions: TimerActions,
     private val variableActions: VariableActions,
     private val msdpActions: MsdpActions,
+    private val gmcpActions: GmcpActions,
     private val mapperActions: MapperActions
 ) : ScriptAPI {
 
@@ -93,6 +98,9 @@ class ScriptAPIImpl(
 
     override fun getMsdpValue(key: String): Any? = msdpActions.getMsdpValue(key)
     override fun getAllMsdpData(): Map<String, Any> = msdpActions.getAllMsdpData()
+
+    override fun getGmcpValue(packageName: String): String? = gmcpActions.getGmcpValue(packageName)
+    override fun getAllGmcpData(): Map<String, String> = gmcpActions.getAllGmcpData()
 
     override fun getCurrentRoom(): Map<String, Any>? = mapperActions.getCurrentRoom()
     override fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>? = mapperActions.getRoomAt(x, y, z)
@@ -132,6 +140,11 @@ interface VariableActions {
 interface MsdpActions {
     fun getMsdpValue(key: String): Any?
     fun getAllMsdpData(): Map<String, Any>
+}
+
+interface GmcpActions {
+    fun getGmcpValue(packageName: String): String?
+    fun getAllGmcpData(): Map<String, String>
 }
 
 interface MapperActions {

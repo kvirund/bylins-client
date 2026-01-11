@@ -113,6 +113,10 @@ class ClientState {
     private val _msdpData = MutableStateFlow<Map<String, Any>>(emptyMap())
     val msdpData: StateFlow<Map<String, Any>> = _msdpData
 
+    // GMCP данные (Generic MUD Communication Protocol)
+    private val _gmcpData = MutableStateFlow<Map<String, kotlinx.serialization.json.JsonElement>>(emptyMap())
+    val gmcpData: StateFlow<Map<String, kotlinx.serialization.json.JsonElement>> = _gmcpData
+
     // Доступ к менеджерам
     val triggers = triggerManager.triggers
     val aliases = aliasManager.aliases
@@ -862,6 +866,36 @@ class ClientState {
     }
 
     /**
+     * Обновляет GMCP данные
+     */
+    fun updateGmcpData(message: com.bylins.client.network.GmcpMessage) {
+        // Обновляем хранилище GMCP данных
+        _gmcpData.value = _gmcpData.value + (message.packageName to message.data)
+
+        println("[ClientState] GMCP: ${message.packageName} = ${message.data}")
+
+        // Парсим JSON в Map для переменных
+        val parser = com.bylins.client.network.GmcpParser()
+        val dataMap = parser.jsonToMap(message.data)
+
+        // Автоматически обновляем переменные из GMCP
+        if (dataMap != null) {
+            dataMap.forEach { (key, value) ->
+                variableManager.setVariable("gmcp_${message.packageName.lowercase().replace(".", "_")}_$key", value.toString())
+            }
+        }
+
+        // Уведомляем скрипты о GMCP событии
+        if (::scriptManager.isInitialized) {
+            val eventData = mapOf(
+                "package" to message.packageName,
+                "data" to message.data.toString()
+            )
+            scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_GMCP, eventData)
+        }
+    }
+
+    /**
      * Обрабатывает входящую строку текста (вызывается из TelnetClient)
      * Возвращает модифицированный текст с примененными colorize от триггеров
      */
@@ -1467,6 +1501,7 @@ class ClientState {
             timerActions = createTimerActions(),
             variableActions = createVariableActions(),
             msdpActions = createMsdpActions(),
+            gmcpActions = createGmcpActions(),
             mapperActions = createMapperActions()
         )
 
@@ -1580,6 +1615,17 @@ class ClientState {
 
         override fun getAllMsdpData(): Map<String, Any> {
             return _msdpData.value
+        }
+    }
+
+    private fun createGmcpActions() = object : com.bylins.client.scripting.GmcpActions {
+        override fun getGmcpValue(packageName: String): String? {
+            val jsonElement = _gmcpData.value[packageName]
+            return jsonElement?.toString()
+        }
+
+        override fun getAllGmcpData(): Map<String, String> {
+            return _gmcpData.value.mapValues { it.value.toString() }
         }
     }
 

@@ -119,6 +119,11 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 8,
                         onClick = { selectedTab = 8 },
+                        text = { Text("GMCP") }
+                    )
+                    Tab(
+                        selected = selectedTab == 9,
+                        onClick = { selectedTab = 9 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -221,6 +226,13 @@ fun MainWindow() {
                             )
                         }
                         8 -> {
+                            // Панель GMCP данных
+                            GmcpPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        9 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,

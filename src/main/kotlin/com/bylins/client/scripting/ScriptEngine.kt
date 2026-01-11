@@ -75,6 +75,7 @@ enum class ScriptEvent {
     ON_CONNECT,        // При подключении
     ON_DISCONNECT,     // При отключении
     ON_MSDP,           // При получении MSDP данных
+    ON_GMCP,           // При получении GMCP данных
     ON_TRIGGER,        // При срабатывании триггера
     ON_ALIAS,          // При срабатывании алиаса
     ON_ROOM_ENTER      // При входе в новую комнату (маппер)

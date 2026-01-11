@@ -149,6 +149,7 @@ class ScriptManager(
             ScriptEvent.ON_CONNECT -> "on_connect"
             ScriptEvent.ON_DISCONNECT -> "on_disconnect"
             ScriptEvent.ON_MSDP -> "on_msdp"
+            ScriptEvent.ON_GMCP -> "on_gmcp"
             ScriptEvent.ON_TRIGGER -> "on_trigger"
             ScriptEvent.ON_ALIAS -> "on_alias"
             ScriptEvent.ON_ROOM_ENTER -> "on_room_enter"

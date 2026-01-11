@@ -26,6 +26,7 @@ class TelnetClient(
 
     private val telnetParser = TelnetParser(encoding)
     private val msdpParser = MsdpParser()
+    private val gmcpParser = GmcpParser()
 
     /**
      * Устанавливает кодировку для telnet соединения
@@ -262,10 +263,17 @@ class TelnetClient(
     }
 
     private fun parseGMCP(data: ByteArray) {
-        // TODO: Implement GMCP parsing
-        // GMCP формат: JSON
-        val json = String(data, Charsets.UTF_8)
-        println("GMCP: $json")
+        try {
+            val gmcpMessage = gmcpParser.parse(data)
+            if (gmcpMessage != null) {
+                clientState?.updateGmcpData(gmcpMessage)
+            } else {
+                println("[TelnetClient] Failed to parse GMCP message")
+            }
+        } catch (e: Exception) {
+            println("[TelnetClient] Error parsing GMCP: ${e.message}")
+            e.printStackTrace()
+        }
     }
 
     companion object {

@@ -12,6 +12,12 @@
   - Сохранение в конфигурации
 - ✅ **ANSI цвета** - полная поддержка (16/256/RGB), правильная VGA палитра
 - ✅ **MSDP протокол** - автообновление статуса персонажа
+- ✅ **GMCP протокол** - Generic MUD Communication Protocol для структурированных данных
+  - Парсинг JSON сообщений от сервера
+  - UI для просмотра всех GMCP пакетов
+  - GMCP API для скриптов: getGmcpValue(), getAllGmcpData()
+  - Событие on_gmcp для скриптов
+  - Автоматические переменные: gmcp_<package>_<key>
 - ✅ **Система триггеров** - regex паттерны, переменные $1-$9, gag, priority, colorize
 - ✅ **Система алиасов** - regex паттерны, переменные $0-$9, priority
 - ✅ **Горячие клавиши** - F1-F12, Numpad 0-9, Ctrl+, Alt+, Shift+ модификаторы
@@ -88,9 +94,10 @@
   - **Python** - Jython 2.7 (полная поддержка)
   - **Lua** - LuaJ 5.2 (полная поддержка)
   - **Perl** - внешний процесс (обнаружение доступно, полная интеграция в разработке)
-  - События: on_load, on_connect, on_disconnect, on_line, on_command, on_msdp, on_trigger, on_alias, on_room_enter
+  - События: on_load, on_connect, on_disconnect, on_line, on_command, on_msdp, on_gmcp, on_trigger, on_alias, on_room_enter
   - API: send(), echo(), addTrigger(), addAlias(), setTimeout(), setInterval(), getVariable(), setVariable()
   - MSDP API: getMsdpValue(), getAllMsdpData()
+  - GMCP API: getGmcpValue(packageName), getAllGmcpData()
   - Mapper API: getCurrentRoom(), getRoomAt(), setRoomNote(), setRoomColor()
   - Автозагрузка скриптов из директории scripts/
   - UI для управления: загрузка, выгрузка, включение/выключение, перезагрузка
