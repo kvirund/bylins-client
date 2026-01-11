@@ -125,13 +125,30 @@ fun MainWindow() {
                                         .fillMaxHeight()
                                 )
 
-                                // Боковая панель статуса персонажа
-                                StatusPanel(
-                                    clientState = clientState,
+                                // Боковая панель с статусом и мини-картой
+                                Column(
                                     modifier = Modifier
                                         .width(250.dp)
                                         .fillMaxHeight()
-                                )
+                                ) {
+                                    // Статус персонажа
+                                    StatusPanel(
+                                        clientState = clientState,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(0.5f)
+                                    )
+
+                                    Divider()
+
+                                    // Мини-карта
+                                    MiniMapPanel(
+                                        clientState = clientState,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(0.5f)
+                                    )
+                                }
                             }
                         }
                         1 -> {

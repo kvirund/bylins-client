@@ -27,7 +27,8 @@
       "Bash(export JAVA_HOME=\"/c/Program Files/Java/jdk-17\")",
       "Bash(grep:*)",
       "Bash(gradlew.bat compileKotlin:*)",
-      "Bash(cmd /c gradlew.bat compileKotlin)"
+      "Bash(cmd /c gradlew.bat compileKotlin)",
+      "Bash(./gradlew.bat clean build:*)"
     ]
   }
 }
