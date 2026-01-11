@@ -268,10 +268,10 @@ class MapManager(
             val jsonString = json.encodeToString(_rooms.value)
             file.writeText(jsonString)
 
-            println("[MapManager] Карта сохранена: ${file.absolutePath} (${_rooms.value.size} комнат)")
+            println("[MapManager] Map saved: ${file.absolutePath} (${_rooms.value.size} rooms)")
             true
         } catch (e: Exception) {
-            println("[MapManager] Ошибка сохранения карты: ${e.message}")
+            println("[MapManager] Error saving map: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -290,7 +290,7 @@ class MapManager(
             }
 
             if (!file.exists()) {
-                println("[MapManager] Файл карты не найден: ${file.absolutePath}")
+                println("[MapManager] Map file not found: ${file.absolutePath}")
                 return false
             }
 
@@ -303,10 +303,10 @@ class MapManager(
             val rooms = json.decodeFromString<Map<String, Room>>(jsonString)
 
             _rooms.value = rooms
-            println("[MapManager] Карта загружена: ${file.absolutePath} (${rooms.size} комнат)")
+            println("[MapManager] Map loaded: ${file.absolutePath} (${rooms.size} rooms)")
             true
         } catch (e: Exception) {
-            println("[MapManager] Ошибка загрузки карты: ${e.message}")
+            println("[MapManager] Error loading map: ${e.message}")
             e.printStackTrace()
             false
         }
@@ -372,7 +372,7 @@ class MapManager(
      */
     fun saveMapToDatabase(name: String, description: String = ""): Boolean {
         if (_rooms.value.isEmpty()) {
-            println("[MapManager] Нет комнат для сохранения")
+            println("[MapManager] No rooms to save")
             return false
         }
         return database.saveMap(name, _rooms.value, description)

@@ -167,9 +167,9 @@ fun MapPanel(
                                 }
                                 val jsonString = json.encodeToString(exportedRooms)
                                 fileChooser.selectedFile.writeText(jsonString)
-                                println("Карта экспортирована в ${fileChooser.selectedFile.absolutePath}")
+                                println("[MapPanel] Map exported to ${fileChooser.selectedFile.absolutePath}")
                             } catch (e: Exception) {
-                                println("Ошибка экспорта: ${e.message}")
+                                println("[MapPanel] Export error: ${e.message}")
                                 e.printStackTrace()
                             }
                         }
@@ -194,9 +194,9 @@ fun MapPanel(
                                 }
                                 val importedRooms = json.decodeFromString<Map<String, Room>>(jsonString)
                                 clientState.importMap(importedRooms)
-                                println("Карта импортирована из ${fileChooser.selectedFile.absolutePath}")
+                                println("[MapPanel] Map imported from ${fileChooser.selectedFile.absolutePath}")
                             } catch (e: Exception) {
-                                println("Ошибка импорта: ${e.message}")
+                                println("[MapPanel] Import error: ${e.message}")
                                 e.printStackTrace()
                             }
                         }
