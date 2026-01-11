@@ -13,14 +13,19 @@ class TabManager {
     private val _activeTabId = MutableStateFlow<String?>(null)
     val activeTabId: StateFlow<String?> = _activeTabId
 
+    // Создаём AnsiParser один раз для всех строк
+    private val ansiParser = com.bylins.client.ui.AnsiParser()
+
     /**
      * Главная вкладка (всегда существует)
+     * Уменьшенный лимит для экономии памяти
      */
     private val mainTab = Tab(
         id = "main",
         name = "Главная",
         filters = emptyList(),
-        captureMode = CaptureMode.COPY
+        captureMode = CaptureMode.COPY,
+        maxLines = 1000  // Уменьшено с 2000
     )
 
     init {
@@ -98,6 +103,8 @@ class TabManager {
      */
     fun setActiveTab(id: String) {
         if (_tabs.value.any { it.id == id }) {
+            // Принудительно обновляем содержимое вкладки перед показом
+            getTab(id)?.flush()
             _activeTabId.value = id
         }
     }
@@ -107,7 +114,7 @@ class TabManager {
      * Возвращает текст, который должен остаться в главной вкладке
      */
     fun processText(text: String): String {
-        val ansiParser = com.bylins.client.ui.AnsiParser()
+        // Используем общий ansiParser вместо создания нового
         val lines = text.split("\n")
         val mainLines = mutableListOf<String>()
 

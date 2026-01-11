@@ -24,8 +24,9 @@ class TelnetClient(private val clientState: ClientState? = null) {
     private val telnetParser = TelnetParser()
     private val msdpParser = MsdpParser()
 
-    // Ограничение на размер буфера вывода (5 МБ)
-    private val MAX_BUFFER_SIZE = 5 * 1024 * 1024 // 5 MB
+    // Ограничение на размер буфера вывода (1 МБ)
+    // Уменьшено для экономии памяти - вкладки хранят свою историю отдельно
+    private val MAX_BUFFER_SIZE = 1 * 1024 * 1024 // 1 MB
 
     suspend fun connect(host: String, port: Int) = withContext(Dispatchers.IO) {
         try {

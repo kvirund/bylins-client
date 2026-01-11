@@ -1,6 +1,7 @@
 package com.bylins.client.network
 
 import java.io.ByteArrayOutputStream
+import java.nio.charset.Charset
 
 enum class TelnetCommandType {
     DO, DONT, WILL, WONT, SUBNEGOTIATION
@@ -119,7 +120,8 @@ class TelnetParser {
             }
         }
 
-        val text = textBuffer.toString(Charsets.UTF_8)
+        // Былины MUD использует кодировку Windows-1251 (CP1251)
+        val text = textBuffer.toString(Charset.forName("windows-1251"))
         return Pair(text, commands.toList())
     }
 }

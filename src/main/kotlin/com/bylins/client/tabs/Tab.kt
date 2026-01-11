@@ -12,12 +12,15 @@ data class Tab(
     val name: String,
     val filters: List<TabFilter> = emptyList(),
     val captureMode: CaptureMode = CaptureMode.COPY,
-    val maxLines: Int = 10000
+    val maxLines: Int = 2000  // Уменьшено с 10000 до 2000 для экономии памяти
 ) {
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content
 
     private val lines = mutableListOf<String>()
+
+    // Счётчик для оптимизации обновлений
+    private var updateCounter = 0
 
     /**
      * Добавляет текст во вкладку
@@ -25,16 +28,38 @@ data class Tab(
     fun appendText(text: String) {
         // Разбиваем на строки
         val newLines = text.split("\n")
-        lines.addAll(newLines)
 
-        // Ограничиваем количество строк
-        if (lines.size > maxLines) {
-            val toRemove = lines.size - maxLines
-            repeat(toRemove) { lines.removeAt(0) }
+        // Добавляем новые строки
+        for (line in newLines) {
+            if (line.isEmpty() && lines.isNotEmpty() && lines.last().isEmpty()) {
+                // Пропускаем дублирующиеся пустые строки
+                continue
+            }
+            lines.add(line)
         }
 
-        // Обновляем содержимое
-        _content.value = lines.joinToString("\n")
+        // Ограничиваем количество строк
+        while (lines.size > maxLines) {
+            lines.removeAt(0)
+        }
+
+        // Обновляем содержимое только каждые N добавлений или если буфер большой
+        // Увеличен интервал обновления для экономии памяти (меньше создаётся строк)
+        updateCounter++
+        if (updateCounter >= 50 || lines.size > maxLines * 0.95) {
+            updateCounter = 0
+            _content.value = lines.joinToString("\n")
+        }
+    }
+
+    /**
+     * Принудительно обновляет содержимое (для немедленного отображения)
+     */
+    fun flush() {
+        if (updateCounter > 0) {
+            updateCounter = 0
+            _content.value = lines.joinToString("\n")
+        }
     }
 
     /**
@@ -43,6 +68,7 @@ data class Tab(
     fun clear() {
         lines.clear()
         _content.value = ""
+        updateCounter = 0
     }
 
     /**
