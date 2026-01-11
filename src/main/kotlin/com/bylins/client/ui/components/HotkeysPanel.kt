@@ -82,12 +82,22 @@ fun HotkeysPanel(
 
         Divider(color = Color.Gray, thickness = 1.dp)
 
-        // Список хоткеев
+        // Список хоткеев (отсортированный)
+        val sortedHotkeys = remember(hotkeys) {
+            hotkeys.sortedWith(
+                compareBy<Hotkey> { !it.ctrl && !it.alt && !it.shift } // Сначала без модификаторов
+                    .thenBy { it.ctrl } // Затем с Ctrl
+                    .thenBy { it.alt } // Затем с Alt
+                    .thenBy { it.shift } // Затем с Shift
+                    .thenBy { it.getKeyCombo() } // И наконец по комбинации клавиш
+            )
+        }
+
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(hotkeys) { hotkey ->
+            items(sortedHotkeys) { hotkey ->
                 HotkeyItem(
                     hotkey = hotkey,
                     onToggle = { id, enabled ->
@@ -107,7 +117,7 @@ fun HotkeysPanel(
             }
         }
 
-        if (hotkeys.isEmpty()) {
+        if (sortedHotkeys.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
