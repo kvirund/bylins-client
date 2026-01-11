@@ -109,4 +109,46 @@ class TriggerManager(
         _triggers.value = emptyList()
         firedOnceTriggers.clear()
     }
+
+    /**
+     * Экспортирует выбранные триггеры в JSON строку
+     */
+    fun exportTriggers(triggerIds: List<String>): String {
+        val selectedTriggers = _triggers.value.filter { it.id in triggerIds }
+        val dtos = selectedTriggers.map { com.bylins.client.config.TriggerDto.fromTrigger(it) }
+        return kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(com.bylins.client.config.TriggerDto.serializer()),
+            dtos
+        )
+    }
+
+    /**
+     * Импортирует триггеры из JSON строки
+     * @param json JSON строка с триггерами
+     * @param merge если true, добавляет к существующим, иначе заменяет конфликтующие
+     * @return количество импортированных триггеров
+     */
+    fun importTriggers(json: String, merge: Boolean = true): Int {
+        try {
+            val dtos = kotlinx.serialization.json.Json.decodeFromString(
+                kotlinx.serialization.builtins.ListSerializer(com.bylins.client.config.TriggerDto.serializer()),
+                json
+            )
+            val triggers = dtos.map { it.toTrigger() }
+
+            if (merge) {
+                // Добавляем новые триггеры, заменяя существующие с теми же ID
+                val importedIds = triggers.map { it.id }.toSet()
+                val newTriggers = _triggers.value.filter { it.id !in importedIds } + triggers
+                _triggers.value = newTriggers.sortedByDescending { it.priority }
+            } else {
+                // Полная замена
+                _triggers.value = triggers.sortedByDescending { it.priority }
+            }
+
+            return triggers.size
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Failed to import triggers: ${e.message}", e)
+        }
+    }
 }

@@ -71,4 +71,46 @@ class HotkeyManager(
     fun clear() {
         _hotkeys.value = emptyList()
     }
+
+    /**
+     * Экспортирует выбранные хоткеи в JSON строку
+     */
+    fun exportHotkeys(hotkeyIds: List<String>): String {
+        val selectedHotkeys = _hotkeys.value.filter { it.id in hotkeyIds }
+        val dtos = selectedHotkeys.map { com.bylins.client.config.HotkeyDto.fromHotkey(it) }
+        return kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(com.bylins.client.config.HotkeyDto.serializer()),
+            dtos
+        )
+    }
+
+    /**
+     * Импортирует хоткеи из JSON строки
+     * @param json JSON строка с хоткеями
+     * @param merge если true, добавляет к существующим, иначе заменяет конфликтующие
+     * @return количество импортированных хоткеев
+     */
+    fun importHotkeys(json: String, merge: Boolean = true): Int {
+        try {
+            val dtos = kotlinx.serialization.json.Json.decodeFromString(
+                kotlinx.serialization.builtins.ListSerializer(com.bylins.client.config.HotkeyDto.serializer()),
+                json
+            )
+            val hotkeys = dtos.mapNotNull { it.toHotkey() }
+
+            if (merge) {
+                // Добавляем новые хоткеи, заменяя существующие с теми же ID
+                val importedIds = hotkeys.map { it.id }.toSet()
+                val newHotkeys = _hotkeys.value.filter { it.id !in importedIds } + hotkeys
+                _hotkeys.value = newHotkeys
+            } else {
+                // Полная замена
+                _hotkeys.value = hotkeys
+            }
+
+            return hotkeys.size
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Failed to import hotkeys: ${e.message}", e)
+        }
+    }
 }

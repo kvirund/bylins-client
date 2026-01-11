@@ -79,4 +79,46 @@ class AliasManager(
     fun clear() {
         _aliases.value = emptyList()
     }
+
+    /**
+     * Экспортирует выбранные алиасы в JSON строку
+     */
+    fun exportAliases(aliasIds: List<String>): String {
+        val selectedAliases = _aliases.value.filter { it.id in aliasIds }
+        val dtos = selectedAliases.map { com.bylins.client.config.AliasDto.fromAlias(it) }
+        return kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(com.bylins.client.config.AliasDto.serializer()),
+            dtos
+        )
+    }
+
+    /**
+     * Импортирует алиасы из JSON строки
+     * @param json JSON строка с алиасами
+     * @param merge если true, добавляет к существующим, иначе заменяет конфликтующие
+     * @return количество импортированных алиасов
+     */
+    fun importAliases(json: String, merge: Boolean = true): Int {
+        try {
+            val dtos = kotlinx.serialization.json.Json.decodeFromString(
+                kotlinx.serialization.builtins.ListSerializer(com.bylins.client.config.AliasDto.serializer()),
+                json
+            )
+            val aliases = dtos.map { it.toAlias() }
+
+            if (merge) {
+                // Добавляем новые алиасы, заменяя существующие с теми же ID
+                val importedIds = aliases.map { it.id }.toSet()
+                val newAliases = _aliases.value.filter { it.id !in importedIds } + aliases
+                _aliases.value = newAliases.sortedByDescending { it.priority }
+            } else {
+                // Полная замена
+                _aliases.value = aliases.sortedByDescending { it.priority }
+            }
+
+            return aliases.size
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Failed to import aliases: ${e.message}", e)
+        }
+    }
 }
