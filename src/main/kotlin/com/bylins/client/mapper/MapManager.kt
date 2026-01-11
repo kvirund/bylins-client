@@ -24,6 +24,7 @@ class MapManager(
     val mapEnabled: StateFlow<Boolean> = _mapEnabled
 
     private val pathfinder = Pathfinder()
+    private val database = MapDatabase()
 
     /**
      * Добавляет или обновляет комнату на карте
@@ -340,6 +341,54 @@ class MapManager(
     fun findRoomsInRadius(maxSteps: Int): Map<String, Int> {
         val currentId = _currentRoomId.value ?: return emptyMap()
         return pathfinder.findRoomsInRadius(_rooms.value, currentId, maxSteps)
+    }
+
+    // === Работа с базой данных ===
+
+    /**
+     * Сохраняет текущую карту в базу данных
+     */
+    fun saveMapToDatabase(name: String, description: String = ""): Boolean {
+        if (_rooms.value.isEmpty()) {
+            println("[MapManager] Нет комнат для сохранения")
+            return false
+        }
+        return database.saveMap(name, _rooms.value, description)
+    }
+
+    /**
+     * Загружает карту из базы данных
+     */
+    fun loadMapFromDatabase(name: String): Boolean {
+        val rooms = database.loadMap(name)
+        if (rooms != null) {
+            _rooms.value = rooms
+            // Сбрасываем текущую комнату
+            _currentRoomId.value = null
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Возвращает список всех карт в базе данных
+     */
+    fun listMapsInDatabase(): List<MapInfo> {
+        return database.listMaps()
+    }
+
+    /**
+     * Удаляет карту из базы данных
+     */
+    fun deleteMapFromDatabase(name: String): Boolean {
+        return database.deleteMap(name)
+    }
+
+    /**
+     * Закрывает соединение с базой данных
+     */
+    fun closeDatabase() {
+        database.close()
     }
 }
 

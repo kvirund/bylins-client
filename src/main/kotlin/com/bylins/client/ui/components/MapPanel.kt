@@ -57,6 +57,7 @@ fun MapPanel(
     var currentLevel by remember { mutableStateOf(0) }
     var selectedRoom by remember { mutableStateOf<Room?>(null) }
     var showRoomDialog by remember { mutableStateOf(false) }
+    var showDatabaseDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier) {
         // Панель управления
@@ -203,6 +204,13 @@ fun MapPanel(
                     contentPadding = PaddingValues(8.dp)
                 ) {
                     Text("Импорт")
+                }
+
+                Button(
+                    onClick = { showDatabaseDialog = true },
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    Text("База данных")
                 }
             }
         }
@@ -407,6 +415,14 @@ fun MapPanel(
             onSaveColor = { color ->
                 clientState.setRoomColor(selectedRoom!!.id, color)
             }
+        )
+    }
+
+    // Диалог базы данных карт
+    if (showDatabaseDialog) {
+        MapDatabaseDialog(
+            clientState = clientState,
+            onDismiss = { showDatabaseDialog = false }
         )
     }
 }

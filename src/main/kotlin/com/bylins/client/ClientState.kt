@@ -969,6 +969,23 @@ class ClientState {
         return mapManager.loadFromFile(filePath)
     }
 
+    // Работа с базой данных карт
+    fun saveMapToDatabase(name: String, description: String = ""): Boolean {
+        return mapManager.saveMapToDatabase(name, description)
+    }
+
+    fun loadMapFromDatabase(name: String): Boolean {
+        return mapManager.loadMapFromDatabase(name)
+    }
+
+    fun listMapsInDatabase(): List<com.bylins.client.mapper.MapInfo> {
+        return mapManager.listMapsInDatabase()
+    }
+
+    fun deleteMapFromDatabase(name: String): Boolean {
+        return mapManager.deleteMapFromDatabase(name)
+    }
+
     // Управление скриптами
     private fun initializeScripting() {
         // Создаем реализацию ScriptAPI

@@ -40,6 +40,9 @@ dependencies {
     implementation("org.python:jython-standalone:2.7.3")
     // LuaJ для Lua скриптов
     implementation("org.luaj:luaj-jse:3.0.1")
+
+    // SQLite для хранения карт
+    implementation("org.xerial:sqlite-jdbc:3.44.1.0")
 }
 
 kotlin {
