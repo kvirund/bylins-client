@@ -604,6 +604,64 @@ class ClientState {
                 return true
             }
 
+            command.startsWith("#zone") -> {
+                val args = command.substring(5).trim()
+
+                when {
+                    // #zone - показать текущую зону
+                    args.isEmpty() -> {
+                        val currentRoom = mapManager.getCurrentRoom()
+                        if (currentRoom == null) {
+                            telnetClient.addToOutput("\u001B[1;31m[#zone] Текущая комната не определена\u001B[0m")
+                        } else if (currentRoom.zone.isEmpty()) {
+                            telnetClient.addToOutput("\u001B[1;33m[#zone] Текущая комната не принадлежит ни одной зоне\u001B[0m")
+                        } else {
+                            telnetClient.addToOutput("\u001B[1;32m[#zone] Текущая зона: ${currentRoom.zone}\u001B[0m")
+                        }
+                    }
+
+                    // #zone list - список всех зон
+                    args == "list" -> {
+                        val zones = getAllZones()
+                        if (zones.isEmpty()) {
+                            telnetClient.addToOutput("\u001B[1;33m[#zone] Зоны не определены. Используйте #zone detect\u001B[0m")
+                        } else {
+                            val stats = getZoneStatistics()
+                            val sb = StringBuilder()
+                            sb.append("\u001B[1;32m[#zone] Список зон (${stats.size}):\u001B[0m\n")
+                            stats.forEach { (zone, count) ->
+                                sb.append("\u001B[1;33m- $zone\u001B[0m ($count комнат)\n")
+                            }
+                            telnetClient.addToOutput(sb.toString())
+                        }
+                    }
+
+                    // #zone detect - автоматическая детекция
+                    args == "detect" -> {
+                        detectAndAssignZones()
+                        val stats = getZoneStatistics()
+                        telnetClient.addToOutput("\u001B[1;32m[#zone] Детектировано зон: ${stats.size}\u001B[0m")
+                    }
+
+                    // #zone clear - очистить все зоны
+                    args == "clear" -> {
+                        clearAllZones()
+                        telnetClient.addToOutput("\u001B[1;32m[#zone] Все зоны очищены\u001B[0m")
+                    }
+
+                    else -> {
+                        val sb = StringBuilder()
+                        sb.append("\u001B[1;33m[#zone] Использование:\u001B[0m\n")
+                        sb.append("  #zone - показать текущую зону\n")
+                        sb.append("  #zone list - список всех зон\n")
+                        sb.append("  #zone detect - автоматическая детекция зон\n")
+                        sb.append("  #zone clear - очистить все зоны")
+                        telnetClient.addToOutput(sb.toString())
+                    }
+                }
+                return true
+            }
+
             // Speedwalk: распознаём паттерн типа 5n2e3w
             command.matches(Regex("^[0-9]*[nsewud]{1,2}([0-9]+[nsewud]{1,2})*$", RegexOption.IGNORE_CASE)) -> {
                 val directions = parseSpeedwalk(command)
@@ -691,6 +749,10 @@ class ClientState {
             |  #goto <room_id>        - Переход к указанной комнате
             |  #run                   - Переход к ближайшей непосещенной комнате
             |  #find <название>       - Поиск комнат по названию
+            |  #zone                  - Информация о зонах
+            |  #zone list             - Список всех зон на карте
+            |  #zone detect           - Автоматическая детекция зон
+            |  #zone clear            - Очистить все зоны
             |  Speedwalk: 5n, 3n2e, 10sw - Быстрое перемещение
             |
             |💾 ПЕРЕМЕННЫЕ:
