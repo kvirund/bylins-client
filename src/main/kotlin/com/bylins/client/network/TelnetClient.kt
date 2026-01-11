@@ -37,7 +37,7 @@ class TelnetClient(
 
     // Ограничение на размер буфера вывода (1 МБ)
     // Уменьшено для экономии памяти - вкладки хранят свою историю отдельно
-    private val MAX_BUFFER_SIZE = 1 * 1024 * 1024 // 1 MB
+    private val MAX_BUFFER_SIZE = 1024 * 1024 // 1 MB
 
     suspend fun connect(host: String, port: Int) = withContext(Dispatchers.IO) {
         try {
@@ -122,27 +122,28 @@ class TelnetClient(
      * Добавляет текст в буфер с ограничением размера
      */
     private fun appendToBuffer(text: String) {
-        var newValue = _receivedData.value + text
+        val currentValue = _receivedData.value
+        val totalLength = currentValue.length + text.length
 
         // Если буфер превышает лимит, обрезаем старые строки
-        if (newValue.length > MAX_BUFFER_SIZE) {
+        if (totalLength > MAX_BUFFER_SIZE) {
             // Находим позицию, с которой начинаем хранить данные (оставляем последние 80% буфера)
             val keepSize = (MAX_BUFFER_SIZE * 0.8).toInt()
-            val cutPosition = newValue.length - keepSize
+            val cutPosition = currentValue.length - keepSize
 
-            // Ищем ближайший перенос строки после позиции обрезки, чтобы не обрезать строку посередине
-            val nextNewline = newValue.indexOf('\n', cutPosition)
-            if (nextNewline != -1) {
-                newValue = newValue.substring(nextNewline + 1)
+            // Ищем ближайший перенос строки после позиции обрезки
+            val nextNewline = currentValue.indexOf('\n', cutPosition.coerceAtLeast(0))
+
+            val truncatedValue = if (nextNewline != -1) {
+                currentValue.substring(nextNewline + 1)
             } else {
-                newValue = newValue.substring(cutPosition)
+                currentValue.substring(cutPosition.coerceAtLeast(0))
             }
 
-            // Добавляем сообщение о том, что буфер был обрезан
-            newValue = "\u001B[1;33m[Буфер вывода был очищен для экономии памяти]\u001B[0m\n\n" + newValue
+            _receivedData.value = "\u001B[1;33m[Буфер очищен]\u001B[0m\n" + truncatedValue + text
+        } else {
+            _receivedData.value = currentValue + text
         }
-
-        _receivedData.value = newValue
     }
 
     private fun startReading() {

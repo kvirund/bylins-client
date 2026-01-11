@@ -32,7 +32,9 @@
       "Bash(jps:*)",
       "Bash(jcmd:*)",
       "Bash(jstack:*)",
-      "Bash(./gradlew.bat run:*)"
+      "Bash(./gradlew.bat run:*)",
+      "Bash(unset JAVA_HOME)",
+      "Bash(git restore:*)"
     ]
   }
 }

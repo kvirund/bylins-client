@@ -124,6 +124,30 @@ fun OutputPanel(
     }
 }
 
+/**
+ * Получает последние N строк из текста для оптимизации рендеринга
+ */
+private fun getLastLines(text: String, maxLines: Int): String {
+    if (text.isEmpty()) return text
+
+    var lineCount = 0
+    var position = text.length - 1
+
+    // Считаем с конца
+    while (position >= 0 && lineCount < maxLines) {
+        if (text[position] == '\n') {
+            lineCount++
+        }
+        position--
+    }
+
+    // Если достигли начала текста
+    if (position < 0) return text
+
+    // Возвращаем текст с позиции после найденной строки
+    return text.substring(position + 1)
+}
+
 @Composable
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
@@ -139,20 +163,31 @@ fun TabContent(
     // Определяем текст для отображения
     val displayText = if (tab.id == "main") receivedData else tabContent
 
-    val outputText: AnnotatedString = remember(displayText) {
-        if (displayText.isEmpty()) {
+    // КРИТИЧНО: Ограничиваем отображаемый текст последними 2000 строками
+    // для избежания O(n²) сложности при парсинге ANSI кодов
+    val limitedText = remember(displayText) {
+        if (displayText.length > 100_000) { // Только если текст большой
+            getLastLines(displayText, 2000)
+        } else {
+            displayText
+        }
+    }
+
+    val outputText: AnnotatedString = remember(limitedText) {
+        if (limitedText.isEmpty()) {
             if (tab.id == "main") {
                 AnnotatedString("Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n")
             } else {
                 AnnotatedString("${tab.name}: пусто\n")
             }
         } else {
-            ansiParser.parse(displayText)
+            ansiParser.parse(limitedText)
         }
     }
 
     // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста (не при переключении вкладок)
-    LaunchedEffect(displayText) {
+    // Используем limitedText вместо displayText для меньшей частоты вызовов
+    LaunchedEffect(limitedText) {
         scrollState.scrollTo(scrollState.maxValue)
     }
 
