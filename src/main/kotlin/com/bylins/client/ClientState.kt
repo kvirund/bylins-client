@@ -61,6 +61,7 @@ class ClientState {
     private val logManager = LogManager()
     private val sessionStats = SessionStats()
     private val statsHistory = com.bylins.client.stats.StatsHistory()
+    private val soundManager = com.bylins.client.audio.SoundManager()
     private val variableManager = VariableManager()
     private val tabManager = TabManager()
     private val mapManager = com.bylins.client.mapper.MapManager(
@@ -108,6 +109,10 @@ class ClientState {
     val hpHistory = statsHistory.hpHistory
     val manaHistory = statsHistory.manaHistory
     val movementHistory = statsHistory.movementHistory
+
+    // Доступ к звукам
+    val soundEnabled = soundManager.soundEnabled
+    val soundVolume = soundManager.volume
 
     // Доступ к переменным
     val variables = variableManager.variables
@@ -208,13 +213,13 @@ class ClientState {
     }
 
     private fun loadDefaultTriggers() {
-        // Триггер для подсветки tells
+        // Триггер для подсветки tells со звуком
         addTrigger(
             com.bylins.client.triggers.Trigger(
                 id = "tell-notify",
                 name = "Tell Notification",
                 pattern = "^(.+) говорит вам:".toRegex(),
-                commands = emptyList(),
+                commands = listOf("#sound tell"),
                 enabled = true,
                 priority = 10,
                 colorize = com.bylins.client.triggers.TriggerColorize(
@@ -224,13 +229,13 @@ class ClientState {
             )
         )
 
-        // Триггер для подсветки шепота
+        // Триггер для подсветки шепота со звуком
         addTrigger(
             com.bylins.client.triggers.Trigger(
                 id = "whisper-notify",
                 name = "Whisper Notification",
                 pattern = "^(.+) шепчет вам:".toRegex(),
-                commands = emptyList(),
+                commands = listOf("#sound whisper"),
                 enabled = true,
                 priority = 10,
                 colorize = com.bylins.client.triggers.TriggerColorize(
@@ -451,6 +456,29 @@ class ClientState {
         when {
             command == "#help" -> {
                 showHelp()
+                return true
+            }
+
+            command.startsWith("#sound ") -> {
+                val soundType = command.substring(7).trim().lowercase()
+                val type = when (soundType) {
+                    "tell" -> com.bylins.client.audio.SoundManager.SoundType.TELL
+                    "whisper" -> com.bylins.client.audio.SoundManager.SoundType.WHISPER
+                    "lowhp" -> com.bylins.client.audio.SoundManager.SoundType.LOW_HP
+                    "levelup" -> com.bylins.client.audio.SoundManager.SoundType.LEVEL_UP
+                    "death" -> com.bylins.client.audio.SoundManager.SoundType.DEATH
+                    "combat" -> com.bylins.client.audio.SoundManager.SoundType.COMBAT
+                    "alert" -> com.bylins.client.audio.SoundManager.SoundType.ALERT
+                    "beep" -> {
+                        soundManager.playBeep()
+                        return true
+                    }
+                    else -> {
+                        telnetClient.addToOutput("\u001B[1;33m[#sound] Неизвестный тип звука: $soundType\u001B[0m")
+                        return true
+                    }
+                }
+                soundManager.playSound(type)
                 return true
             }
 
@@ -727,6 +755,12 @@ class ClientState {
             statsHistory.addHpData(hp, maxHp)
             statsHistory.addManaData(mana, maxMana)
             statsHistory.addMovementData(movement, maxMovement)
+
+            // Звуковое уведомление при низком HP (меньше 30%)
+            val hpPercent = if (maxHp > 0) (hp.toFloat() / maxHp * 100) else 0f
+            if (hpPercent > 0 && hpPercent < 30) {
+                soundManager.playSound(com.bylins.client.audio.SoundManager.SoundType.LOW_HP)
+            }
         }
 
         // Уведомляем скрипты
@@ -1387,4 +1421,9 @@ class ClientState {
     fun disableScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.disableScript(scriptId) else Unit
     fun reloadScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.reloadScript(scriptId) else Unit
     fun getScriptsDirectory() = if (::scriptManager.isInitialized) scriptManager.getScriptsDirectory() else "scripts"
+
+    // Управление звуками
+    fun setSoundEnabled(enabled: Boolean) = soundManager.setSoundEnabled(enabled)
+    fun setSoundVolume(volume: Float) = soundManager.setVolume(volume)
+    fun playSound(type: com.bylins.client.audio.SoundManager.SoundType) = soundManager.playSound(type)
 }
