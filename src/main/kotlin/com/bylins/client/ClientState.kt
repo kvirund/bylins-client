@@ -931,6 +931,16 @@ class ClientState {
         saveConfig()
     }
 
+    fun exportTriggers(triggerIds: List<String>): String {
+        return triggerManager.exportTriggers(triggerIds)
+    }
+
+    fun importTriggers(json: String, merge: Boolean = true): Int {
+        val count = triggerManager.importTriggers(json, merge)
+        saveConfig()
+        return count
+    }
+
     // Управление алиасами
     fun addAlias(alias: com.bylins.client.aliases.Alias) {
         aliasManager.addAlias(alias)
@@ -958,6 +968,16 @@ class ClientState {
         saveConfig()
     }
 
+    fun exportAliases(aliasIds: List<String>): String {
+        return aliasManager.exportAliases(aliasIds)
+    }
+
+    fun importAliases(json: String, merge: Boolean = true): Int {
+        val count = aliasManager.importAliases(json, merge)
+        saveConfig()
+        return count
+    }
+
     // Управление хоткеями
     fun addHotkey(hotkey: com.bylins.client.hotkeys.Hotkey) {
         hotkeyManager.addHotkey(hotkey)
@@ -983,6 +1003,16 @@ class ClientState {
     fun disableHotkey(id: String) {
         hotkeyManager.disableHotkey(id)
         saveConfig()
+    }
+
+    fun exportHotkeys(hotkeyIds: List<String>): String {
+        return hotkeyManager.exportHotkeys(hotkeyIds)
+    }
+
+    fun importHotkeys(json: String, merge: Boolean = true): Int {
+        val count = hotkeyManager.importHotkeys(json, merge)
+        saveConfig()
+        return count
     }
 
     /**

@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.triggers.Trigger
+import java.io.File
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun TriggersPanel(
@@ -30,7 +33,7 @@ fun TriggersPanel(
             .background(Color(0xFF1E1E1E))
             .padding(8.dp)
     ) {
-        // Заголовок с кнопкой добавления
+        // Заголовок с кнопками
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -45,16 +48,71 @@ fun TriggersPanel(
                 fontFamily = FontFamily.Monospace
             )
 
-            Button(
-                onClick = {
-                    editingTrigger = null
-                    showDialog = true
-                },
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = Color(0xFF4CAF50)
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("+ Добавить", color = Color.White)
+                Button(
+                    onClick = {
+                        // Экспорт триггеров
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+                        fileChooser.selectedFile = File("triggers.json")
+
+                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val triggerIds = triggers.map { it.id }
+                                val json = clientState.exportTriggers(triggerIds)
+                                fileChooser.selectedFile.writeText(json)
+                                println("[TriggersPanel] Triggers exported to ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("[TriggersPanel] Export error: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFF2196F3)
+                    )
+                ) {
+                    Text("Экспорт", color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        // Импорт триггеров
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+
+                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val json = fileChooser.selectedFile.readText()
+                                val count = clientState.importTriggers(json, merge = true)
+                                println("[TriggersPanel] Imported $count triggers from ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("[TriggersPanel] Import error: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFFFF9800)
+                    )
+                ) {
+                    Text("Импорт", color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        editingTrigger = null
+                        showDialog = true
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFF4CAF50)
+                    )
+                ) {
+                    Text("+ Добавить", color = Color.White)
+                }
             }
         }
 

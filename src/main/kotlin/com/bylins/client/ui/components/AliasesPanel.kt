@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.aliases.Alias
+import java.io.File
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun AliasesPanel(
@@ -30,7 +33,7 @@ fun AliasesPanel(
             .background(Color(0xFF1E1E1E))
             .padding(8.dp)
     ) {
-        // Заголовок с кнопкой добавления
+        // Заголовок с кнопками
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -45,16 +48,71 @@ fun AliasesPanel(
                 fontFamily = FontFamily.Monospace
             )
 
-            Button(
-                onClick = {
-                    editingAlias = null
-                    showDialog = true
-                },
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = Color(0xFF4CAF50)
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("+ Добавить", color = Color.White)
+                Button(
+                    onClick = {
+                        // Экспорт алиасов
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+                        fileChooser.selectedFile = File("aliases.json")
+
+                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val aliasIds = aliases.map { it.id }
+                                val json = clientState.exportAliases(aliasIds)
+                                fileChooser.selectedFile.writeText(json)
+                                println("[AliasesPanel] Aliases exported to ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("[AliasesPanel] Export error: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFF2196F3)
+                    )
+                ) {
+                    Text("Экспорт", color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        // Импорт алиасов
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+
+                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val json = fileChooser.selectedFile.readText()
+                                val count = clientState.importAliases(json, merge = true)
+                                println("[AliasesPanel] Imported $count aliases from ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("[AliasesPanel] Import error: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFFFF9800)
+                    )
+                ) {
+                    Text("Импорт", color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        editingAlias = null
+                        showDialog = true
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFF4CAF50)
+                    )
+                ) {
+                    Text("+ Добавить", color = Color.White)
+                }
             }
         }
 

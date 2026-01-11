@@ -14,6 +14,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.hotkeys.Hotkey
+import java.io.File
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun HotkeysPanel(
@@ -30,7 +33,7 @@ fun HotkeysPanel(
             .background(Color(0xFF1E1E1E))
             .padding(8.dp)
     ) {
-        // Заголовок с кнопкой добавления
+        // Заголовок с кнопками
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -45,15 +48,70 @@ fun HotkeysPanel(
                 fontFamily = FontFamily.Monospace
             )
 
-            Button(
-                onClick = {
-                    showAddDialog = true
-                },
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = Color(0xFF4CAF50)
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("+ Добавить", color = Color.White)
+                Button(
+                    onClick = {
+                        // Экспорт хоткеев
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+                        fileChooser.selectedFile = File("hotkeys.json")
+
+                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val hotkeyIds = hotkeys.map { it.id }
+                                val json = clientState.exportHotkeys(hotkeyIds)
+                                fileChooser.selectedFile.writeText(json)
+                                println("[HotkeysPanel] Hotkeys exported to ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("[HotkeysPanel] Export error: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFF2196F3)
+                    )
+                ) {
+                    Text("Экспорт", color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        // Импорт хоткеев
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+
+                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val json = fileChooser.selectedFile.readText()
+                                val count = clientState.importHotkeys(json, merge = true)
+                                println("[HotkeysPanel] Imported $count hotkeys from ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("[HotkeysPanel] Import error: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFFFF9800)
+                    )
+                ) {
+                    Text("Импорт", color = Color.White)
+                }
+
+                Button(
+                    onClick = {
+                        showAddDialog = true
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = Color(0xFF4CAF50)
+                    )
+                ) {
+                    Text("+ Добавить", color = Color.White)
+                }
             }
         }
 
