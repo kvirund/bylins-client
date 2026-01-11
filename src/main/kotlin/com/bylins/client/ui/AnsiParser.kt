@@ -11,6 +11,9 @@ import androidx.compose.ui.text.style.TextDecoration
 class AnsiParser {
     private val ESC = '\u001B'
 
+    // Кеш для переиспользования SpanStyle объектов (КРИТИЧНО для производительности)
+    private val spanStyleCache = mutableMapOf<String, SpanStyle>()
+
     // ANSI 16 базовых цветов (стандартная VGA/xterm палитра)
     private val ansi16Colors = mapOf(
         30 to Color(0xFF555555), // Black (темно-серый, чтобы видеть на чёрном фоне) (85,85,85)
@@ -186,13 +189,19 @@ class AnsiParser {
         italic: Boolean,
         underline: Boolean
     ): SpanStyle {
-        return SpanStyle(
-            color = fgColor ?: Color.Unspecified,
-            background = bgColor ?: Color.Unspecified,
-            fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
-            fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
-            textDecoration = if (underline) TextDecoration.Underline else null
-        )
+        // Создаем ключ кеша на основе параметров
+        val cacheKey = "${fgColor?.value ?: "null"}_${bgColor?.value ?: "null"}_${bold}_${italic}_$underline"
+
+        // Проверяем кеш
+        return spanStyleCache.getOrPut(cacheKey) {
+            SpanStyle(
+                color = fgColor ?: Color.Unspecified,
+                background = bgColor ?: Color.Unspecified,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+                fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
+                textDecoration = if (underline) TextDecoration.Underline else null
+            )
+        }
     }
 
     /**

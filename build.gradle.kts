@@ -36,6 +36,8 @@ dependencies {
     implementation("commons-net:commons-net:3.10.0")
 
     // Scripting engines
+    // Nashorn для JavaScript скриптов (standalone для JDK 15+)
+    implementation("org.openjdk.nashorn:nashorn-core:15.4")
     // Jython для Python скриптов
     implementation("org.python:jython-standalone:2.7.3")
     // LuaJ для Lua скриптов

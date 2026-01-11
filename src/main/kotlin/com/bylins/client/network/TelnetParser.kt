@@ -133,7 +133,7 @@ class TelnetParser(
         val charset = try {
             Charset.forName(encoding)
         } catch (e: Exception) {
-            println("Неподдерживаемая кодировка: $encoding, используется UTF-8")
+            println("[TelnetParser] Unsupported encoding: $encoding, falling back to UTF-8")
             Charsets.UTF_8
         }
         val text = textBuffer.toString(charset)

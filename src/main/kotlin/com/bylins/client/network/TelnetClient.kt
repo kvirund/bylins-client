@@ -32,7 +32,7 @@ class TelnetClient(
      */
     fun setEncoding(encoding: String) {
         telnetParser.setEncoding(encoding)
-        println("Кодировка telnet изменена на: $encoding")
+        println("[TelnetClient] Encoding changed to: $encoding")
     }
 
     // Ограничение на размер буфера вывода (1 МБ)

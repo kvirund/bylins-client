@@ -64,6 +64,9 @@ class ClientState {
     private val soundManager = com.bylins.client.audio.SoundManager()
     private val variableManager = VariableManager()
     private val tabManager = TabManager()
+
+    // Для throttling звуковых уведомлений
+    private var lastLowHpSoundTime = 0L
     private val mapManager = com.bylins.client.mapper.MapManager(
         onRoomEnter = { room ->
             // Уведомляем скрипты о входе в комнату
@@ -756,10 +759,12 @@ class ClientState {
             statsHistory.addManaData(mana, maxMana)
             statsHistory.addMovementData(movement, maxMovement)
 
-            // Звуковое уведомление при низком HP (меньше 30%)
+            // Звуковое уведомление при низком HP (меньше 30%) - не чаще раза в 10 секунд
             val hpPercent = if (maxHp > 0) (hp.toFloat() / maxHp * 100) else 0f
-            if (hpPercent > 0 && hpPercent < 30) {
+            val currentTime = System.currentTimeMillis()
+            if (hpPercent > 0 && hpPercent < 30 && (currentTime - lastLowHpSoundTime) > 10000) {
                 soundManager.playSound(com.bylins.client.audio.SoundManager.SoundType.LOW_HP)
+                lastLowHpSoundTime = currentTime
             }
         }
 
