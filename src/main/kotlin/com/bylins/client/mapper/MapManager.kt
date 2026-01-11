@@ -313,18 +313,25 @@ class MapManager(
     }
 
     /**
-     * Находит путь между двумя комнатами
+     * Находит путь между двумя комнатами используя BFS
      */
     fun findPath(startRoomId: String, endRoomId: String): List<Direction>? {
         return pathfinder.findPath(_rooms.value, startRoomId, endRoomId)
     }
 
     /**
-     * Находит путь от текущей комнаты до заданной
+     * Находит путь между двумя комнатами используя A* (более эффективный)
+     */
+    fun findPathAStar(startRoomId: String, endRoomId: String): List<Direction>? {
+        return pathfinder.findPathAStar(_rooms.value, startRoomId, endRoomId)
+    }
+
+    /**
+     * Находит путь от текущей комнаты до заданной (использует A*)
      */
     fun findPathFromCurrent(endRoomId: String): List<Direction>? {
         val currentId = _currentRoomId.value ?: return null
-        return findPath(currentId, endRoomId)
+        return findPathAStar(currentId, endRoomId)
     }
 
     /**
@@ -333,6 +340,21 @@ class MapManager(
     fun findNearestUnvisited(): List<Direction>? {
         val currentId = _currentRoomId.value ?: return null
         return pathfinder.findNearestUnvisited(_rooms.value, currentId)
+    }
+
+    /**
+     * Ищет комнаты по имени или описанию
+     */
+    fun searchRooms(query: String, searchInDescription: Boolean = false): List<Room> {
+        return pathfinder.searchRooms(_rooms.value, query, searchInDescription)
+    }
+
+    /**
+     * Находит ближайшую комнату из списка результатов поиска
+     */
+    fun findNearestFromSearch(targetRooms: List<Room>): Pair<Room, List<Direction>>? {
+        val currentId = _currentRoomId.value ?: return null
+        return pathfinder.findNearestRoom(_rooms.value, currentId, targetRooms)
     }
 
     /**

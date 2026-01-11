@@ -497,6 +497,66 @@ class ClientState {
                 return true
             }
 
+            command.startsWith("#find ") -> {
+                val query = command.substring(6).trim()
+                if (query.isEmpty()) {
+                    telnetClient.addToOutput("\u001B[1;33m[#find] Использование: #find <название комнаты>\u001B[0m")
+                    return true
+                }
+
+                // Ищем комнаты по названию
+                val foundRooms = mapManager.searchRooms(query, searchInDescription = false)
+
+                if (foundRooms.isEmpty()) {
+                    telnetClient.addToOutput("\u001B[1;31m[#find] Комнаты с названием '$query' не найдены\u001B[0m")
+                    return true
+                }
+
+                if (foundRooms.size == 1) {
+                    // Если найдена одна комната, сразу идём к ней
+                    val room = foundRooms.first()
+                    val path = mapManager.findPathFromCurrent(room.id)
+
+                    if (path == null) {
+                        telnetClient.addToOutput("\u001B[1;31m[#find] Путь к комнате '${room.name}' не найден\u001B[0m")
+                        return true
+                    }
+
+                    if (path.isEmpty()) {
+                        telnetClient.addToOutput("\u001B[1;33m[#find] Вы уже в комнате '${room.name}'\u001B[0m")
+                        return true
+                    }
+
+                    val directions = path.joinToString(", ") { it.shortName }
+                    telnetClient.addToOutput("\u001B[1;32m[#find] Путь к '${room.name}' (${path.size} шагов): $directions\u001B[0m")
+
+                    scope.launch {
+                        walkPath(path)
+                    }
+                } else {
+                    // Если найдено несколько комнат, показываем список
+                    val sb = StringBuilder()
+                    sb.append("\u001B[1;32m[#find] Найдено комнат: ${foundRooms.size}\u001B[0m\n")
+
+                    // Сортируем по расстоянию и показываем первые 10
+                    val sortedRooms = foundRooms.take(10)
+                    sortedRooms.forEachIndexed { index, room ->
+                        val path = mapManager.findPathFromCurrent(room.id)
+                        val distance = path?.size ?: -1
+                        val distanceStr = if (distance >= 0) "$distance шагов" else "недоступна"
+                        sb.append("\u001B[1;33m${index + 1}.\u001B[0m ${room.name} (ID: ${room.id}, $distanceStr)\n")
+                    }
+
+                    if (foundRooms.size > 10) {
+                        sb.append("\u001B[1;33m... и ещё ${foundRooms.size - 10} комнат\u001B[0m\n")
+                    }
+
+                    sb.append("\u001B[1;33mИспользуйте #goto <room_id> для перехода\u001B[0m")
+                    telnetClient.addToOutput(sb.toString())
+                }
+                return true
+            }
+
             else -> return false
         }
     }

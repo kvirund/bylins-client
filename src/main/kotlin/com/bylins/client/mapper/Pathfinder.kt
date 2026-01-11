@@ -1,9 +1,10 @@
 package com.bylins.client.mapper
 
 import java.util.*
+import kotlin.math.abs
 
 /**
- * Находит путь между комнатами используя BFS (Breadth-First Search)
+ * Находит путь между комнатами используя BFS и A* алгоритмы
  */
 class Pathfinder {
     /**
@@ -144,10 +145,153 @@ class Pathfinder {
     }
 
     /**
-     * Вспомогательный класс для хранения узла пути
+     * Находит кратчайший путь используя A* алгоритм (более эффективный чем BFS)
+     *
+     * @param rooms Карта всех комнат
+     * @param startRoomId ID начальной комнаты
+     * @param endRoomId ID конечной комнаты
+     * @return Список направлений для перемещения или null если путь не найден
+     */
+    fun findPathAStar(
+        rooms: Map<String, Room>,
+        startRoomId: String,
+        endRoomId: String
+    ): List<Direction>? {
+        val startRoom = rooms[startRoomId] ?: return null
+        val endRoom = rooms[endRoomId] ?: return null
+
+        if (startRoom == endRoom) {
+            return emptyList() // Уже в нужной комнате
+        }
+
+        // Эвристика: манхэттенское расстояние в 3D
+        fun heuristic(room: Room): Int {
+            return abs(room.x - endRoom.x) + abs(room.y - endRoom.y) + abs(room.z - endRoom.z)
+        }
+
+        // Priority queue для A* (сортируется по f = g + h)
+        val openSet = PriorityQueue<AStarNode>(compareBy { it.f })
+        val closedSet = mutableSetOf<String>()
+        val gScore = mutableMapOf<String, Int>() // Стоимость пути от старта до комнаты
+        val cameFrom = mutableMapOf<String, Pair<String, Direction>>() // Откуда пришли и каким направлением
+
+        gScore[startRoomId] = 0
+        openSet.offer(AStarNode(startRoomId, 0, heuristic(startRoom), emptyList()))
+
+        while (openSet.isNotEmpty()) {
+            val current = openSet.poll()
+
+            // Если достигли цели
+            if (current.roomId == endRoomId) {
+                return current.path
+            }
+
+            // Добавляем в закрытый список
+            if (current.roomId in closedSet) continue
+            closedSet.add(current.roomId)
+
+            val currentRoom = rooms[current.roomId] ?: continue
+            val currentG = gScore[current.roomId] ?: Int.MAX_VALUE
+
+            // Проверяем все выходы
+            for ((direction, exit) in currentRoom.exits) {
+                val nextRoomId = exit.targetRoomId
+                if (nextRoomId in closedSet) continue
+
+                val nextRoom = rooms[nextRoomId] ?: continue
+                val tentativeG = currentG + 1 // Стоимость перехода = 1
+
+                // Если нашли более короткий путь
+                if (tentativeG < (gScore[nextRoomId] ?: Int.MAX_VALUE)) {
+                    gScore[nextRoomId] = tentativeG
+                    val newPath = current.path + direction
+                    val h = heuristic(nextRoom)
+                    val f = tentativeG + h
+
+                    cameFrom[nextRoomId] = Pair(current.roomId, direction)
+                    openSet.offer(AStarNode(nextRoomId, tentativeG, f, newPath))
+                }
+            }
+        }
+
+        // Путь не найден
+        return null
+    }
+
+    /**
+     * Ищет комнаты по имени или описанию
+     *
+     * @param rooms Карта всех комнат
+     * @param query Поисковый запрос (регистронезависимый)
+     * @param searchInDescription Искать также в описании комнат
+     * @return Список найденных комнат
+     */
+    fun searchRooms(
+        rooms: Map<String, Room>,
+        query: String,
+        searchInDescription: Boolean = false
+    ): List<Room> {
+        if (query.isBlank()) return emptyList()
+
+        val queryLower = query.lowercase()
+        return rooms.values.filter { room ->
+            val nameMatch = room.name.lowercase().contains(queryLower)
+            val descMatch = searchInDescription && room.description.lowercase().contains(queryLower)
+            val notesMatch = room.notes.lowercase().contains(queryLower)
+            nameMatch || descMatch || notesMatch
+        }
+    }
+
+    /**
+     * Находит ближайшую комнату из списка
+     *
+     * @param rooms Карта всех комнат
+     * @param startRoomId ID начальной комнаты
+     * @param targetRooms Список комнат для поиска
+     * @return Пара (Room, путь к ней) или null если не найдено
+     */
+    fun findNearestRoom(
+        rooms: Map<String, Room>,
+        startRoomId: String,
+        targetRooms: List<Room>
+    ): Pair<Room, List<Direction>>? {
+        if (targetRooms.isEmpty()) return null
+
+        var bestRoom: Room? = null
+        var bestPath: List<Direction>? = null
+        var bestDistance = Int.MAX_VALUE
+
+        for (targetRoom in targetRooms) {
+            val path = findPathAStar(rooms, startRoomId, targetRoom.id)
+            if (path != null && path.size < bestDistance) {
+                bestDistance = path.size
+                bestRoom = targetRoom
+                bestPath = path
+            }
+        }
+
+        return if (bestRoom != null && bestPath != null) {
+            Pair(bestRoom, bestPath)
+        } else {
+            null
+        }
+    }
+
+    /**
+     * Вспомогательный класс для хранения узла пути (BFS)
      */
     private data class PathNode(
         val roomId: String,
+        val path: List<Direction>
+    )
+
+    /**
+     * Вспомогательный класс для A* алгоритма
+     */
+    private data class AStarNode(
+        val roomId: String,
+        val g: Int,  // Стоимость пути от старта
+        val f: Int,  // g + h (общая оценка)
         val path: List<Direction>
     )
 }
