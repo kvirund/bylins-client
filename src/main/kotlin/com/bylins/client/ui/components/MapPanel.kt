@@ -3,18 +3,23 @@ package com.bylins.client.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import com.bylins.client.ClientState
 import com.bylins.client.mapper.Direction
 import com.bylins.client.mapper.Room
@@ -23,6 +28,19 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
+
+// Функция для парсинга HEX цвета
+private fun parseHexColor(hex: String): Color? {
+    return try {
+        val cleanHex = hex.removePrefix("#")
+        val r = cleanHex.substring(0, 2).toInt(16) / 255f
+        val g = cleanHex.substring(2, 4).toInt(16) / 255f
+        val b = cleanHex.substring(4, 6).toInt(16) / 255f
+        Color(r, g, b)
+    } catch (e: Exception) {
+        null
+    }
+}
 
 @Composable
 fun MapPanel(
@@ -37,6 +55,8 @@ fun MapPanel(
     var offsetY by remember { mutableStateOf(0f) }
     var zoom by remember { mutableStateOf(1f) }
     var currentLevel by remember { mutableStateOf(0) }
+    var selectedRoom by remember { mutableStateOf<Room?>(null) }
+    var showRoomDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier) {
         // Панель управления
@@ -199,6 +219,27 @@ fun MapPanel(
                         offsetY += dragAmount.y
                     }
                 }
+                .pointerInput(Unit) {
+                    detectTapGestures { tapOffset ->
+                        // Определяем на какую комнату кликнули
+                        val roomsOnLevel = rooms.values.filter { it.z == currentLevel }
+                        val roomSize = 40f * zoom
+                        val roomSpacing = 60f * zoom
+                        val centerX = size.width / 2 + offsetX
+                        val centerY = size.height / 2 + offsetY
+
+                        roomsOnLevel.forEach { room ->
+                            val roomX = centerX + room.x * roomSpacing
+                            val roomY = centerY + room.y * roomSpacing
+
+                            if (abs(tapOffset.x - roomX) < roomSize / 2 &&
+                                abs(tapOffset.y - roomY) < roomSize / 2) {
+                                selectedRoom = room
+                                showRoomDialog = true
+                            }
+                        }
+                    }
+                }
         ) {
             val roomsOnLevel = rooms.values.filter { it.z == currentLevel }
 
@@ -241,11 +282,19 @@ fun MapPanel(
                 val roomX = centerX + room.x * roomSpacing
                 val roomY = centerY + room.y * roomSpacing
 
-                // Цвет комнаты
-                val roomColor = when {
-                    room.id == currentRoomId -> Color(0xFF00FF00) // Текущая комната - зеленая
-                    room.visited -> Color(0xFF4444FF) // Посещенная - синяя
-                    else -> Color(0xFF888888) // Непосещенная - серая
+                // Цвет комнаты (пользовательский или стандартный)
+                val roomColor = if (room.color != null) {
+                    parseHexColor(room.color) ?: when {
+                        room.id == currentRoomId -> Color(0xFF00FF00)
+                        room.visited -> Color(0xFF4444FF)
+                        else -> Color(0xFF888888)
+                    }
+                } else {
+                    when {
+                        room.id == currentRoomId -> Color(0xFF00FF00) // Текущая комната - зеленая
+                        room.visited -> Color(0xFF4444FF) // Посещенная - синяя
+                        else -> Color(0xFF888888) // Непосещенная - серая
+                    }
                 }
 
                 // Рисуем квадрат комнаты
@@ -256,12 +305,27 @@ fun MapPanel(
                     style = Stroke(width = 2f * zoom)
                 )
 
-                // Рисуем заполнение для текущей комнаты
+                // Рисуем заполнение для текущей комнаты или комнаты с цветом
                 if (room.id == currentRoomId) {
                     drawRect(
                         color = roomColor.copy(alpha = 0.3f),
                         topLeft = Offset(roomX - roomSize / 2, roomY - roomSize / 2),
                         size = Size(roomSize, roomSize)
+                    )
+                } else if (room.color != null) {
+                    drawRect(
+                        color = roomColor.copy(alpha = 0.2f),
+                        topLeft = Offset(roomX - roomSize / 2, roomY - roomSize / 2),
+                        size = Size(roomSize, roomSize)
+                    )
+                }
+
+                // Индикатор заметки
+                if (room.notes.isNotEmpty()) {
+                    drawCircle(
+                        color = Color(0xFFFFFF00), // Жёлтый кружок
+                        radius = 4f * zoom,
+                        center = Offset(roomX + roomSize / 2 - 6f * zoom, roomY - roomSize / 2 + 6f * zoom)
                     )
                 }
             }
@@ -330,5 +394,19 @@ fun MapPanel(
                 )
             }
         }
+    }
+
+    // Диалог редактирования комнаты
+    if (showRoomDialog && selectedRoom != null) {
+        RoomDetailsDialog(
+            room = selectedRoom!!,
+            onDismiss = { showRoomDialog = false },
+            onSaveNote = { note ->
+                clientState.setRoomNote(selectedRoom!!.id, note)
+            },
+            onSaveColor = { color ->
+                clientState.setRoomColor(selectedRoom!!.id, color)
+            }
+        )
     }
 }
