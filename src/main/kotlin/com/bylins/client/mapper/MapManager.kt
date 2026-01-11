@@ -408,6 +408,62 @@ class MapManager(
         return pathfinder.findRoomsInRadius(_rooms.value, currentId, maxSteps)
     }
 
+    // === Работа с зонами ===
+
+    private val zoneDetector = ZoneDetector()
+
+    /**
+     * Автоматически детектирует и присваивает зоны всем комнатам
+     */
+    fun detectAndAssignZones() {
+        _rooms.value = zoneDetector.detectAndAssignZones(_rooms.value)
+        println("[MapManager] Zones detected and assigned")
+    }
+
+    /**
+     * Возвращает статистику по зонам
+     */
+    fun getZoneStatistics(): Map<String, Int> {
+        return zoneDetector.getZoneStatistics(_rooms.value)
+    }
+
+    /**
+     * Возвращает все комнаты в указанной зоне
+     */
+    fun getRoomsByZone(zoneName: String): List<Room> {
+        return _rooms.value.values.filter { it.zone == zoneName }
+    }
+
+    /**
+     * Возвращает список всех зон на карте
+     */
+    fun getAllZones(): List<String> {
+        return _rooms.value.values
+            .map { it.zone }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+    }
+
+    /**
+     * Устанавливает зону для комнаты вручную
+     */
+    fun setRoomZone(roomId: String, zoneName: String) {
+        val room = _rooms.value[roomId] ?: return
+        val updated = room.copy(zone = zoneName)
+        addRoom(updated)
+    }
+
+    /**
+     * Очищает зоны у всех комнат
+     */
+    fun clearAllZones() {
+        _rooms.value = _rooms.value.mapValues { (_, room) ->
+            room.copy(zone = "")
+        }
+        println("[MapManager] All zones cleared")
+    }
+
     // === Работа с базой данных ===
 
     /**

@@ -31,12 +31,14 @@ fun RoomDetailsDialog(
     onDismiss: () -> Unit,
     onSaveNote: (String) -> Unit,
     onSaveColor: (String?) -> Unit,
-    onSaveTags: (Set<String>) -> Unit
+    onSaveTags: (Set<String>) -> Unit,
+    onSaveZone: (String) -> Unit
 ) {
     var note by remember { mutableStateOf(room.notes) }
     var selectedColor by remember { mutableStateOf(room.color) }
     var tags by remember { mutableStateOf(room.tags) }
     var newTag by remember { mutableStateOf("") }
+    var zone by remember { mutableStateOf(room.zone) }
 
     val availableColors = listOf(
         null to "Без цвета",
@@ -247,6 +249,36 @@ fun RoomDetailsDialog(
                     }
                 }
 
+                // Зона
+                Column {
+                    Text(
+                        text = "Зона:",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    OutlinedTextField(
+                        value = zone,
+                        onValueChange = { zone = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Название зоны...") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF4CAF50),
+                            unfocusedBorderColor = Color.Gray,
+                            focusedPlaceholderColor = Color.Gray,
+                            unfocusedPlaceholderColor = Color.Gray
+                        ),
+                        singleLine = true
+                    )
+                    Text(
+                        text = "Используйте 'Детектировать зоны' для автоматического определения",
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+
                 Divider(color = Color.Gray)
 
                 // Кнопки
@@ -268,6 +300,7 @@ fun RoomDetailsDialog(
                             onSaveNote(note)
                             onSaveColor(selectedColor)
                             onSaveTags(tags)
+                            onSaveZone(zone)
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(

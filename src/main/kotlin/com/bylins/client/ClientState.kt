@@ -1292,6 +1292,31 @@ class ClientState {
         return mapManager.loadFromFile(filePath)
     }
 
+    // Работа с зонами
+    fun detectAndAssignZones() {
+        mapManager.detectAndAssignZones()
+    }
+
+    fun getZoneStatistics(): Map<String, Int> {
+        return mapManager.getZoneStatistics()
+    }
+
+    fun getRoomsByZone(zoneName: String): List<com.bylins.client.mapper.Room> {
+        return mapManager.getRoomsByZone(zoneName)
+    }
+
+    fun getAllZones(): List<String> {
+        return mapManager.getAllZones()
+    }
+
+    fun setRoomZone(roomId: String, zoneName: String) {
+        mapManager.setRoomZone(roomId, zoneName)
+    }
+
+    fun clearAllZones() {
+        mapManager.clearAllZones()
+    }
+
     // Работа с базой данных карт
     fun saveMapToDatabase(name: String, description: String = ""): Boolean {
         return mapManager.saveMapToDatabase(name, description)

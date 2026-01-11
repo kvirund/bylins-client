@@ -207,6 +207,16 @@ fun MapPanel(
                 }
 
                 Button(
+                    onClick = {
+                        clientState.detectAndAssignZones()
+                        println("[MapPanel] Zones detected. Statistics: ${clientState.getZoneStatistics()}")
+                    },
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    Text("Детектировать зоны")
+                }
+
+                Button(
                     onClick = { showDatabaseDialog = true },
                     contentPadding = PaddingValues(8.dp)
                 ) {
@@ -366,6 +376,13 @@ fun MapPanel(
                             color = Color(0xFFBBBBBB),
                             style = MaterialTheme.typography.bodySmall
                         )
+                        if (currentRoom.zone.isNotEmpty()) {
+                            Text(
+                                text = "Зона: ${currentRoom.zone}",
+                                color = Color(0xFF00BFFF),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                         if (currentRoom.notes.isNotEmpty()) {
                             Text(
                                 text = "Заметки: ${currentRoom.notes}",
@@ -417,6 +434,9 @@ fun MapPanel(
             },
             onSaveTags = { tags ->
                 clientState.setRoomTags(selectedRoom!!.id, tags)
+            },
+            onSaveZone = { zone ->
+                clientState.setRoomZone(selectedRoom!!.id, zone)
             }
         )
     }
