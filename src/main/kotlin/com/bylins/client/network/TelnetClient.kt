@@ -24,6 +24,9 @@ class TelnetClient(private val clientState: ClientState? = null) {
     private val telnetParser = TelnetParser()
     private val msdpParser = MsdpParser()
 
+    // Ограничение на размер буфера вывода (5 МБ)
+    private val MAX_BUFFER_SIZE = 5 * 1024 * 1024 // 5 MB
+
     suspend fun connect(host: String, port: Int) = withContext(Dispatchers.IO) {
         try {
             // Убеждаемся что предыдущее соединение закрыто
@@ -37,7 +40,7 @@ class TelnetClient(private val clientState: ClientState? = null) {
             _isConnected.value = true
 
             // Уведомляем пользователя об успешном подключении
-            _receivedData.value += "\u001B[1;32m[Подключено к $host:$port]\u001B[0m\n\n"
+            appendToBuffer("\u001B[1;32m[Подключено к $host:$port]\u001B[0m\n\n")
 
             // Отправляем поддерживаемые опции Telnet
             sendTelnetNegotiation()
@@ -71,7 +74,7 @@ class TelnetClient(private val clientState: ClientState? = null) {
 
             // Уведомляем пользователя о разрыве соединения (только если были подключены)
             if (wasConnected) {
-                _receivedData.value += "\u001B[1;31m[Соединение разорвано]\u001B[0m\n"
+                appendToBuffer("\u001B[1;31m[Соединение разорвано]\u001B[0m\n")
             }
         }
     }
@@ -90,7 +93,7 @@ class TelnetClient(private val clientState: ClientState? = null) {
      * Добавляет текст в лог (для эхо команд)
      */
     fun echoCommand(command: String) {
-        _receivedData.value += "\u001B[1;36m$command\u001B[0m\n"
+        appendToBuffer("\u001B[1;36m$command\u001B[0m\n")
     }
 
     /**
@@ -100,7 +103,34 @@ class TelnetClient(private val clientState: ClientState? = null) {
         val textWithNewline = text + "\n"
         // Обрабатываем текст триггерами и получаем модифицированную версию с colorize
         val modifiedText = clientState?.processIncomingText(textWithNewline) ?: textWithNewline
-        _receivedData.value += modifiedText
+        appendToBuffer(modifiedText)
+    }
+
+    /**
+     * Добавляет текст в буфер с ограничением размера
+     */
+    private fun appendToBuffer(text: String) {
+        var newValue = _receivedData.value + text
+
+        // Если буфер превышает лимит, обрезаем старые строки
+        if (newValue.length > MAX_BUFFER_SIZE) {
+            // Находим позицию, с которой начинаем хранить данные (оставляем последние 80% буфера)
+            val keepSize = (MAX_BUFFER_SIZE * 0.8).toInt()
+            val cutPosition = newValue.length - keepSize
+
+            // Ищем ближайший перенос строки после позиции обрезки, чтобы не обрезать строку посередине
+            val nextNewline = newValue.indexOf('\n', cutPosition)
+            if (nextNewline != -1) {
+                newValue = newValue.substring(nextNewline + 1)
+            } else {
+                newValue = newValue.substring(cutPosition)
+            }
+
+            // Добавляем сообщение о том, что буфер был обрезан
+            newValue = "\u001B[1;33m[Буфер вывода был очищен для экономии памяти]\u001B[0m\n\n" + newValue
+        }
+
+        _receivedData.value = newValue
     }
 
     private fun startReading() {
@@ -121,7 +151,7 @@ class TelnetClient(private val clientState: ClientState? = null) {
                     if (text.isNotEmpty()) {
                         // Обрабатываем текст триггерами и получаем модифицированную версию с colorize
                         val modifiedText = clientState?.processIncomingText(text) ?: text
-                        _receivedData.value += modifiedText
+                        appendToBuffer(modifiedText)
                     }
 
                     // Обработка telnet команд

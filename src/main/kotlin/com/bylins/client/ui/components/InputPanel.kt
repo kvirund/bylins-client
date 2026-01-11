@@ -26,6 +26,9 @@ fun InputPanel(
     var historyIndex by remember { mutableStateOf(-1) }
     val isConnected by clientState.isConnected.collectAsState()
 
+    // Максимальное количество команд в истории
+    val MAX_HISTORY_SIZE = 500
+
     // Автоматически фокусируемся при первом рендере
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -36,6 +39,11 @@ fun InputPanel(
             // Добавляем в историю только непустые команды
             if (inputText.text.isNotBlank()) {
                 commandHistory.add(inputText.text)
+
+                // Ограничиваем размер истории
+                if (commandHistory.size > MAX_HISTORY_SIZE) {
+                    commandHistory.removeAt(0) // Удаляем самую старую команду
+                }
             }
             historyIndex = -1
             clientState.send(inputText.text)
