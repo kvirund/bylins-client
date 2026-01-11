@@ -18,6 +18,11 @@ import androidx.compose.ui.unit.dp
 import com.bylins.client.ClientState
 import com.bylins.client.mapper.Direction
 import com.bylins.client.mapper.Room
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun MapPanel(
@@ -123,6 +128,61 @@ fun MapPanel(
                     contentPadding = PaddingValues(8.dp)
                 ) {
                     Text("Очистить")
+                }
+
+                Button(
+                    onClick = {
+                        // Экспорт карты
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+                        fileChooser.selectedFile = File("map.json")
+
+                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val exportedRooms = clientState.exportMap()
+                                val json = Json {
+                                    prettyPrint = true
+                                    ignoreUnknownKeys = true
+                                }
+                                val jsonString = json.encodeToString(exportedRooms)
+                                fileChooser.selectedFile.writeText(jsonString)
+                                println("Карта экспортирована в ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("Ошибка экспорта: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    Text("Экспорт")
+                }
+
+                Button(
+                    onClick = {
+                        // Импорт карты
+                        val fileChooser = JFileChooser()
+                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
+
+                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            try {
+                                val jsonString = fileChooser.selectedFile.readText()
+                                val json = Json {
+                                    prettyPrint = true
+                                    ignoreUnknownKeys = true
+                                }
+                                val importedRooms = json.decodeFromString<Map<String, Room>>(jsonString)
+                                clientState.importMap(importedRooms)
+                                println("Карта импортирована из ${fileChooser.selectedFile.absolutePath}")
+                            } catch (e: Exception) {
+                                println("Ошибка импорта: ${e.message}")
+                                e.printStackTrace()
+                            }
+                        }
+                    },
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    Text("Импорт")
                 }
             }
         }
