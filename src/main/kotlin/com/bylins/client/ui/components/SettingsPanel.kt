@@ -367,6 +367,153 @@ fun SettingsPanel(
             }
         }
 
+        // Настройка шрифтов
+        val currentFontFamily by clientState.fontFamily.collectAsState()
+        val currentFontSize by clientState.fontSize.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color(0xFF2D2D2D),
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Шрифты",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Divider(color = Color.Gray, thickness = 1.dp)
+
+                // Выбор семейства шрифта
+                Text(
+                    text = "Семейство шрифта:",
+                    color = Color(0xFFBBBBBB),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                val fontFamilies = listOf(
+                    "MONOSPACE" to "Monospace (стандартный)",
+                    "SERIF" to "Serif",
+                    "SANS_SERIF" to "Sans Serif",
+                    "CURSIVE" to "Cursive"
+                )
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    fontFamilies.forEach { (familyId, familyName) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentFontFamily == familyId,
+                                onClick = {
+                                    clientState.setFontFamily(familyId)
+                                    statusMessage = "Шрифт изменён на: $familyName"
+                                    statusColor = Color(0xFF00FF00)
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = Color(0xFF4CAF50),
+                                    unselectedColor = Color.Gray
+                                )
+                            )
+                            Text(
+                                text = familyName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Выбор размера шрифта
+                Text(
+                    text = "Размер шрифта (10-24 sp):",
+                    color = Color(0xFFBBBBBB),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                var sizeInput by remember { mutableStateOf(currentFontSize.toString()) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = sizeInput,
+                        onValueChange = { sizeInput = it },
+                        modifier = Modifier.width(100.dp),
+                        singleLine = true,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = Color.White,
+                            cursorColor = Color.White,
+                            focusedBorderColor = Color(0xFF4CAF50),
+                            unfocusedBorderColor = Color.Gray
+                        )
+                    )
+
+                    Button(
+                        onClick = {
+                            try {
+                                val size = sizeInput.toInt()
+                                clientState.setFontSize(size)
+                                statusMessage = "Размер шрифта установлен: $size sp"
+                                statusColor = Color(0xFF00FF00)
+                            } catch (e: NumberFormatException) {
+                                statusMessage = "Ошибка: введите число от 10 до 24"
+                                statusColor = Color(0xFFFF5555)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF4CAF50)
+                        )
+                    ) {
+                        Text("Применить", color = Color.White)
+                    }
+
+                    Button(
+                        onClick = {
+                            clientState.setFontSize(14)
+                            sizeInput = "14"
+                            statusMessage = "Размер шрифта сброшен до 14 sp"
+                            statusColor = Color(0xFF00FF00)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF2196F3)
+                        )
+                    ) {
+                        Text("Сброс", color = Color.White)
+                    }
+                }
+
+                Text(
+                    text = "Текущий размер: $currentFontSize sp",
+                    color = Color(0xFF888888),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                // Обновляем sizeInput при изменении currentFontSize
+                LaunchedEffect(currentFontSize) {
+                    sizeInput = currentFontSize.toString()
+                }
+            }
+        }
+
         // Информация о конфигурации
         Card(
             modifier = Modifier.fillMaxWidth(),

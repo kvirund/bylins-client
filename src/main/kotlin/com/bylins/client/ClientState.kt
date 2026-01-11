@@ -92,6 +92,13 @@ class ClientState {
     private val _currentTheme = MutableStateFlow("DARK")
     val currentTheme: StateFlow<String> = _currentTheme
 
+    // Настройки шрифта
+    private val _fontFamily = MutableStateFlow("MONOSPACE")
+    val fontFamily: StateFlow<String> = _fontFamily
+
+    private val _fontSize = MutableStateFlow(14)
+    val fontSize: StateFlow<Int> = _fontSize
+
     private val telnetClient = TelnetClient(this, _encoding)
 
     // Скриптинг - инициализируется позже
@@ -154,6 +161,10 @@ class ClientState {
 
         // Загружаем тему из конфига
         _currentTheme.value = configData.theme
+
+        // Загружаем настройки шрифта из конфига
+        _fontFamily.value = configData.fontFamily
+        _fontSize.value = configData.fontSize
 
         if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
@@ -1175,7 +1186,9 @@ class ClientState {
             tabManager.getTabsForSave(),
             _encoding,
             _miniMapWidth.value,
-            _currentTheme.value
+            _currentTheme.value,
+            _fontFamily.value,
+            _fontSize.value
         )
     }
 
@@ -1206,6 +1219,25 @@ class ClientState {
         println("[ClientState] Theme changed to: $themeName")
     }
 
+    /**
+     * Устанавливает семейство шрифтов
+     */
+    fun setFontFamily(family: String) {
+        _fontFamily.value = family
+        saveConfig()
+        println("[ClientState] Font family changed to: $family")
+    }
+
+    /**
+     * Устанавливает размер шрифта
+     */
+    fun setFontSize(size: Int) {
+        val clampedSize = size.coerceIn(10, 24)
+        _fontSize.value = clampedSize
+        saveConfig()
+        println("[ClientState] Font size changed to: $clampedSize")
+    }
+
     fun exportConfig(file: File) {
         configManager.exportConfig(
             file,
@@ -1216,7 +1248,9 @@ class ClientState {
             tabManager.getTabsForSave(),
             _encoding,
             _miniMapWidth.value,
-            _currentTheme.value
+            _currentTheme.value,
+            _fontFamily.value,
+            _fontSize.value
         )
     }
 
@@ -1246,6 +1280,10 @@ class ClientState {
 
         // Загружаем тему
         _currentTheme.value = configData.theme
+
+        // Загружаем настройки шрифта
+        _fontFamily.value = configData.fontFamily
+        _fontSize.value = configData.fontSize
 
         // Сохраняем в основной конфиг
         saveConfig()

@@ -30,6 +30,11 @@ fun OutputPanel(
     val activeTabId by clientState.activeTabId.collectAsState()
     val receivedData by clientState.receivedData.collectAsState()
 
+    // Получаем настройки шрифта
+    val fontFamilyName by clientState.fontFamily.collectAsState()
+    val fontSize by clientState.fontSize.collectAsState()
+    val fontFamily = remember(fontFamilyName) { getFontFamily(fontFamilyName) }
+
     var showTabDialog by remember { mutableStateOf(false) }
     var editingTab by remember { mutableStateOf<com.bylins.client.tabs.Tab?>(null) }
 
@@ -98,6 +103,8 @@ fun OutputPanel(
             TabContent(
                 tab = activeTab,
                 receivedData = receivedData,
+                fontFamily = fontFamily,
+                fontSize = fontSize,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -121,6 +128,19 @@ fun OutputPanel(
                 editingTab = null
             }
         )
+    }
+}
+
+/**
+ * Преобразует строковое название семейства шрифтов в FontFamily
+ */
+private fun getFontFamily(familyName: String): FontFamily {
+    return when (familyName) {
+        "MONOSPACE" -> FontFamily.Monospace
+        "SERIF" -> FontFamily.Serif
+        "SANS_SERIF" -> FontFamily.SansSerif
+        "CURSIVE" -> FontFamily.Cursive
+        else -> FontFamily.Monospace
     }
 }
 
@@ -152,7 +172,9 @@ private fun getLastLines(text: String, maxLines: Int): String {
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
     receivedData: String, // Для главной вкладки
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fontFamily: FontFamily = FontFamily.Monospace,
+    fontSize: Int = 14
 ) {
     val scrollState = rememberScrollState()
     val ansiParser = remember(tab.id) { AnsiParser() }
@@ -200,9 +222,9 @@ fun TabContent(
             Text(
                 text = outputText,
                 color = Color(0xFFBBBBBB),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
+                fontFamily = fontFamily,
+                fontSize = fontSize.sp,
+                lineHeight = (fontSize + 4).sp,
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
