@@ -11,6 +11,7 @@ import com.bylins.client.triggers.TriggerManager
 import com.bylins.client.variables.VariableManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -339,6 +340,9 @@ class ClientState {
                 variableManager.setVariable("host", host)
                 variableManager.setVariable("port", port.toString())
                 variableManager.setVariable("connected", "1")
+                // Автозагрузка карты при подключении
+                mapManager.loadFromFile()
+
                 // Уведомляем скрипты о подключении
                 if (::scriptManager.isInitialized) {
                     scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_CONNECT)
@@ -351,6 +355,11 @@ class ClientState {
     }
 
     fun disconnect() {
+        // Автосохранение карты перед отключением
+        if (mapManager.rooms.value.isNotEmpty()) {
+            mapManager.saveToFile()
+        }
+
         telnetClient.disconnect()
         // Останавливаем сбор статистики
         sessionStats.stopSession()
@@ -369,6 +378,12 @@ class ClientState {
             telnetClient.addToOutput(message)
         }
         if (varHandled) {
+            return
+        }
+
+        // Проверяем команды навигации по карте
+        val navHandled = processNavigationCommand(command)
+        if (navHandled) {
             return
         }
 
@@ -411,6 +426,83 @@ class ClientState {
                 _errorMessage.value = "Ошибка отправки: ${e.message}"
                 e.printStackTrace()
             }
+        }
+    }
+
+    /**
+     * Обрабатывает команды навигации по карте
+     * Возвращает true если команда была обработана
+     */
+    private fun processNavigationCommand(command: String): Boolean {
+        when {
+            command.startsWith("#goto ") -> {
+                val roomId = command.substring(6).trim()
+                if (roomId.isEmpty()) {
+                    telnetClient.addToOutput("\u001B[1;33m[#goto] Использование: #goto <room_id>\u001B[0m")
+                    return true
+                }
+
+                // Находим путь к комнате
+                val path = mapManager.findPathFromCurrent(roomId)
+                if (path == null) {
+                    telnetClient.addToOutput("\u001B[1;31m[#goto] Путь к комнате '$roomId' не найден\u001B[0m")
+                    return true
+                }
+
+                if (path.isEmpty()) {
+                    telnetClient.addToOutput("\u001B[1;33m[#goto] Вы уже в этой комнате\u001B[0m")
+                    return true
+                }
+
+                // Запускаем автоматическое перемещение
+                val directions = path.joinToString(", ") { it.shortName }
+                telnetClient.addToOutput("\u001B[1;32m[#goto] Путь найден (${path.size} шагов): $directions\u001B[0m")
+
+                scope.launch {
+                    walkPath(path)
+                }
+                return true
+            }
+
+            command == "#run" -> {
+                // Находим путь к ближайшей непосещенной комнате
+                val path = mapManager.findNearestUnvisited()
+                if (path == null) {
+                    telnetClient.addToOutput("\u001B[1;33m[#run] Не найдено непосещенных комнат\u001B[0m")
+                    return true
+                }
+
+                if (path.isEmpty()) {
+                    telnetClient.addToOutput("\u001B[1;33m[#run] Уже в непосещенной комнате\u001B[0m")
+                    return true
+                }
+
+                // Запускаем автоматическое перемещение
+                val directions = path.joinToString(", ") { it.shortName }
+                telnetClient.addToOutput("\u001B[1;32m[#run] Путь к непосещенной комнате (${path.size} шагов): $directions\u001B[0m")
+
+                scope.launch {
+                    walkPath(path)
+                }
+                return true
+            }
+
+            else -> return false
+        }
+    }
+
+    /**
+     * Выполняет автоматическое перемещение по пути
+     */
+    private suspend fun walkPath(path: List<com.bylins.client.mapper.Direction>) {
+        for (direction in path) {
+            if (!isActive) break
+
+            // Отправляем команду движения
+            sendRaw(direction.shortName)
+
+            // Задержка между командами (можно сделать настраиваемой)
+            delay(500)
         }
     }
 
@@ -866,6 +958,14 @@ class ClientState {
 
     fun importMap(rooms: Map<String, com.bylins.client.mapper.Room>) {
         mapManager.importMap(rooms)
+    }
+
+    fun saveMapToFile(filePath: String? = null): Boolean {
+        return mapManager.saveToFile(filePath)
+    }
+
+    fun loadMapFromFile(filePath: String? = null): Boolean {
+        return mapManager.loadFromFile(filePath)
     }
 
     // Управление скриптами

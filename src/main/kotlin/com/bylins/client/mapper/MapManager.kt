@@ -2,6 +2,11 @@ package com.bylins.client.mapper
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Paths
 
 /**
  * Управляет картой мира MUD
@@ -17,6 +22,8 @@ class MapManager(
 
     private val _mapEnabled = MutableStateFlow(true)
     val mapEnabled: StateFlow<Boolean> = _mapEnabled
+
+    private val pathfinder = Pathfinder()
 
     /**
      * Добавляет или обновляет комнату на карте
@@ -234,6 +241,105 @@ class MapManager(
      */
     fun importMap(rooms: Map<String, Room>) {
         _rooms.value = rooms
+    }
+
+    /**
+     * Сохраняет карту в файл
+     */
+    fun saveToFile(filePath: String? = null): Boolean {
+        return try {
+            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
+            if (!Files.exists(mapsDir)) {
+                Files.createDirectories(mapsDir)
+            }
+
+            val file = if (filePath != null) {
+                File(filePath)
+            } else {
+                mapsDir.resolve("autosave.json").toFile()
+            }
+
+            val json = Json {
+                prettyPrint = true
+                ignoreUnknownKeys = true
+            }
+
+            val jsonString = json.encodeToString(_rooms.value)
+            file.writeText(jsonString)
+
+            println("[MapManager] Карта сохранена: ${file.absolutePath} (${_rooms.value.size} комнат)")
+            true
+        } catch (e: Exception) {
+            println("[MapManager] Ошибка сохранения карты: ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Загружает карту из файла
+     */
+    fun loadFromFile(filePath: String? = null): Boolean {
+        return try {
+            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
+            val file = if (filePath != null) {
+                File(filePath)
+            } else {
+                mapsDir.resolve("autosave.json").toFile()
+            }
+
+            if (!file.exists()) {
+                println("[MapManager] Файл карты не найден: ${file.absolutePath}")
+                return false
+            }
+
+            val json = Json {
+                prettyPrint = true
+                ignoreUnknownKeys = true
+            }
+
+            val jsonString = file.readText()
+            val rooms = json.decodeFromString<Map<String, Room>>(jsonString)
+
+            _rooms.value = rooms
+            println("[MapManager] Карта загружена: ${file.absolutePath} (${rooms.size} комнат)")
+            true
+        } catch (e: Exception) {
+            println("[MapManager] Ошибка загрузки карты: ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Находит путь между двумя комнатами
+     */
+    fun findPath(startRoomId: String, endRoomId: String): List<Direction>? {
+        return pathfinder.findPath(_rooms.value, startRoomId, endRoomId)
+    }
+
+    /**
+     * Находит путь от текущей комнаты до заданной
+     */
+    fun findPathFromCurrent(endRoomId: String): List<Direction>? {
+        val currentId = _currentRoomId.value ?: return null
+        return findPath(currentId, endRoomId)
+    }
+
+    /**
+     * Находит путь к ближайшей непосещённой комнате
+     */
+    fun findNearestUnvisited(): List<Direction>? {
+        val currentId = _currentRoomId.value ?: return null
+        return pathfinder.findNearestUnvisited(_rooms.value, currentId)
+    }
+
+    /**
+     * Находит все комнаты в заданном радиусе от текущей
+     */
+    fun findRoomsInRadius(maxSteps: Int): Map<String, Int> {
+        val currentId = _currentRoomId.value ?: return emptyMap()
+        return pathfinder.findRoomsInRadius(_rooms.value, currentId, maxSteps)
     }
 }
 
