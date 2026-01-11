@@ -84,6 +84,10 @@ class ClientState {
     val encoding: String
         get() = _encoding
 
+    // Ширина боковой панели с миникартой
+    private val _miniMapWidth = MutableStateFlow(250)
+    val miniMapWidth: StateFlow<Int> = _miniMapWidth
+
     private val telnetClient = TelnetClient(this, _encoding)
 
     // Скриптинг - инициализируется позже
@@ -140,6 +144,9 @@ class ClientState {
         // Загружаем кодировку из конфига
         _encoding = configData.encoding
         telnetClient.setEncoding(_encoding)
+
+        // Загружаем ширину миникарты из конфига
+        _miniMapWidth.value = configData.miniMapWidth
 
         if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
@@ -1097,7 +1104,8 @@ class ClientState {
             hotkeys.value,
             variableManager.getAllVariables(),
             tabManager.getTabsForSave(),
-            _encoding
+            _encoding,
+            _miniMapWidth.value
         )
     }
 
@@ -1110,6 +1118,15 @@ class ClientState {
         saveConfig()
     }
 
+    /**
+     * Устанавливает ширину боковой панели с миникартой
+     */
+    fun setMiniMapWidth(width: Int) {
+        val clampedWidth = width.coerceIn(150, 500)
+        _miniMapWidth.value = clampedWidth
+        saveConfig()
+    }
+
     fun exportConfig(file: File) {
         configManager.exportConfig(
             file,
@@ -1118,7 +1135,8 @@ class ClientState {
             hotkeys.value,
             variableManager.getAllVariables(),
             tabManager.getTabsForSave(),
-            _encoding
+            _encoding,
+            _miniMapWidth.value
         )
     }
 
@@ -1142,6 +1160,9 @@ class ClientState {
         // Загружаем кодировку
         _encoding = configData.encoding
         telnetClient.setEncoding(_encoding)
+
+        // Загружаем ширину миникарты
+        _miniMapWidth.value = configData.miniMapWidth
 
         // Сохраняем в основной конфиг
         saveConfig()

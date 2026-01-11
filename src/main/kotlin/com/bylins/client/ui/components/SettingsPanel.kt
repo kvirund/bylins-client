@@ -188,6 +188,101 @@ fun SettingsPanel(
             }
         }
 
+        // Настройка ширины миникарты
+        val miniMapWidth by clientState.miniMapWidth.collectAsState()
+        var widthInput by remember { mutableStateOf(miniMapWidth.toString()) }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = Color(0xFF2D2D2D),
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Мини-карта",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Divider(color = Color.Gray, thickness = 1.dp)
+
+                Text(
+                    text = "Ширина боковой панели (150-500 dp):",
+                    color = Color(0xFFBBBBBB),
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = widthInput,
+                        onValueChange = { widthInput = it },
+                        modifier = Modifier.width(120.dp),
+                        singleLine = true,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = Color.White,
+                            cursorColor = Color.White,
+                            focusedBorderColor = Color(0xFF4CAF50),
+                            unfocusedBorderColor = Color.Gray
+                        )
+                    )
+
+                    Button(
+                        onClick = {
+                            try {
+                                val width = widthInput.toInt()
+                                clientState.setMiniMapWidth(width)
+                                statusMessage = "Ширина миникарты установлена: $width dp"
+                                statusColor = Color(0xFF00FF00)
+                            } catch (e: NumberFormatException) {
+                                statusMessage = "Ошибка: введите число от 150 до 500"
+                                statusColor = Color(0xFFFF5555)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF4CAF50)
+                        )
+                    ) {
+                        Text("Применить", color = Color.White)
+                    }
+
+                    Button(
+                        onClick = {
+                            clientState.setMiniMapWidth(250)
+                            widthInput = "250"
+                            statusMessage = "Ширина миникарты сброшена до 250 dp"
+                            statusColor = Color(0xFF00FF00)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = Color(0xFF2196F3)
+                        )
+                    ) {
+                        Text("Сброс", color = Color.White)
+                    }
+                }
+
+                Text(
+                    text = "Текущая ширина: $miniMapWidth dp",
+                    color = Color(0xFF888888),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                // Обновляем widthInput при изменении miniMapWidth
+                LaunchedEffect(miniMapWidth) {
+                    widthInput = miniMapWidth.toString()
+                }
+            }
+        }
+
         // Информация о конфигурации
         Card(
             modifier = Modifier.fillMaxWidth(),

@@ -121,6 +121,8 @@ fun MainWindow() {
                     when (selectedTab) {
                         0 -> {
                             // Главный вид с выводом текста и боковой панелью
+                            val miniMapWidth by clientState.miniMapWidth.collectAsState()
+
                             Row(modifier = Modifier.fillMaxSize()) {
                                 // Область вывода текста
                                 OutputPanel(
@@ -133,7 +135,7 @@ fun MainWindow() {
                                 // Боковая панель с статусом и мини-картой
                                 Column(
                                     modifier = Modifier
-                                        .width(250.dp)
+                                        .width(miniMapWidth.dp)
                                         .fillMaxHeight()
                                 ) {
                                     // Статус персонажа
