@@ -30,7 +30,20 @@ class ConfigManager {
     /**
      * Сохраняет триггеры, алиасы, хоткеи, переменные, вкладки и настройки в файл
      */
-    fun saveConfig(triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250, theme: String = "DARK", fontFamily: String = "MONOSPACE", fontSize: Int = 14) {
+    fun saveConfig(
+        triggers: List<Trigger>,
+        aliases: List<Alias>,
+        hotkeys: List<Hotkey>,
+        variables: Map<String, String>,
+        tabs: List<Tab>,
+        encoding: String = "UTF-8",
+        miniMapWidth: Int = 250,
+        theme: String = "DARK",
+        fontFamily: String = "MONOSPACE",
+        fontSize: Int = 14,
+        connectionProfiles: List<com.bylins.client.connection.ConnectionProfile> = emptyList(),
+        currentProfileId: String? = null
+    ) {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
@@ -42,7 +55,9 @@ class ConfigManager {
                 miniMapWidth = miniMapWidth,
                 theme = theme,
                 fontFamily = fontFamily,
-                fontSize = fontSize
+                fontSize = fontSize,
+                connectionProfiles = connectionProfiles.map { ConnectionProfileDto.fromConnectionProfile(it) },
+                currentProfileId = currentProfileId
             )
 
             val jsonString = json.encodeToString(config)
@@ -62,7 +77,12 @@ class ConfigManager {
         try {
             if (!Files.exists(configFile)) {
                 println("Config file not found: $configFile")
-                return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(), "UTF-8", 250, "DARK", "MONOSPACE", 14)
+                return ConfigData(
+                    emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
+                    "UTF-8", 250, "DARK", "MONOSPACE", 14,
+                    com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
+                    null
+                )
             }
 
             val jsonString = Files.readString(configFile)
@@ -78,13 +98,22 @@ class ConfigManager {
             val theme = config.theme
             val fontFamily = config.fontFamily
             val fontSize = config.fontSize
+            val connectionProfiles = config.connectionProfiles.map { it.toConnectionProfile() }.ifEmpty {
+                com.bylins.client.connection.ConnectionProfile.createDefaultProfiles()
+            }
+            val currentProfileId = config.currentProfileId
 
-            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize)")
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme, fontFamily, fontSize)
+            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles)")
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme, fontFamily, fontSize, connectionProfiles, currentProfileId)
         } catch (e: Exception) {
             println("Failed to load config: ${e.message}")
             e.printStackTrace()
-            return ConfigData(emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(), "UTF-8", 250, "DARK", "MONOSPACE", 14)
+            return ConfigData(
+                emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
+                "UTF-8", 250, "DARK", "MONOSPACE", 14,
+                com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
+                null
+            )
         }
     }
 
@@ -169,5 +198,7 @@ data class ConfigData(
     val miniMapWidth: Int = 250,
     val theme: String = "DARK",
     val fontFamily: String = "MONOSPACE",
-    val fontSize: Int = 14
+    val fontSize: Int = 14,
+    val connectionProfiles: List<com.bylins.client.connection.ConnectionProfile> = emptyList(),
+    val currentProfileId: String? = null
 )

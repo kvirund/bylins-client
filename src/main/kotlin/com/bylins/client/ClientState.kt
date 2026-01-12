@@ -117,6 +117,15 @@ class ClientState {
     private val _gmcpData = MutableStateFlow<Map<String, kotlinx.serialization.json.JsonElement>>(emptyMap())
     val gmcpData: StateFlow<Map<String, kotlinx.serialization.json.JsonElement>> = _gmcpData
 
+    // Профили подключений
+    private val _connectionProfiles = MutableStateFlow<List<com.bylins.client.connection.ConnectionProfile>>(
+        com.bylins.client.connection.ConnectionProfile.createDefaultProfiles()
+    )
+    val connectionProfiles: StateFlow<List<com.bylins.client.connection.ConnectionProfile>> = _connectionProfiles
+
+    private val _currentProfileId = MutableStateFlow<String?>(null)
+    val currentProfileId: StateFlow<String?> = _currentProfileId
+
     // Доступ к менеджерам
     val triggers = triggerManager.triggers
     val aliases = aliasManager.aliases
@@ -169,6 +178,10 @@ class ClientState {
         // Загружаем настройки шрифта из конфига
         _fontFamily.value = configData.fontFamily
         _fontSize.value = configData.fontSize
+
+        // Загружаем профили подключений из конфига
+        _connectionProfiles.value = configData.connectionProfiles
+        _currentProfileId.value = configData.currentProfileId
 
         if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
@@ -1222,7 +1235,9 @@ class ClientState {
             _miniMapWidth.value,
             _currentTheme.value,
             _fontFamily.value,
-            _fontSize.value
+            _fontSize.value,
+            _connectionProfiles.value,
+            _currentProfileId.value
         )
     }
 
@@ -1270,6 +1285,50 @@ class ClientState {
         _fontSize.value = clampedSize
         saveConfig()
         println("[ClientState] Font size changed to: $clampedSize")
+    }
+
+    // Управление профилями подключений
+    fun addConnectionProfile(profile: com.bylins.client.connection.ConnectionProfile) {
+        _connectionProfiles.value = _connectionProfiles.value + profile
+        saveConfig()
+        println("[ClientState] Added connection profile: ${profile.name}")
+    }
+
+    fun updateConnectionProfile(profile: com.bylins.client.connection.ConnectionProfile) {
+        _connectionProfiles.value = _connectionProfiles.value.map {
+            if (it.id == profile.id) profile else it
+        }
+        saveConfig()
+        println("[ClientState] Updated connection profile: ${profile.name}")
+    }
+
+    fun removeConnectionProfile(profileId: String) {
+        _connectionProfiles.value = _connectionProfiles.value.filter { it.id != profileId }
+        // Если удаляем текущий профиль, сбрасываем выбор
+        if (_currentProfileId.value == profileId) {
+            _currentProfileId.value = null
+        }
+        saveConfig()
+        println("[ClientState] Removed connection profile: $profileId")
+    }
+
+    fun setCurrentProfile(profileId: String?) {
+        _currentProfileId.value = profileId
+        // При выборе профиля обновляем кодировку
+        profileId?.let { id ->
+            val profile = _connectionProfiles.value.find { it.id == id }
+            profile?.let {
+                setEncoding(it.encoding)
+            }
+        }
+        saveConfig()
+        println("[ClientState] Set current profile: $profileId")
+    }
+
+    fun getCurrentProfile(): com.bylins.client.connection.ConnectionProfile? {
+        return _currentProfileId.value?.let { id ->
+            _connectionProfiles.value.find { it.id == id }
+        }
     }
 
     fun exportConfig(file: File) {

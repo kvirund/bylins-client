@@ -1,6 +1,7 @@
 package com.bylins.client.config
 
 import com.bylins.client.aliases.Alias
+import com.bylins.client.connection.ConnectionProfile
 import com.bylins.client.hotkeys.Hotkey
 import com.bylins.client.triggers.Trigger
 import com.bylins.client.triggers.TriggerColorize
@@ -150,6 +151,37 @@ data class HotkeyDto(
 }
 
 @Serializable
+data class ConnectionProfileDto(
+    val id: String,
+    val name: String,
+    val host: String,
+    val port: Int,
+    val encoding: String = "UTF-8"
+) {
+    fun toConnectionProfile(): ConnectionProfile {
+        return ConnectionProfile(
+            id = id,
+            name = name,
+            host = host,
+            port = port,
+            encoding = encoding
+        )
+    }
+
+    companion object {
+        fun fromConnectionProfile(profile: ConnectionProfile): ConnectionProfileDto {
+            return ConnectionProfileDto(
+                id = profile.id,
+                name = profile.name,
+                host = profile.host,
+                port = profile.port,
+                encoding = profile.encoding
+            )
+        }
+    }
+}
+
+@Serializable
 data class ClientConfig(
     val triggers: List<TriggerDto> = emptyList(),
     val aliases: List<AliasDto> = emptyList(),
@@ -160,5 +192,7 @@ data class ClientConfig(
     val miniMapWidth: Int = 250,  // Ширина боковой панели с миникартой в dp
     val theme: String = "DARK",  // Название темы оформления
     val fontFamily: String = "MONOSPACE",  // Семейство шрифтов для вывода игры
-    val fontSize: Int = 14  // Размер шрифта в sp
+    val fontSize: Int = 14,  // Размер шрифта в sp
+    val connectionProfiles: List<ConnectionProfileDto> = emptyList(),  // Список профилей подключений
+    val currentProfileId: String? = null  // ID текущего выбранного профиля
 )

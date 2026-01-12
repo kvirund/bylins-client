@@ -3,8 +3,7 @@ package com.bylins.client.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,18 +16,108 @@ fun ConnectionPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
-    var host by remember { mutableStateOf("bylins.su") }
-    var port by remember { mutableStateOf("4000") }
-    var encoding by remember { mutableStateOf(clientState.encoding) }
-    var encodingMenuExpanded by remember { mutableStateOf(false) }
+    val connectionProfiles by clientState.connectionProfiles.collectAsState()
+    val currentProfileId by clientState.currentProfileId.collectAsState()
     val isConnected by clientState.isConnected.collectAsState()
     val errorMessage by clientState.errorMessage.collectAsState()
 
+    var host by remember { mutableStateOf("bylins.su") }
+    var port by remember { mutableStateOf("4000") }
+    var encoding by remember { mutableStateOf(clientState.encoding) }
+    var profileMenuExpanded by remember { mutableStateOf(false) }
+    var encodingMenuExpanded by remember { mutableStateOf(false) }
+    var showProfileDialog by remember { mutableStateOf(false) }
+    var editingProfile by remember { mutableStateOf<com.bylins.client.connection.ConnectionProfile?>(null) }
+
     val availableEncodings = listOf("UTF-8", "windows-1251", "KOI8-R", "ISO-8859-1")
 
+    // Синхронизация с выбранным профилем
+    LaunchedEffect(currentProfileId) {
+        val profile = connectionProfiles.find { it.id == currentProfileId }
+        if (profile != null) {
+            host = profile.host
+            port = profile.port.toString()
+            encoding = profile.encoding
+            clientState.setEncoding(profile.encoding)
+        }
+    }
+
     Column(modifier = modifier) {
+        // Первая строка: выбор профиля + управление
         Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Dropdown выбора профиля
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = connectionProfiles.find { it.id == currentProfileId }?.name ?: "Выберите профиль",
+                    onValueChange = { },
+                    label = { Text("Профиль") },
+                    enabled = !isConnected,
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = profileMenuExpanded && !isConnected,
+                    onDismissRequest = { profileMenuExpanded = false }
+                ) {
+                    connectionProfiles.forEach { profile ->
+                        DropdownMenuItem(
+                            text = { Text(profile.getDisplayName()) },
+                            onClick = {
+                                clientState.setCurrentProfile(profile.id)
+                                profileMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+                if (!isConnected) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { profileMenuExpanded = true }
+                    )
+                }
+            }
+
+            // Кнопка добавления профиля
+            IconButton(
+                onClick = {
+                    editingProfile = null
+                    showProfileDialog = true
+                },
+                enabled = !isConnected
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Добавить профиль")
+            }
+
+            // Кнопка редактирования текущего профиля
+            IconButton(
+                onClick = {
+                    editingProfile = connectionProfiles.find { it.id == currentProfileId }
+                    showProfileDialog = true
+                },
+                enabled = !isConnected && currentProfileId != null
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = "Редактировать профиль")
+            }
+
+            // Кнопка удаления текущего профиля
+            IconButton(
+                onClick = {
+                    currentProfileId?.let { clientState.removeConnectionProfile(it) }
+                },
+                enabled = !isConnected && currentProfileId != null && connectionProfiles.size > 1
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "Удалить профиль")
+            }
+        }
+
+        // Вторая строка: host, port, encoding, connect
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -116,5 +205,26 @@ fun ConnectionPanel(
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
+    }
+
+    // Диалог создания/редактирования профиля
+    if (showProfileDialog) {
+        ProfileDialog(
+            profile = editingProfile,
+            onDismiss = {
+                showProfileDialog = false
+                editingProfile = null
+            },
+            onSave = { profile ->
+                if (editingProfile != null) {
+                    clientState.updateConnectionProfile(profile)
+                } else {
+                    clientState.addConnectionProfile(profile)
+                    clientState.setCurrentProfile(profile.id)
+                }
+                showProfileDialog = false
+                editingProfile = null
+            }
+        )
     }
 }
