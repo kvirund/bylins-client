@@ -232,7 +232,10 @@ class TelnetClient(
             TelnetCommandType.WILL -> {
                 // Сервер сообщает, что будет использовать опцию
                 when (command.option) {
-                    MSDP -> sendTelnetCommand(byteArrayOf(IAC, DO, MSDP))
+                    MSDP -> {
+                        sendTelnetCommand(byteArrayOf(IAC, DO, MSDP))
+                        clientState?.setMsdpEnabled(true)
+                    }
                     GMCP -> sendTelnetCommand(byteArrayOf(IAC, DO, GMCP))
                 }
             }
@@ -286,6 +289,26 @@ class TelnetClient(
             logger.error { "Error parsing GMCP: ${e.message}" }
             e.printStackTrace()
         }
+    }
+
+    /**
+     * Отправляет MSDP команду
+     * command: "LIST", "REPORT", "UNREPORT", "SEND", "RESET"
+     * variable: имя переменной или тип списка
+     */
+    fun sendMsdpCommand(command: String, variable: String) {
+        // Формат: IAC SB MSDP MSDP_VAR command MSDP_VAL variable IAC SE
+        val commandBytes = command.toByteArray(Charsets.UTF_8)
+        val variableBytes = variable.toByteArray(Charsets.UTF_8)
+
+        val message = byteArrayOf(IAC, SB, MSDP, MsdpParser.MSDP_VAR) +
+            commandBytes +
+            byteArrayOf(MsdpParser.MSDP_VAL) +
+            variableBytes +
+            byteArrayOf(IAC, SE)
+
+        sendTelnetCommand(message)
+        logger.debug { "MSDP command sent: $command $variable" }
     }
 
     companion object {

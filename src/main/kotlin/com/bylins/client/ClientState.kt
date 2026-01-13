@@ -193,6 +193,18 @@ class ClientState {
     private val _msdpData = MutableStateFlow<Map<String, Any>>(emptyMap())
     val msdpData: StateFlow<Map<String, Any>> = _msdpData
 
+    // MSDP статус (включён ли протокол)
+    private val _msdpEnabled = MutableStateFlow(false)
+    val msdpEnabled: StateFlow<Boolean> = _msdpEnabled
+
+    // Список reportable переменных MSDP (полученный от сервера)
+    private val _msdpReportableVariables = MutableStateFlow<List<String>>(emptyList())
+    val msdpReportableVariables: StateFlow<List<String>> = _msdpReportableVariables
+
+    // Список переменных, на которые включён REPORT
+    private val _msdpReportedVariables = MutableStateFlow<Set<String>>(emptySet())
+    val msdpReportedVariables: StateFlow<Set<String>> = _msdpReportedVariables
+
     // GMCP данные (Generic MUD Communication Protocol)
     private val _gmcpData = MutableStateFlow<Map<String, kotlinx.serialization.json.JsonElement>>(emptyMap())
     val gmcpData: StateFlow<Map<String, kotlinx.serialization.json.JsonElement>> = _gmcpData
@@ -1010,8 +1022,83 @@ class ClientState {
         }
     }
 
+    /**
+     * Устанавливает статус MSDP (вызывается из TelnetClient при согласовании)
+     */
+    fun setMsdpEnabled(enabled: Boolean) {
+        val wasEnabled = _msdpEnabled.value
+        _msdpEnabled.value = enabled
+        if (enabled && !wasEnabled) {
+            logger.info { "MSDP протокол включён" }
+            // Автоматически запрашиваем список reportable переменных
+            scope.launch {
+                delay(100) // Небольшая задержка для завершения handshake
+                sendMsdpList("REPORTABLE_VARIABLES")
+            }
+        }
+    }
+
+    /**
+     * Отправляет MSDP команду LIST для запроса списка
+     * listType: "COMMANDS", "LISTS", "REPORTABLE_VARIABLES", "CONFIGURABLE_VARIABLES", "REPORTED_VARIABLES"
+     */
+    fun sendMsdpList(listType: String) {
+        if (!_msdpEnabled.value) {
+            logger.warn { "MSDP не включён, команда LIST проигнорирована" }
+            return
+        }
+        telnetClient.sendMsdpCommand("LIST", listType)
+        logger.debug { "MSDP LIST $listType отправлен" }
+    }
+
+    /**
+     * Включает REPORT для переменной (автоматические обновления)
+     */
+    fun sendMsdpReport(variableName: String) {
+        if (!_msdpEnabled.value) {
+            logger.warn { "MSDP не включён, команда REPORT проигнорирована" }
+            return
+        }
+        telnetClient.sendMsdpCommand("REPORT", variableName)
+        _msdpReportedVariables.value = _msdpReportedVariables.value + variableName
+        logger.debug { "MSDP REPORT $variableName отправлен" }
+    }
+
+    /**
+     * Выключает REPORT для переменной
+     */
+    fun sendMsdpUnreport(variableName: String) {
+        if (!_msdpEnabled.value) {
+            logger.warn { "MSDP не включён, команда UNREPORT проигнорирована" }
+            return
+        }
+        telnetClient.sendMsdpCommand("UNREPORT", variableName)
+        _msdpReportedVariables.value = _msdpReportedVariables.value - variableName
+        logger.debug { "MSDP UNREPORT $variableName отправлен" }
+    }
+
+    /**
+     * Запрашивает текущее значение переменной (разовый запрос)
+     */
+    fun sendMsdpSend(variableName: String) {
+        if (!_msdpEnabled.value) {
+            logger.warn { "MSDP не включён, команда SEND проигнорирована" }
+            return
+        }
+        telnetClient.sendMsdpCommand("SEND", variableName)
+        logger.debug { "MSDP SEND $variableName отправлен" }
+    }
+
     fun updateMsdpData(data: Map<String, Any>) {
         _msdpData.value = _msdpData.value + data
+
+        // Проверяем специальные переменные (ответы на LIST)
+        data["REPORTABLE_VARIABLES"]?.let { value ->
+            if (value is List<*>) {
+                _msdpReportableVariables.value = value.filterIsInstance<String>()
+                logger.info { "Получен список REPORTABLE_VARIABLES: ${_msdpReportableVariables.value.size} переменных" }
+            }
+        }
 
         // Автоматически обновляем переменные из MSDP
         data.forEach { (key, value) ->

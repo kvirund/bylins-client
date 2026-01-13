@@ -1,113 +1,319 @@
 package com.bylins.client.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.ui.theme.LocalAppColorScheme
 
 /**
- * Панель для просмотра MSDP данных
+ * Панель для просмотра и управления MSDP данными
  */
 @Composable
 fun MsdpPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
+    val colorScheme = LocalAppColorScheme.current
+    val msdpEnabled by clientState.msdpEnabled.collectAsState()
     val msdpData by clientState.msdpData.collectAsState()
+    val reportableVariables by clientState.msdpReportableVariables.collectAsState()
+    val reportedVariables by clientState.msdpReportedVariables.collectAsState()
     val scrollState = rememberScrollState()
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
             .padding(16.dp)
             .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Заголовок
-        Text(
-            text = "MSDP данные (MUD Server Data Protocol)",
-            color = Color.White,
-            fontSize = 18.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        if (msdpData.isEmpty()) {
+        // Заголовок и статус
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "MSDP данные ещё не получены от сервера.\nПодключитесь к серверу и дождитесь получения данных.",
-                color = Color.Gray,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-        } else {
-            Text(
-                text = "Всего переменных: ${msdpData.size}",
-                color = Color.LightGray,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(bottom = 8.dp)
+                text = "MSDP (MUD Server Data Protocol)",
+                color = colorScheme.onSurface,
+                fontSize = 18.sp,
+                fontFamily = FontFamily.Monospace
             )
 
-            Divider(color = Color.Gray, thickness = 1.dp)
-
-            // Группируем переменные по категориям
-            val categories = groupMsdpByCategory(msdpData)
-
-            categories.forEach { (category, variables) ->
-                Card(
+            // Индикатор статуса
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF2D2D2D)
+                        .size(12.dp)
+                        .background(
+                            if (msdpEnabled) colorScheme.success else colorScheme.error,
+                            shape = androidx.compose.foundation.shape.CircleShape
+                        )
+                )
+                Text(
+                    text = if (msdpEnabled) "Включён" else "Выключен",
+                    color = if (msdpEnabled) colorScheme.success else colorScheme.error,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
+        Divider(color = colorScheme.divider, thickness = 1.dp)
+
+        if (!msdpEnabled) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = colorScheme.surface,
+                elevation = 2.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "MSDP не включён",
+                        color = colorScheme.onSurface,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Сервер должен отправить WILL MSDP или DO MSDP для включения протокола.\n" +
+                            "Подключитесь к серверу, поддерживающему MSDP.",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        } else {
+            // Кнопки управления
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                backgroundColor = colorScheme.surface,
+                elevation = 2.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Управление",
+                        color = colorScheme.onSurface,
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { clientState.sendMsdpList("COMMANDS") },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                        ) {
+                            Text("LIST COMMANDS", color = colorScheme.onSurface, fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = { clientState.sendMsdpList("REPORTABLE_VARIABLES") },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                        ) {
+                            Text("LIST REPORTABLE", color = colorScheme.onSurface, fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = { clientState.sendMsdpList("REPORTED_VARIABLES") },
+                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                        ) {
+                            Text("LIST REPORTED", color = colorScheme.onSurface, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            // Reportable переменные
+            if (reportableVariables.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = colorScheme.surface,
+                    elevation = 2.dp
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp)
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // Название категории
                         Text(
-                            text = category,
-                            color = Color(0xFF4CAF50),
+                            text = "Reportable переменные (${reportableVariables.size})",
+                            color = colorScheme.onSurface,
                             fontSize = 14.sp,
                             fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            fontWeight = FontWeight.Bold
                         )
 
-                        // Переменные в категории
-                        variables.forEach { (key, value) ->
+                        Text(
+                            text = "Кликните для включения/выключения REPORT",
+                            color = colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+
+                        Divider(color = colorScheme.divider, thickness = 1.dp)
+
+                        // Показываем переменные в виде чипов
+                        val chunked = reportableVariables.chunked(4)
+                        chunked.forEach { row ->
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(vertical = 2.dp)
                             ) {
-                                Text(
-                                    text = key,
-                                    color = Color(0xFF90CAF9),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.weight(1f)
+                                row.forEach { variable ->
+                                    val isReported = variable in reportedVariables
+                                    Surface(
+                                        modifier = Modifier.clickable {
+                                            if (isReported) {
+                                                clientState.sendMsdpUnreport(variable)
+                                            } else {
+                                                clientState.sendMsdpReport(variable)
+                                            }
+                                        },
+                                        color = if (isReported) colorScheme.success.copy(alpha = 0.2f)
+                                               else colorScheme.surface,
+                                        shape = MaterialTheme.shapes.small
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (isReported) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = colorScheme.success,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                            }
+                                            Text(
+                                                text = variable,
+                                                color = if (isReported) colorScheme.success else colorScheme.onSurfaceVariant,
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Полученные данные
+            if (msdpData.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = colorScheme.surface,
+                    elevation = 2.dp
+                ) {
+                    Text(
+                        text = "Данные MSDP ещё не получены.\nВключите REPORT для интересующих переменных.",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    backgroundColor = colorScheme.surface,
+                    elevation = 2.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Полученные данные (${msdpData.size})",
+                                color = colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold
+                            )
+                            IconButton(
+                                onClick = {
+                                    // Обновить все reported переменные
+                                    reportedVariables.forEach { clientState.sendMsdpSend(it) }
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Обновить",
+                                    tint = colorScheme.onSurfaceVariant
                                 )
-                                Text(
-                                    text = formatMsdpValue(value),
-                                    color = Color(0xFFBBBBBB),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.weight(1f)
-                                )
+                            }
+                        }
+
+                        Divider(color = colorScheme.divider, thickness = 1.dp)
+
+                        // Группируем переменные по категориям
+                        val categories = groupMsdpByCategory(msdpData)
+
+                        categories.forEach { (category, variables) ->
+                            Text(
+                                text = category,
+                                color = colorScheme.success,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                            )
+
+                            variables.forEach { (key, value) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 1.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = key,
+                                        color = colorScheme.primary,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = formatMsdpValue(value),
+                                        color = colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                         }
                     }
@@ -135,13 +341,13 @@ private fun groupMsdpByCategory(data: Map<String, Any>): Map<String, List<Pair<S
             key.startsWith("AFFECTS") || key.startsWith("BUFF") -> "Аффекты"
             key.startsWith("GROUP") || key.startsWith("PARTY") -> "Группа"
             key.startsWith("OPPONENT") || key.startsWith("TARGET") -> "Противник"
+            key == "COMMANDS" || key == "LISTS" || key.endsWith("_VARIABLES") -> "Системные"
             else -> "Прочее"
         }
 
         categories.getOrPut(category) { mutableListOf() }.add(key to value)
     }
 
-    // Сортируем категории и переменные внутри них
     return categories.mapValues { (_, list) ->
         list.sortedBy { it.first }
     }.toSortedMap()
@@ -158,7 +364,7 @@ private fun formatMsdpValue(value: Any): String {
         }
         is List<*> -> {
             val items = value.take(5).joinToString(", ")
-            if (value.size > 5) "[$items, ...]" else "[$items]"
+            if (value.size > 5) "[$items, ...] (${value.size})" else "[$items]"
         }
         else -> value.toString()
     }
