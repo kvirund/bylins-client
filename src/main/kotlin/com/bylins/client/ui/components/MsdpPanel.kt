@@ -2,6 +2,7 @@ package com.bylins.client.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,7 +14,6 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -128,26 +128,50 @@ fun MsdpPanel(
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(
-                            onClick = { clientState.sendMsdpList("COMMANDS") },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
-                            modifier = Modifier.focusProperties { canFocus = false }
+                        Surface(
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { clientState.sendMsdpList("COMMANDS") },
+                            color = colorScheme.primary,
+                            shape = MaterialTheme.shapes.small
                         ) {
-                            Text("LIST COMMANDS", color = colorScheme.onSurface, fontSize = 11.sp)
+                            Text(
+                                "LIST COMMANDS",
+                                color = colorScheme.onSurface,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
                         }
-                        Button(
-                            onClick = { clientState.sendMsdpList("REPORTABLE_VARIABLES") },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
-                            modifier = Modifier.focusProperties { canFocus = false }
+                        Surface(
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { clientState.sendMsdpList("REPORTABLE_VARIABLES") },
+                            color = colorScheme.primary,
+                            shape = MaterialTheme.shapes.small
                         ) {
-                            Text("LIST REPORTABLE", color = colorScheme.onSurface, fontSize = 11.sp)
+                            Text(
+                                "LIST REPORTABLE",
+                                color = colorScheme.onSurface,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
                         }
-                        Button(
-                            onClick = { clientState.sendMsdpList("REPORTED_VARIABLES") },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
-                            modifier = Modifier.focusProperties { canFocus = false }
+                        Surface(
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { clientState.sendMsdpList("REPORTED_VARIABLES") },
+                            color = colorScheme.primary,
+                            shape = MaterialTheme.shapes.small
                         ) {
-                            Text("LIST REPORTED", color = colorScheme.onSurface, fontSize = 11.sp)
+                            Text(
+                                "LIST REPORTED",
+                                color = colorScheme.onSurface,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
                         }
                     }
                 }
@@ -214,11 +238,16 @@ fun MsdpPanel(
                                 }
 
                                 // Кнопки управления
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     // Кнопка SEND (одноразовый запрос)
-                                    IconButton(
-                                        onClick = { clientState.sendMsdpSend(variable) },
-                                        modifier = Modifier.size(24.dp).focusProperties { canFocus = false }
+                                    Box(
+                                        modifier = Modifier
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) { clientState.sendMsdpSend(variable) }
+                                            .padding(4.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             Icons.Default.Send,
@@ -229,16 +258,20 @@ fun MsdpPanel(
                                     }
 
                                     // Кнопка REPORT/UNREPORT
-                                    TextButton(
-                                        onClick = {
-                                            if (isReported) {
-                                                clientState.sendMsdpUnreport(variable)
-                                            } else {
-                                                clientState.sendMsdpReport(variable)
+                                    Box(
+                                        modifier = Modifier
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null
+                                            ) {
+                                                if (isReported) {
+                                                    clientState.sendMsdpUnreport(variable)
+                                                } else {
+                                                    clientState.sendMsdpReport(variable)
+                                                }
                                             }
-                                        },
-                                        modifier = Modifier.height(24.dp).focusProperties { canFocus = false },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             text = if (isReported) "UNREPORT" else "REPORT",
@@ -290,17 +323,23 @@ fun MsdpPanel(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             )
-                            IconButton(
-                                onClick = {
-                                    // Обновить все reported переменные
-                                    reportedVariables.forEach { clientState.sendMsdpSend(it) }
-                                },
-                                modifier = Modifier.size(24.dp).focusProperties { canFocus = false }
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        // Обновить все reported переменные
+                                        reportedVariables.forEach { clientState.sendMsdpSend(it) }
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Default.Refresh,
                                     contentDescription = "Обновить",
-                                    tint = colorScheme.onSurfaceVariant
+                                    tint = colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
