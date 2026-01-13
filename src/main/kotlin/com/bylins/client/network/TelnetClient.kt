@@ -216,14 +216,19 @@ class TelnetClient(
 
     private fun sendTelnetCommand(command: ByteArray) {
         if (!_isConnected.value) return
+        var shouldDisconnect = false
         synchronized(writeLock) {
             try {
                 outputStream?.write(command)
                 outputStream?.flush()
             } catch (e: IOException) {
                 logger.error { "Error sending telnet command: ${e.message}" }
-                disconnect()
+                shouldDisconnect = true
             }
+        }
+        // Вызываем disconnect() вне synchronized блока чтобы избежать deadlock
+        if (shouldDisconnect) {
+            disconnect()
         }
     }
 
@@ -274,12 +279,12 @@ class TelnetClient(
 
     private fun parseMSDP(data: ByteArray) {
         try {
+            logger.debug { "MSDP raw data (${data.size} bytes): ${data.take(100).joinToString(",") { it.toString() }}" }
             val msdpData = msdpParser.parse(data)
+            logger.debug { "MSDP parsed: $msdpData" }
             clientState?.updateMsdpData(msdpData)
-
-            // Debug output
-            logger.info { "MSDP Data: $msdpData" }
         } catch (e: Exception) {
+            logger.error { "MSDP parse error: ${e.message}" }
             e.printStackTrace()
         }
     }
