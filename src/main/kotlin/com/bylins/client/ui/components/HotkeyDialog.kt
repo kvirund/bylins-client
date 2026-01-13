@@ -92,20 +92,6 @@ fun HotkeyDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
-                        .background(
-                            if (isCapturing) colorScheme.primary.copy(alpha = 0.2f)
-                            else colorScheme.background
-                        )
-                        .border(
-                            width = 2.dp,
-                            color = if (isCapturing) colorScheme.success else colorScheme.divider
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            focusRequester.requestFocus()
-                        }
                         .focusRequester(focusRequester)
                         .focusable()
                         .onFocusChanged { state ->
@@ -143,7 +129,16 @@ fun HotkeyDialog(
                             } else {
                                 false
                             }
-                        },
+                        }
+                        .clickable { focusRequester.requestFocus() }
+                        .background(
+                            if (isCapturing) colorScheme.primary.copy(alpha = 0.2f)
+                            else colorScheme.background
+                        )
+                        .border(
+                            width = 2.dp,
+                            color = if (isCapturing) colorScheme.success else colorScheme.divider
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
