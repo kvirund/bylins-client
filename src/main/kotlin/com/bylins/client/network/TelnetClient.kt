@@ -132,6 +132,41 @@ class TelnetClient(
     }
 
     /**
+     * Добавляет локальный вывод (результат #команд) с сохранением промпта
+     * Если последняя строка в буфере не заканчивается на \n (это промпт),
+     * то выводит сообщение ПЕРЕД промптом
+     */
+    fun addLocalOutput(text: String) {
+        val currentValue = _receivedData.value
+
+        // Находим последний перенос строки
+        val lastNewlineIndex = currentValue.lastIndexOf('\n')
+
+        // Текст после последнего \n (потенциальный промпт)
+        val possiblePrompt = if (lastNewlineIndex == -1) {
+            currentValue
+        } else {
+            currentValue.substring(lastNewlineIndex + 1)
+        }
+
+        // Если есть незавершённая строка (промпт), вставляем наш текст перед ней
+        if (possiblePrompt.isNotEmpty()) {
+            // Убираем промпт из буфера
+            val bufferWithoutPrompt = if (lastNewlineIndex == -1) {
+                ""
+            } else {
+                currentValue.substring(0, lastNewlineIndex + 1)
+            }
+
+            // Добавляем наш текст + промпт
+            _receivedData.value = bufferWithoutPrompt + text + "\n" + possiblePrompt
+        } else {
+            // Нет промпта, просто добавляем текст
+            appendToBuffer(text + "\n")
+        }
+    }
+
+    /**
      * Добавляет текст в буфер с ограничением размера
      */
     private fun appendToBuffer(text: String) {
@@ -320,8 +355,8 @@ class TelnetClient(
                 variableBytes +
                 byteArrayOf(IAC, SE)
 
+            logger.info { "MSDP command bytes: ${message.joinToString(" ") { "%02X".format(it) }}" }
             sendTelnetCommand(message)
-            logger.debug { "MSDP command sent: $command $variable" }
         }
     }
 

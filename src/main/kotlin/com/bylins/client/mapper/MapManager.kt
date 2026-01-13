@@ -23,7 +23,7 @@ class MapManager(
     private val _currentRoomId = MutableStateFlow<String?>(null)
     val currentRoomId: StateFlow<String?> = _currentRoomId
 
-    private val _mapEnabled = MutableStateFlow(true)
+    private val _mapEnabled = MutableStateFlow(false)
     val mapEnabled: StateFlow<Boolean> = _mapEnabled
 
     private val pathfinder = Pathfinder()
@@ -170,6 +170,98 @@ class MapManager(
         setCurrentRoom(targetRoom.id)
 
         return targetRoom
+    }
+
+    /**
+     * Расширенная версия handleMovement с поддержкой zone, area, terrain
+     */
+    fun handleMovement(
+        direction: Direction,
+        newRoomName: String,
+        exits: List<Direction>,
+        roomId: String?,
+        zone: String?,
+        area: String?,
+        terrain: String?
+    ): Room? {
+        logger.info { "handleMovement(extended): dir=$direction name='$newRoomName' exits=$exits roomId=$roomId zone=$zone area=$area terrain=$terrain" }
+        val currentRoom = getCurrentRoom()
+
+        if (!_mapEnabled.value) {
+            return null
+        }
+
+        // Проверяем есть ли уже комната с таким ID
+        val existingRoom = roomId?.let { _rooms.value[it] }
+
+        val targetRoom = if (existingRoom != null) {
+            // Комната уже существует, обновляем информацию
+            val updated = existingRoom.copy(
+                name = newRoomName,
+                visited = true,
+                zone = zone ?: existingRoom.zone,
+                area = area ?: existingRoom.area,
+                terrain = terrain ?: existingRoom.terrain
+            )
+            addRoom(updated)
+            updated
+        } else {
+            // Создаем новую комнату - требуется ID из игры
+            val newRoomId = roomId ?: run {
+                logger.info { "ERROR: roomId required for new rooms" }
+                return null
+            }
+            val newRoom = Room(
+                id = newRoomId,
+                name = newRoomName,
+                visited = true,
+                zone = zone,
+                area = area,
+                terrain = terrain
+            )
+
+            addRoom(newRoom)
+            newRoom
+        }
+
+        // Создаем связь между текущей и новой комнатой
+        if (currentRoom != null) {
+            // Добавляем выход из текущей комнаты
+            val updatedCurrent = currentRoom.copy()
+            updatedCurrent.addExit(direction, targetRoom.id)
+            addRoom(updatedCurrent)
+
+            // Добавляем обратный выход и все известные выходы на целевую комнату
+            val updatedTarget = targetRoom.copy()
+            updatedTarget.addExit(direction.getOpposite(), currentRoom.id)
+            // Добавляем неизведанные выходы из промпта
+            exits.forEach { exitDir ->
+                updatedTarget.addUnexploredExit(exitDir)
+            }
+            addRoom(updatedTarget)
+        } else {
+            // Начальная комната - добавляем неизведанные выходы
+            val updatedTarget = targetRoom.copy()
+            exits.forEach { exitDir ->
+                updatedTarget.addUnexploredExit(exitDir)
+            }
+            addRoom(updatedTarget)
+        }
+
+        // Устанавливаем новую текущую комнату
+        setCurrentRoom(targetRoom.id)
+
+        return targetRoom
+    }
+
+    /**
+     * Находит направление между двумя комнатами
+     * Используется для определения направления движения из fromRoom в toRoom
+     */
+    fun findDirectionBetween(fromRoomId: String, toRoomId: String): Direction? {
+        val fromRoom = _rooms.value[fromRoomId] ?: return null
+        // Ищем выход, ведущий в toRoom
+        return fromRoom.exits.entries.find { it.value.targetRoomId == toRoomId }?.key
     }
 
     /**
@@ -418,7 +510,7 @@ class MapManager(
      */
     fun getAllZones(): List<String> {
         return _rooms.value.values
-            .map { it.zone }
+            .mapNotNull { it.zone }
             .filter { it.isNotEmpty() }
             .distinct()
             .sorted()

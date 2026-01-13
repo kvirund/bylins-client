@@ -226,29 +226,22 @@ fun MainWindow() {
                                         }
                                 )
 
-                                // Боковая панель с статусом и мини-картой
-                                Column(
-                                    modifier = Modifier
-                                        .width(miniMapWidth.dp)
-                                        .fillMaxHeight()
-                                ) {
-                                    // Статус персонажа
-                                    StatusPanel(
-                                        clientState = clientState,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(0.5f)
-                                    )
+                                // Боковая панель со статусом - показываем только если есть элементы
+                                val statusElements by clientState.statusManager.elements.collectAsState()
 
-                                    Divider()
-
-                                    // Мини-карта
-                                    MiniMapPanel(
-                                        clientState = clientState,
+                                if (statusElements.isNotEmpty()) {
+                                    Column(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .weight(0.5f)
-                                    )
+                                            .width(miniMapWidth.dp)
+                                            .fillMaxHeight()
+                                    ) {
+                                        StatusPanel(
+                                            clientState = clientState,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .fillMaxHeight()
+                                        )
+                                    }
                                 }
                             }
                         }

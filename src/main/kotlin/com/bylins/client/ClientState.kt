@@ -10,6 +10,7 @@ import com.bylins.client.stats.SessionStats
 import com.bylins.client.tabs.TabManager
 import com.bylins.client.triggers.TriggerManager
 import com.bylins.client.variables.VariableManager
+import com.bylins.client.status.StatusManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -101,6 +102,7 @@ class ClientState {
     private val statsHistory = com.bylins.client.stats.StatsHistory()
     private val soundManager = com.bylins.client.audio.SoundManager()
     private val variableManager = VariableManager()
+    val statusManager = StatusManager(variableManager)
     private val tabManager = TabManager()
 
     // Хранилище триггеров из скриптов
@@ -537,9 +539,9 @@ class ClientState {
                 // Автоматически запускаем логирование
                 logManager.startLogging(stripAnsi = true)
                 // Устанавливаем системные переменные
-                variableManager.setVariable("host", host)
-                variableManager.setVariable("port", port.toString())
-                variableManager.setVariable("connected", "1")
+                variableManager.setSystemVariable("host", host)
+                variableManager.setSystemVariable("port", port)
+                variableManager.setSystemVariable("connected", 1)
                 // Автозагрузка карты при подключении
                 mapManager.loadFromFile()
 
@@ -584,6 +586,11 @@ class ClientState {
         _msdpReportableVariables.value = emptyList()
         _msdpReportedVariables.value = emptySet()
 
+        // Обновляем системные переменные
+        variableManager.setSystemVariable("connected", 0)
+        // Очищаем MSDP переменные
+        variableManager.clearBySource(com.bylins.client.variables.VariableSource.MSDP)
+
         // Останавливаем сбор статистики
         sessionStats.stopSession()
         // Останавливаем логирование
@@ -620,8 +627,8 @@ class ClientState {
     fun send(command: String) {
         // Сначала проверяем команды управления переменными
         val varHandled = variableManager.processCommand(command) { message ->
-            // Выводим сообщения от VariableManager в лог
-            telnetClient.addToOutput(message)
+            // Выводим сообщения от VariableManager с сохранением промпта
+            telnetClient.addLocalOutput(message)
         }
         if (varHandled) {
             return
@@ -716,7 +723,7 @@ class ClientState {
                         return true
                     }
                     else -> {
-                        telnetClient.addToOutput("\u001B[1;33m[#sound] Неизвестный тип звука: $soundType\u001B[0m")
+                        telnetClient.addLocalOutput("\u001B[1;33m[#sound] Неизвестный тип звука: $soundType\u001B[0m")
                         return true
                     }
                 }
@@ -727,25 +734,25 @@ class ClientState {
             command.startsWith("#goto ") -> {
                 val roomId = command.substring(6).trim()
                 if (roomId.isEmpty()) {
-                    telnetClient.addToOutput("\u001B[1;33m[#goto] Использование: #goto <room_id>\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;33m[#goto] Использование: #goto <room_id>\u001B[0m")
                     return true
                 }
 
                 // Находим путь к комнате
                 val path = mapManager.findPathFromCurrent(roomId)
                 if (path == null) {
-                    telnetClient.addToOutput("\u001B[1;31m[#goto] Путь к комнате '$roomId' не найден\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;31m[#goto] Путь к комнате '$roomId' не найден\u001B[0m")
                     return true
                 }
 
                 if (path.isEmpty()) {
-                    telnetClient.addToOutput("\u001B[1;33m[#goto] Вы уже в этой комнате\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;33m[#goto] Вы уже в этой комнате\u001B[0m")
                     return true
                 }
 
                 // Запускаем автоматическое перемещение
                 val directions = path.joinToString(", ") { it.shortName }
-                telnetClient.addToOutput("\u001B[1;32m[#goto] Путь найден (${path.size} шагов): $directions\u001B[0m")
+                telnetClient.addLocalOutput("\u001B[1;32m[#goto] Путь найден (${path.size} шагов): $directions\u001B[0m")
 
                 scope.launch {
                     walkPath(path)
@@ -757,18 +764,18 @@ class ClientState {
                 // Находим путь к ближайшей непосещенной комнате
                 val path = mapManager.findNearestUnvisited()
                 if (path == null) {
-                    telnetClient.addToOutput("\u001B[1;33m[#run] Не найдено непосещенных комнат\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;33m[#run] Не найдено непосещенных комнат\u001B[0m")
                     return true
                 }
 
                 if (path.isEmpty()) {
-                    telnetClient.addToOutput("\u001B[1;33m[#run] Уже в непосещенной комнате\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;33m[#run] Уже в непосещенной комнате\u001B[0m")
                     return true
                 }
 
                 // Запускаем автоматическое перемещение
                 val directions = path.joinToString(", ") { it.shortName }
-                telnetClient.addToOutput("\u001B[1;32m[#run] Путь к непосещенной комнате (${path.size} шагов): $directions\u001B[0m")
+                telnetClient.addLocalOutput("\u001B[1;32m[#run] Путь к непосещенной комнате (${path.size} шагов): $directions\u001B[0m")
 
                 scope.launch {
                     walkPath(path)
@@ -779,7 +786,7 @@ class ClientState {
             command.startsWith("#find ") -> {
                 val query = command.substring(6).trim()
                 if (query.isEmpty()) {
-                    telnetClient.addToOutput("\u001B[1;33m[#find] Использование: #find <название комнаты>\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;33m[#find] Использование: #find <название комнаты>\u001B[0m")
                     return true
                 }
 
@@ -787,7 +794,7 @@ class ClientState {
                 val foundRooms = mapManager.searchRooms(query, searchInDescription = false)
 
                 if (foundRooms.isEmpty()) {
-                    telnetClient.addToOutput("\u001B[1;31m[#find] Комнаты с названием '$query' не найдены\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;31m[#find] Комнаты с названием '$query' не найдены\u001B[0m")
                     return true
                 }
 
@@ -797,17 +804,17 @@ class ClientState {
                     val path = mapManager.findPathFromCurrent(room.id)
 
                     if (path == null) {
-                        telnetClient.addToOutput("\u001B[1;31m[#find] Путь к комнате '${room.name}' не найден\u001B[0m")
+                        telnetClient.addLocalOutput("\u001B[1;31m[#find] Путь к комнате '${room.name}' не найден\u001B[0m")
                         return true
                     }
 
                     if (path.isEmpty()) {
-                        telnetClient.addToOutput("\u001B[1;33m[#find] Вы уже в комнате '${room.name}'\u001B[0m")
+                        telnetClient.addLocalOutput("\u001B[1;33m[#find] Вы уже в комнате '${room.name}'\u001B[0m")
                         return true
                     }
 
                     val directions = path.joinToString(", ") { it.shortName }
-                    telnetClient.addToOutput("\u001B[1;32m[#find] Путь к '${room.name}' (${path.size} шагов): $directions\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;32m[#find] Путь к '${room.name}' (${path.size} шагов): $directions\u001B[0m")
 
                     scope.launch {
                         walkPath(path)
@@ -831,7 +838,7 @@ class ClientState {
                     }
 
                     sb.append("\u001B[1;33mИспользуйте #goto <room_id> для перехода\u001B[0m")
-                    telnetClient.addToOutput(sb.toString())
+                    telnetClient.addLocalOutput(sb.toString())
                 }
                 return true
             }
@@ -844,11 +851,11 @@ class ClientState {
                     args.isEmpty() -> {
                         val currentRoom = mapManager.getCurrentRoom()
                         if (currentRoom == null) {
-                            telnetClient.addToOutput("\u001B[1;31m[#zone] Текущая комната не определена\u001B[0m")
-                        } else if (currentRoom.zone.isEmpty()) {
-                            telnetClient.addToOutput("\u001B[1;33m[#zone] Текущая комната не принадлежит ни одной зоне\u001B[0m")
+                            telnetClient.addLocalOutput("\u001B[1;31m[#zone] Текущая комната не определена\u001B[0m")
+                        } else if (currentRoom.zone.isNullOrEmpty()) {
+                            telnetClient.addLocalOutput("\u001B[1;33m[#zone] Текущая комната не принадлежит ни одной зоне\u001B[0m")
                         } else {
-                            telnetClient.addToOutput("\u001B[1;32m[#zone] Текущая зона: ${currentRoom.zone}\u001B[0m")
+                            telnetClient.addLocalOutput("\u001B[1;32m[#zone] Текущая зона: ${currentRoom.zone}\u001B[0m")
                         }
                     }
 
@@ -856,7 +863,7 @@ class ClientState {
                     args == "list" -> {
                         val zones = getAllZones()
                         if (zones.isEmpty()) {
-                            telnetClient.addToOutput("\u001B[1;33m[#zone] Зоны не определены. Используйте #zone detect\u001B[0m")
+                            telnetClient.addLocalOutput("\u001B[1;33m[#zone] Зоны не определены. Используйте #zone detect\u001B[0m")
                         } else {
                             val stats = getZoneStatistics()
                             val sb = StringBuilder()
@@ -864,7 +871,7 @@ class ClientState {
                             stats.forEach { (zone, count) ->
                                 sb.append("\u001B[1;33m- $zone\u001B[0m ($count комнат)\n")
                             }
-                            telnetClient.addToOutput(sb.toString())
+                            telnetClient.addLocalOutput(sb.toString())
                         }
                     }
 
@@ -872,13 +879,13 @@ class ClientState {
                     args == "detect" -> {
                         detectAndAssignZones()
                         val stats = getZoneStatistics()
-                        telnetClient.addToOutput("\u001B[1;32m[#zone] Детектировано зон: ${stats.size}\u001B[0m")
+                        telnetClient.addLocalOutput("\u001B[1;32m[#zone] Детектировано зон: ${stats.size}\u001B[0m")
                     }
 
                     // #zone clear - очистить все зоны
                     args == "clear" -> {
                         clearAllZones()
-                        telnetClient.addToOutput("\u001B[1;32m[#zone] Все зоны очищены\u001B[0m")
+                        telnetClient.addLocalOutput("\u001B[1;32m[#zone] Все зоны очищены\u001B[0m")
                     }
 
                     else -> {
@@ -888,7 +895,7 @@ class ClientState {
                         sb.append("  #zone list - список всех зон\n")
                         sb.append("  #zone detect - автоматическая детекция зон\n")
                         sb.append("  #zone clear - очистить все зоны")
-                        telnetClient.addToOutput(sb.toString())
+                        telnetClient.addLocalOutput(sb.toString())
                     }
                 }
                 return true
@@ -901,7 +908,7 @@ class ClientState {
                     return false
                 }
 
-                telnetClient.addToOutput("\u001B[1;32m[Speedwalk] ${directions.size} шагов: ${directions.joinToString(", ")}\u001B[0m")
+                telnetClient.addLocalOutput("\u001B[1;32m[Speedwalk] ${directions.size} шагов: ${directions.joinToString(", ")}\u001B[0m")
 
                 scope.launch {
                     walkPath(directions)
@@ -1020,7 +1027,7 @@ class ClientState {
             |═══════════════════════════════════════════════════════════════
         """.trimMargin()
 
-        telnetClient.addToOutput(help)
+        telnetClient.addLocalOutput(help)
     }
 
     /**
@@ -1046,10 +1053,9 @@ class ClientState {
         _msdpEnabled.value = enabled
         if (enabled && !wasEnabled) {
             logger.info { "MSDP протокол включён" }
-            // Автоматически запрашиваем список reportable переменных
-            scope.launch {
-                delay(100) // Небольшая задержка для завершения handshake
-                sendMsdpList("REPORTABLE_VARIABLES")
+            // Уведомляем скрипты о включении MSDP
+            if (::scriptManager.isInitialized) {
+                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_MSDP_ENABLED)
             }
         }
     }
@@ -1063,8 +1069,8 @@ class ClientState {
             logger.warn { "MSDP не включён, команда LIST проигнорирована" }
             return
         }
+        logger.info { "MSDP LIST $listType отправляется..." }
         telnetClient.sendMsdpCommand("LIST", listType)
-        logger.debug { "MSDP LIST $listType отправлен" }
     }
 
     /**
@@ -1116,9 +1122,9 @@ class ClientState {
             }
         }
 
-        // Автоматически обновляем переменные из MSDP
+        // Автоматически обновляем переменные из MSDP (сохраняем оригинальные значения)
         data.forEach { (key, value) ->
-            variableManager.setVariable(key.lowercase(), value.toString())
+            variableManager.setMsdpVariable(key.lowercase(), value)
         }
 
         // Обновляем историю статистики для графиков
@@ -1880,31 +1886,41 @@ class ClientState {
 
     // Управление скриптами
     private fun initializeScripting() {
-        // Создаем реализацию ScriptAPI
-        val scriptAPI = com.bylins.client.scripting.ScriptAPIImpl(
-            sendCommand = { command -> send(command) },
-            echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
-            logMessage = { message -> logger.info { message } },
-            triggerActions = createTriggerActions(),
-            aliasActions = createAliasActions(),
-            timerActions = createTimerActions(),
-            variableActions = createVariableActions(),
-            msdpActions = createMsdpActions(),
-            gmcpActions = createGmcpActions(),
-            mapperActions = createMapperActions()
-        )
+        try {
+            logger.info { "Initializing scripting system..." }
 
-        // Создаем ScriptManager
-        scriptManager = com.bylins.client.scripting.ScriptManager(scriptAPI)
+            // Создаем реализацию ScriptAPI
+            val scriptAPI = com.bylins.client.scripting.ScriptAPIImpl(
+                sendCommand = { command -> send(command) },
+                echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
+                logMessage = { message -> logger.info { message } },
+                triggerActions = createTriggerActions(),
+                aliasActions = createAliasActions(),
+                timerActions = createTimerActions(),
+                variableActions = createVariableActions(),
+                msdpActions = createMsdpActions(),
+                gmcpActions = createGmcpActions(),
+                mapperActions = createMapperActions(),
+                statusActions = createStatusActions()
+            )
 
-        // Регистрируем движки
-        scriptManager.registerEngine(com.bylins.client.scripting.engines.JavaScriptEngine())
-        scriptManager.registerEngine(com.bylins.client.scripting.engines.PythonEngine())
-        scriptManager.registerEngine(com.bylins.client.scripting.engines.LuaEngine())
-        scriptManager.registerEngine(com.bylins.client.scripting.engines.PerlEngine())
+            // Создаем ScriptManager
+            scriptManager = com.bylins.client.scripting.ScriptManager(scriptAPI)
 
-        // Автозагрузка скриптов
-        scriptManager.autoLoadScripts()
+            // Регистрируем движки
+            scriptManager.registerEngine(com.bylins.client.scripting.engines.JavaScriptEngine())
+            scriptManager.registerEngine(com.bylins.client.scripting.engines.PythonEngine())
+            scriptManager.registerEngine(com.bylins.client.scripting.engines.LuaEngine())
+            scriptManager.registerEngine(com.bylins.client.scripting.engines.PerlEngine())
+
+            // Автозагрузка скриптов
+            scriptManager.autoLoadScripts()
+
+            logger.info { "Scripting system initialized successfully" }
+        } catch (e: Exception) {
+            logger.error { "Failed to initialize scripting: ${e.message}" }
+            e.printStackTrace()
+        }
     }
 
     /**
@@ -1933,7 +1949,7 @@ class ClientState {
             sendCommand = { command -> send(command) },
             echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
             eventBus = pluginEventBus,
-            variableGetter = { name -> variableManager.getVariable(name) },
+            variableGetter = { name -> variableManager.getVariable(name)?.asString() },
             variableSetter = { name, value -> variableManager.setVariable(name, value) },
             variableDeleter = { name -> variableManager.removeVariable(name) },
             getAllVariablesFunc = { variableManager.getAllVariables() },
@@ -1941,7 +1957,7 @@ class ClientState {
             getAllMsdpFunc = { _msdpData.value },
             gmcpGetter = { packageName -> _gmcpData.value[packageName]?.toString() },
             getAllGmcpFunc = { _gmcpData.value.mapValues { it.value.toString() } },
-            gmcpSender = { packageName, data -> /* TODO: отправка GMCP */ },
+            gmcpSender = { _, _ -> /* TODO: отправка GMCP */ },
             // Маппер - чтение
             getCurrentRoomFunc = { mapManager.getCurrentRoom()?.toMap() },
             getRoomFunc = { roomId -> mapManager.getRoom(roomId)?.toMap() },
@@ -2015,8 +2031,6 @@ class ClientState {
     private fun createTriggerActions() = object : com.bylins.client.scripting.TriggerActions {
         override fun addTrigger(pattern: String, callback: (String, Map<Int, String>) -> Unit): String {
             val triggerId = java.util.UUID.randomUUID().toString()
-            // DEBUG: выводим байты паттерна
-            val patternBytes = pattern.toByteArray(Charsets.UTF_8).joinToString(" ") { "%02X".format(it) }
             try {
                 val regex = pattern.toRegex()
                 val trigger = ScriptTrigger(
@@ -2099,7 +2113,7 @@ class ClientState {
 
     private fun createVariableActions() = object : com.bylins.client.scripting.VariableActions {
         override fun getVariable(name: String): String? {
-            return variableManager.getVariable(name)
+            return variableManager.getVariableValue(name)
         }
 
         override fun setVariable(name: String, value: String) {
@@ -2124,6 +2138,34 @@ class ClientState {
 
         override fun getAllMsdpData(): Map<String, Any> {
             return _msdpData.value
+        }
+
+        override fun getReportableVariables(): List<String> {
+            return _msdpReportableVariables.value
+        }
+
+        override fun getReportedVariables(): List<String> {
+            return _msdpReportedVariables.value.toList()
+        }
+
+        override fun isEnabled(): Boolean {
+            return _msdpEnabled.value
+        }
+
+        override fun report(variableName: String) {
+            sendMsdpReport(variableName)
+        }
+
+        override fun unreport(variableName: String) {
+            sendMsdpUnreport(variableName)
+        }
+
+        override fun send(variableName: String) {
+            sendMsdpSend(variableName)
+        }
+
+        override fun list(listType: String) {
+            sendMsdpList(listType)
         }
     }
 
@@ -2243,6 +2285,75 @@ class ClientState {
             return room?.toMap()
         }
 
+        override fun handleRoom(params: Map<String, Any>): Map<String, Any>? {
+            logger.info { "handleRoom called with params: $params" }
+            // Извлекаем параметры из MSDP-подобной структуры
+            val vnum = params["vnum"] as? String
+            if (vnum == null) {
+                logger.warn { "handleRoom: vnum is null, params keys: ${params.keys}" }
+                return null
+            }
+            val name = params["name"] as? String ?: ""
+            val zone = params["zone"] as? String
+            val area = params["area"] as? String
+            val terrain = params["terrain"] as? String
+
+            // Обрабатываем выходы - формат Map<direction, targetVnum>
+            val exitsRaw = params["exits"]
+            val exitsWithTargets: Map<com.bylins.client.mapper.Direction, String> = when (exitsRaw) {
+                is Map<*, *> -> exitsRaw.mapNotNull { (key, value) ->
+                    val dir = com.bylins.client.mapper.Direction.fromCommand(key.toString())
+                    val target = value?.toString()
+                    if (dir != null && target != null) dir to target else null
+                }.toMap()
+                else -> emptyMap()
+            }
+
+            // Получаем или создаём комнату
+            val existingRoom = mapManager.getRoom(vnum)
+            val room = if (existingRoom != null) {
+                // Обновляем существующую комнату
+                existingRoom.copy(
+                    name = name,
+                    zone = zone ?: existingRoom.zone,
+                    area = area ?: existingRoom.area,
+                    terrain = terrain ?: existingRoom.terrain,
+                    visited = true
+                )
+            } else {
+                // Создаём новую комнату
+                com.bylins.client.mapper.Room(
+                    id = vnum,
+                    name = name,
+                    zone = zone,
+                    area = area,
+                    terrain = terrain,
+                    visited = true
+                )
+            }
+
+            // Добавляем выходы с целевыми комнатами
+            exitsWithTargets.forEach { (direction, targetVnum) ->
+                room.addExit(direction, targetVnum)
+
+                // Создаём целевую комнату если её нет (статус "неисследовано")
+                if (mapManager.getRoom(targetVnum) == null) {
+                    val unexploredRoom = com.bylins.client.mapper.Room(
+                        id = targetVnum,
+                        name = "",  // Пустое имя = неисследовано
+                        visited = false
+                    )
+                    mapManager.addRoom(unexploredRoom)
+                }
+            }
+
+            mapManager.addRoom(room)
+            mapManager.setCurrentRoom(vnum)
+            logger.info { "handleRoom: room added, currentRoomId=${mapManager.currentRoomId.value}" }
+
+            return room.toMap()
+        }
+
         override fun setMapEnabled(enabled: Boolean) {
             mapManager.setMapEnabled(enabled)
         }
@@ -2257,6 +2368,96 @@ class ClientState {
 
         override fun setCurrentRoom(roomId: String) {
             mapManager.setCurrentRoom(roomId)
+        }
+    }
+
+    private fun createStatusActions() = object : com.bylins.client.scripting.StatusActions {
+        override fun addBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int) {
+            val actualOrder = if (order < 0) statusManager.elements.value.size else order
+            statusManager.addBar(id, label, value, max, color, showText, actualOrder)
+        }
+
+        override fun addText(id: String, label: String, value: String, order: Int) {
+            val actualOrder = if (order < 0) statusManager.elements.value.size else order
+            statusManager.addText(id, label, value, actualOrder)
+        }
+
+        override fun addFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int) {
+            val actualOrder = if (order < 0) statusManager.elements.value.size else order
+            val flagItems = flags.map { flagMap ->
+                com.bylins.client.status.FlagItem(
+                    name = flagMap["name"] as? String ?: "",
+                    active = flagMap["active"] as? Boolean ?: true,
+                    color = flagMap["color"] as? String ?: "white",
+                    timer = flagMap["timer"] as? String
+                )
+            }
+            statusManager.addFlags(id, label, flagItems, actualOrder)
+        }
+
+        override fun addMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int) {
+            val actualOrder = if (order < 0) statusManager.elements.value.size else order
+            statusManager.addMiniMap(id, currentRoomId, visible, actualOrder)
+        }
+
+        override fun update(id: String, updates: Map<String, Any>) {
+            statusManager.update(id, updates)
+        }
+
+        override fun remove(id: String) {
+            statusManager.remove(id)
+        }
+
+        override fun clear() {
+            statusManager.clear()
+        }
+
+        override fun get(id: String): Map<String, Any>? {
+            val element = statusManager.get(id) ?: return null
+            return when (element) {
+                is com.bylins.client.status.StatusElement.Bar -> mapOf(
+                    "type" to "bar",
+                    "id" to element.id,
+                    "label" to element.label,
+                    "value" to element.value,
+                    "max" to element.max,
+                    "color" to element.color,
+                    "showText" to element.showText,
+                    "order" to element.order
+                )
+                is com.bylins.client.status.StatusElement.Text -> mapOf(
+                    "type" to "text",
+                    "id" to element.id,
+                    "label" to element.label,
+                    "value" to element.value,
+                    "order" to element.order
+                )
+                is com.bylins.client.status.StatusElement.Flags -> mapOf(
+                    "type" to "flags",
+                    "id" to element.id,
+                    "label" to element.label,
+                    "flags" to element.flags.map { flag ->
+                        mapOf(
+                            "name" to flag.name,
+                            "active" to flag.active,
+                            "color" to flag.color,
+                            "timer" to (flag.timer ?: "")
+                        )
+                    },
+                    "order" to element.order
+                )
+                is com.bylins.client.status.StatusElement.MiniMap -> mapOf(
+                    "type" to "minimap",
+                    "id" to element.id,
+                    "currentRoomId" to (element.currentRoomId ?: ""),
+                    "visible" to element.visible,
+                    "order" to element.order
+                )
+            }
+        }
+
+        override fun exists(id: String): Boolean {
+            return statusManager.exists(id)
         }
     }
 

@@ -32,6 +32,13 @@ interface ScriptAPI {
     // MSDP данные
     fun getMsdpValue(key: String): Any?
     fun getAllMsdpData(): Map<String, Any>
+    fun getMsdpReportableVariables(): List<String>
+    fun getMsdpReportedVariables(): List<String>
+    fun isMsdpEnabled(): Boolean
+    fun msdpReport(variableName: String)
+    fun msdpUnreport(variableName: String)
+    fun msdpSend(variableName: String)
+    fun msdpList(listType: String)
 
     // GMCP данные
     fun getGmcpValue(packageName: String): String?
@@ -56,11 +63,25 @@ interface ScriptAPI {
     fun addUnexploredExits(roomId: String, exits: List<String>)
     fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String? = null): Map<String, Any>?
 
+    // Маппер - высокоуровневые функции для MSDP
+    fun handleRoom(params: Map<String, Any>): Map<String, Any>?
+
     // Маппер - управление
     fun setMapEnabled(enabled: Boolean)
     fun isMapEnabled(): Boolean
     fun clearMap()
     fun setCurrentRoom(roomId: String)
+
+    // Статус-панель
+    fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String = "green", showText: Boolean = true, order: Int = -1)
+    fun statusAddText(id: String, label: String, value: String, order: Int = -1)
+    fun statusAddFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int = -1)
+    fun statusAddMiniMap(id: String, currentRoomId: String? = null, visible: Boolean = true, order: Int = -1)
+    fun statusUpdate(id: String, updates: Map<String, Any>)
+    fun statusRemove(id: String)
+    fun statusClear()
+    fun statusGet(id: String): Map<String, Any>?
+    fun statusExists(id: String): Boolean
 
     // Утилиты
     fun log(message: String)
@@ -80,7 +101,8 @@ class ScriptAPIImpl(
     private val variableActions: VariableActions,
     private val msdpActions: MsdpActions,
     private val gmcpActions: GmcpActions,
-    private val mapperActions: MapperActions
+    private val mapperActions: MapperActions,
+    private val statusActions: StatusActions
 ) : ScriptAPI {
 
     override fun send(command: String) = sendCommand(command)
@@ -117,6 +139,13 @@ class ScriptAPIImpl(
 
     override fun getMsdpValue(key: String): Any? = msdpActions.getMsdpValue(key)
     override fun getAllMsdpData(): Map<String, Any> = msdpActions.getAllMsdpData()
+    override fun getMsdpReportableVariables(): List<String> = msdpActions.getReportableVariables()
+    override fun getMsdpReportedVariables(): List<String> = msdpActions.getReportedVariables()
+    override fun isMsdpEnabled(): Boolean = msdpActions.isEnabled()
+    override fun msdpReport(variableName: String) = msdpActions.report(variableName)
+    override fun msdpUnreport(variableName: String) = msdpActions.unreport(variableName)
+    override fun msdpSend(variableName: String) = msdpActions.send(variableName)
+    override fun msdpList(listType: String) = msdpActions.list(listType)
 
     override fun getGmcpValue(packageName: String): String? = gmcpActions.getGmcpValue(packageName)
     override fun getAllGmcpData(): Map<String, String> = gmcpActions.getAllGmcpData()
@@ -142,10 +171,28 @@ class ScriptAPIImpl(
     override fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String?): Map<String, Any>? =
         mapperActions.handleMovement(direction, roomName, exits, roomId)
 
+    override fun handleRoom(params: Map<String, Any>): Map<String, Any>? =
+        mapperActions.handleRoom(params)
+
     override fun setMapEnabled(enabled: Boolean) = mapperActions.setMapEnabled(enabled)
     override fun isMapEnabled(): Boolean = mapperActions.isMapEnabled()
     override fun clearMap() = mapperActions.clearMap()
     override fun setCurrentRoom(roomId: String) = mapperActions.setCurrentRoom(roomId)
+
+    override fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int) =
+        statusActions.addBar(id, label, value, max, color, showText, order)
+    override fun statusAddText(id: String, label: String, value: String, order: Int) =
+        statusActions.addText(id, label, value, order)
+    override fun statusAddFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int) =
+        statusActions.addFlags(id, label, flags, order)
+    override fun statusAddMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int) =
+        statusActions.addMiniMap(id, currentRoomId, visible, order)
+    override fun statusUpdate(id: String, updates: Map<String, Any>) =
+        statusActions.update(id, updates)
+    override fun statusRemove(id: String) = statusActions.remove(id)
+    override fun statusClear() = statusActions.clear()
+    override fun statusGet(id: String): Map<String, Any>? = statusActions.get(id)
+    override fun statusExists(id: String): Boolean = statusActions.exists(id)
 
     override fun log(message: String) = logMessage("[SCRIPT] $message")
     override fun print(message: String) = echoText(message)
@@ -180,6 +227,13 @@ interface VariableActions {
 interface MsdpActions {
     fun getMsdpValue(key: String): Any?
     fun getAllMsdpData(): Map<String, Any>
+    fun getReportableVariables(): List<String>
+    fun getReportedVariables(): List<String>
+    fun isEnabled(): Boolean
+    fun report(variableName: String)
+    fun unreport(variableName: String)
+    fun send(variableName: String)
+    fun list(listType: String)
 }
 
 interface GmcpActions {
@@ -207,9 +261,24 @@ interface MapperActions {
     fun addUnexploredExits(roomId: String, exits: List<String>)
     fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String? = null): Map<String, Any>?
 
+    // Высокоуровневые функции для MSDP
+    fun handleRoom(params: Map<String, Any>): Map<String, Any>?
+
     // Управление
     fun setMapEnabled(enabled: Boolean)
     fun isMapEnabled(): Boolean
     fun clearMap()
     fun setCurrentRoom(roomId: String)
+}
+
+interface StatusActions {
+    fun addBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int)
+    fun addText(id: String, label: String, value: String, order: Int)
+    fun addFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int)
+    fun addMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int)
+    fun update(id: String, updates: Map<String, Any>)
+    fun remove(id: String)
+    fun clear()
+    fun get(id: String): Map<String, Any>?
+    fun exists(id: String): Boolean
 }
