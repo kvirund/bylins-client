@@ -229,15 +229,19 @@ fun SettingsPanel(
 
                     ExposedDropdownMenu(
                         expanded = themeExpanded,
-                        onDismissRequest = { themeExpanded = false }
+                        onDismissRequest = { themeExpanded = false },
+                        modifier = Modifier.background(colorScheme.surface)
                     ) {
                         themes.forEach { (themeId, themeName) ->
-                            DropdownMenuItem(onClick = {
-                                clientState.setTheme(themeId)
-                                themeExpanded = false
-                                statusMessage = "Тема изменена. Перезапустите приложение."
-                                statusColor = colorScheme.warning
-                            }) {
+                            DropdownMenuItem(
+                                onClick = {
+                                    clientState.setTheme(themeId)
+                                    themeExpanded = false
+                                    statusMessage = "Тема изменена. Перезапустите приложение."
+                                    statusColor = colorScheme.warning
+                                },
+                                modifier = Modifier.background(colorScheme.surface)
+                            ) {
                                 Text(themeName, color = colorScheme.onSurface)
                             }
                         }
@@ -314,15 +318,19 @@ fun SettingsPanel(
 
                         ExposedDropdownMenu(
                             expanded = fontExpanded,
-                            onDismissRequest = { fontExpanded = false }
+                            onDismissRequest = { fontExpanded = false },
+                            modifier = Modifier.background(colorScheme.surface)
                         ) {
                             fontFamilies.forEach { (familyId, fontInfo) ->
-                                DropdownMenuItem(onClick = {
-                                    clientState.setFontFamily(familyId)
-                                    fontExpanded = false
-                                    statusMessage = "Шрифт изменён"
-                                    statusColor = colorScheme.success
-                                }) {
+                                DropdownMenuItem(
+                                    onClick = {
+                                        clientState.setFontFamily(familyId)
+                                        fontExpanded = false
+                                        statusMessage = "Шрифт изменён"
+                                        statusColor = colorScheme.success
+                                    },
+                                    modifier = Modifier.background(colorScheme.surface)
+                                ) {
                                     Text(
                                         text = fontInfo.first,
                                         fontFamily = fontInfo.second,
@@ -481,15 +489,19 @@ fun SettingsPanel(
 
                     ExposedDropdownMenu(
                         expanded = encodingExpanded,
-                        onDismissRequest = { encodingExpanded = false }
+                        onDismissRequest = { encodingExpanded = false },
+                        modifier = Modifier.background(colorScheme.surface)
                     ) {
                         encodings.forEach { (encodingId, encodingName) ->
-                            DropdownMenuItem(onClick = {
-                                clientState.setEncoding(encodingId)
-                                encodingExpanded = false
-                                statusMessage = "Кодировка изменена на $encodingId"
-                                statusColor = colorScheme.success
-                            }) {
+                            DropdownMenuItem(
+                                onClick = {
+                                    clientState.setEncoding(encodingId)
+                                    encodingExpanded = false
+                                    statusMessage = "Кодировка изменена на $encodingId"
+                                    statusColor = colorScheme.success
+                                },
+                                modifier = Modifier.background(colorScheme.surface)
+                            ) {
                                 Text(encodingName, color = colorScheme.onSurface)
                             }
                         }
