@@ -211,14 +211,19 @@ class TelnetClient(
         sendTelnetCommand(byteArrayOf(IAC, DO, GMCP))
     }
 
+    // Объект для синхронизации записи в outputStream
+    private val writeLock = Any()
+
     private fun sendTelnetCommand(command: ByteArray) {
         if (!_isConnected.value) return
-        try {
-            outputStream?.write(command)
-            outputStream?.flush()
-        } catch (e: IOException) {
-            logger.error { "Error sending telnet command: ${e.message}" }
-            disconnect()
+        synchronized(writeLock) {
+            try {
+                outputStream?.write(command)
+                outputStream?.flush()
+            } catch (e: IOException) {
+                logger.error { "Error sending telnet command: ${e.message}" }
+                disconnect()
+            }
         }
     }
 
@@ -294,23 +299,25 @@ class TelnetClient(
     }
 
     /**
-     * Отправляет MSDP команду
+     * Отправляет MSDP команду (асинхронно через корутину)
      * command: "LIST", "REPORT", "UNREPORT", "SEND", "RESET"
      * variable: имя переменной или тип списка
      */
     fun sendMsdpCommand(command: String, variable: String) {
-        // Формат: IAC SB MSDP MSDP_VAR command MSDP_VAL variable IAC SE
-        val commandBytes = command.toByteArray(Charsets.UTF_8)
-        val variableBytes = variable.toByteArray(Charsets.UTF_8)
+        CoroutineScope(Dispatchers.IO).launch {
+            // Формат: IAC SB MSDP MSDP_VAR command MSDP_VAL variable IAC SE
+            val commandBytes = command.toByteArray(Charsets.UTF_8)
+            val variableBytes = variable.toByteArray(Charsets.UTF_8)
 
-        val message = byteArrayOf(IAC, SB, MSDP, MsdpParser.MSDP_VAR) +
-            commandBytes +
-            byteArrayOf(MsdpParser.MSDP_VAL) +
-            variableBytes +
-            byteArrayOf(IAC, SE)
+            val message = byteArrayOf(IAC, SB, MSDP, MsdpParser.MSDP_VAR) +
+                commandBytes +
+                byteArrayOf(MsdpParser.MSDP_VAL) +
+                variableBytes +
+                byteArrayOf(IAC, SE)
 
-        sendTelnetCommand(message)
-        logger.debug { "MSDP command sent: $command $variable" }
+            sendTelnetCommand(message)
+            logger.debug { "MSDP command sent: $command $variable" }
+        }
     }
 
     companion object {

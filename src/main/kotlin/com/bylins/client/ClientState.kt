@@ -568,6 +568,13 @@ class ClientState {
         }
 
         telnetClient.disconnect()
+
+        // Сбрасываем MSDP состояние
+        _msdpEnabled.value = false
+        _msdpData.value = emptyMap()
+        _msdpReportableVariables.value = emptyList()
+        _msdpReportedVariables.value = emptySet()
+
         // Останавливаем сбор статистики
         sessionStats.stopSession()
         // Останавливаем логирование
