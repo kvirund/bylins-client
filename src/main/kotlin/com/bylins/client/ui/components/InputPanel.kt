@@ -63,7 +63,12 @@ fun InputPanel(
     ) {
         OutlinedTextField(
             value = inputText,
-            onValueChange = { inputText = it },
+            onValueChange = { newValue ->
+                // Игнорируем ввод сразу после срабатывания хоткея (предотвращает дублирование NumPad цифр)
+                if (!clientState.wasHotkeyRecentlyProcessed()) {
+                    inputText = newValue
+                }
+            },
             label = { Text(if (isConnected) "Команда" else "Команда (# для локальных)") },
             enabled = true,  // Всегда включено для локальных команд (#vars, #help и т.д.)
             modifier = Modifier

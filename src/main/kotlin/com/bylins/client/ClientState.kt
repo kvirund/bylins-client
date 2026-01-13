@@ -32,6 +32,18 @@ class ClientState {
     private var saveConfigJob: kotlinx.coroutines.Job? = null
     private val saveConfigDebounceMs = 500L
 
+    // Время последнего срабатывания хоткея (для блокировки дублирования ввода)
+    @Volatile
+    private var lastHotkeyTimestamp = 0L
+    private val hotkeyInputBlockMs = 200L // Блокируем ввод на 200мс после хоткея
+
+    /**
+     * Проверяет, был ли недавно обработан хоткей (для блокировки текстового ввода)
+     */
+    fun wasHotkeyRecentlyProcessed(): Boolean {
+        return System.currentTimeMillis() - lastHotkeyTimestamp < hotkeyInputBlockMs
+    }
+
     // Менеджеры инициализируются первыми
     private val aliasManager = AliasManager(
         onCommand = { command ->
@@ -1456,6 +1468,8 @@ class ClientState {
         val handled = hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed, _ignoreNumLock.value)
         if (handled) {
             sessionStats.incrementHotkeysUsed()
+            // Записываем время для блокировки дублирования текстового ввода
+            lastHotkeyTimestamp = System.currentTimeMillis()
         }
         return handled
     }

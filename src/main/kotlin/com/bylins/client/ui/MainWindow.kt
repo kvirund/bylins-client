@@ -30,6 +30,9 @@ fun MainWindow() {
     val isConnected by clientState.isConnected.collectAsState()
     val msdpEnabled by clientState.msdpEnabled.collectAsState()
 
+    // Отслеживаем последний обработанный KeyDown для поглощения KeyUp
+    var lastHandledKey by remember { mutableStateOf<androidx.compose.ui.input.key.Key?>(null) }
+
     // Фокусируем input после подключения
     LaunchedEffect(isConnected) {
         if (isConnected) {
@@ -54,23 +57,36 @@ fun MainWindow() {
             modifier = Modifier
                 .fillMaxSize()
                 .onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown) {
-                        // Обрабатываем горячие клавиши
-                        val handled = clientState.processHotkey(
-                            key = event.key,
-                            isCtrlPressed = event.isCtrlPressed,
-                            isAltPressed = event.isAltPressed,
-                            isShiftPressed = event.isShiftPressed
-                        )
+                    when (event.type) {
+                        KeyEventType.KeyDown -> {
+                            // Обрабатываем горячие клавиши
+                            val handled = clientState.processHotkey(
+                                key = event.key,
+                                isCtrlPressed = event.isCtrlPressed,
+                                isAltPressed = event.isAltPressed,
+                                isShiftPressed = event.isShiftPressed
+                            )
 
-                        // Если hotkey не обработан, фокусируем input для обычного ввода
-                        if (!handled && !event.isCtrlPressed && !event.isAltPressed) {
-                            inputFocusRequester.requestFocus()
+                            if (handled) {
+                                // Запоминаем клавишу чтобы поглотить KeyUp
+                                lastHandledKey = event.key
+                            } else if (!event.isCtrlPressed && !event.isAltPressed) {
+                                // Если hotkey не обработан, фокусируем input для обычного ввода
+                                inputFocusRequester.requestFocus()
+                            }
+
+                            handled
                         }
-
-                        handled
-                    } else {
-                        false
+                        KeyEventType.KeyUp -> {
+                            // Поглощаем KeyUp если соответствующий KeyDown был обработан
+                            if (lastHandledKey == event.key) {
+                                lastHandledKey = null
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        else -> false
                     }
                 },
             color = MaterialTheme.colorScheme.background

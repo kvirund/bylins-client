@@ -112,7 +112,7 @@ data class AliasDto(
 @Serializable
 data class HotkeyDto(
     val id: String,
-    val key: String, // Название клавиши как строка
+    val key: String, // Название клавиши (для отображения/обратной совместимости)
     val ctrl: Boolean = false,
     val alt: Boolean = false,
     val shift: Boolean = false,
@@ -120,10 +120,18 @@ data class HotkeyDto(
     val enabled: Boolean = true,
     val ignoreNumLock: Boolean = false,
     // Для обратной совместимости (не используется)
-    val name: String? = null
+    val name: String? = null,
+    // Точный код клавиши (для правильного восстановления NumPad)
+    val keyCode: Long? = null
 ) {
     fun toHotkey(): Hotkey? {
-        val parsedKey = Hotkey.parseKey(key) ?: return null
+        // Если есть keyCode - используем его напрямую
+        val parsedKey = if (keyCode != null) {
+            androidx.compose.ui.input.key.Key(keyCode)
+        } else {
+            // Fallback на старый формат
+            Hotkey.parseKey(key) ?: return null
+        }
         return Hotkey(
             id = id,
             key = parsedKey,
@@ -146,7 +154,8 @@ data class HotkeyDto(
                 shift = hotkey.shift,
                 commands = hotkey.commands,
                 enabled = hotkey.enabled,
-                ignoreNumLock = hotkey.ignoreNumLock
+                ignoreNumLock = hotkey.ignoreNumLock,
+                keyCode = hotkey.key.keyCode // Сохраняем точный код
             )
         }
     }

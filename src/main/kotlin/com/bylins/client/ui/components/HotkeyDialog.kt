@@ -46,6 +46,7 @@ fun HotkeyDialog(
     var isCapturing by remember { mutableStateOf(false) }
 
     val focusRequester = remember { FocusRequester() }
+    val interactionSource = remember { MutableInteractionSource() }
 
     // Формирование строки комбинации
     val keyComboString = remember(ctrl, alt, shift, selectedKey) {
@@ -92,12 +93,31 @@ fun HotkeyDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
+                        .background(
+                            if (isCapturing) colorScheme.primary.copy(alpha = 0.2f)
+                            else colorScheme.background
+                        )
+                        .border(
+                            width = 2.dp,
+                            color = if (isCapturing) colorScheme.success else colorScheme.divider
+                        )
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null
+                        ) {
+                            isCapturing = true
+                            focusRequester.requestFocus()
+                        }
                         .focusRequester(focusRequester)
                         .focusable()
                         .onFocusChanged { state ->
-                            isCapturing = state.isFocused
+                            // Сбрасываем захват только когда теряем фокус
+                            if (!state.isFocused) {
+                                isCapturing = false
+                            }
                         }
-                        .onKeyEvent { event ->
+                        .onPreviewKeyEvent { event ->
+                            // onPreviewKeyEvent перехватывает события ДО того как диалог их обработает
                             if (event.type == KeyEventType.KeyDown && isCapturing) {
                                 val key = event.key
 
@@ -107,7 +127,7 @@ fun HotkeyDialog(
                                     key == Key.ShiftLeft || key == Key.ShiftRight ||
                                     key == Key.MetaLeft || key == Key.MetaRight
                                 ) {
-                                    return@onKeyEvent false
+                                    return@onPreviewKeyEvent false
                                 }
 
                                 val isCtrl = event.isCtrlPressed
@@ -123,22 +143,13 @@ fun HotkeyDialog(
                                     shift = isShift
                                     errorMessage = null
                                 } else {
-                                    errorMessage = "Ctrl/Alt + клавиша или F1-F12, стрелки, NumPad"
+                                    errorMessage = "Нужен Ctrl/Alt или F1-F12, стрелки, NumPad"
                                 }
                                 true // Поглощаем событие
                             } else {
                                 false
                             }
-                        }
-                        .clickable { focusRequester.requestFocus() }
-                        .background(
-                            if (isCapturing) colorScheme.primary.copy(alpha = 0.2f)
-                            else colorScheme.background
-                        )
-                        .border(
-                            width = 2.dp,
-                            color = if (isCapturing) colorScheme.success else colorScheme.divider
-                        ),
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
