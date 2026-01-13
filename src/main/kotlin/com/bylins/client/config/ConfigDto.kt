@@ -112,25 +112,27 @@ data class AliasDto(
 @Serializable
 data class HotkeyDto(
     val id: String,
-    val name: String,
     val key: String, // Название клавиши как строка
     val ctrl: Boolean = false,
     val alt: Boolean = false,
     val shift: Boolean = false,
     val commands: List<String>,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val ignoreNumLock: Boolean = false,
+    // Для обратной совместимости (не используется)
+    val name: String? = null
 ) {
     fun toHotkey(): Hotkey? {
         val parsedKey = Hotkey.parseKey(key) ?: return null
         return Hotkey(
             id = id,
-            name = name,
             key = parsedKey,
             ctrl = ctrl,
             alt = alt,
             shift = shift,
             commands = commands,
-            enabled = enabled
+            enabled = enabled,
+            ignoreNumLock = ignoreNumLock
         )
     }
 
@@ -138,13 +140,13 @@ data class HotkeyDto(
         fun fromHotkey(hotkey: Hotkey): HotkeyDto {
             return HotkeyDto(
                 id = hotkey.id,
-                name = hotkey.name,
                 key = Hotkey.getKeyName(hotkey.key),
                 ctrl = hotkey.ctrl,
                 alt = hotkey.alt,
                 shift = hotkey.shift,
                 commands = hotkey.commands,
-                enabled = hotkey.enabled
+                enabled = hotkey.enabled,
+                ignoreNumLock = hotkey.ignoreNumLock
             )
         }
     }
@@ -194,5 +196,6 @@ data class ClientConfig(
     val fontFamily: String = "MONOSPACE",  // Семейство шрифтов для вывода игры
     val fontSize: Int = 14,  // Размер шрифта в sp
     val connectionProfiles: List<ConnectionProfileDto> = emptyList(),  // Список профилей подключений
-    val currentProfileId: String? = null  // ID текущего выбранного профиля
+    val currentProfileId: String? = null,  // ID текущего выбранного профиля
+    val ignoreNumLock: Boolean = false  // Игнорировать состояние NumLock для хоткеев
 )

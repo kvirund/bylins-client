@@ -175,6 +175,10 @@ class ClientState {
     private val _fontSize = MutableStateFlow(14)
     val fontSize: StateFlow<Int> = _fontSize
 
+    // Игнорировать состояние NumLock для хоткеев
+    private val _ignoreNumLock = MutableStateFlow(false)
+    val ignoreNumLock: StateFlow<Boolean> = _ignoreNumLock
+
     private val telnetClient = TelnetClient(this, _encoding)
 
     // Скриптинг - инициализируется позже
@@ -278,6 +282,7 @@ class ClientState {
         // Загружаем настройки шрифта из конфига
         _fontFamily.value = configData.fontFamily
         _fontSize.value = configData.fontSize
+        _ignoreNumLock.value = configData.ignoreNumLock
 
         // Загружаем профили подключений из конфига
         _connectionProfiles.value = configData.connectionProfiles
@@ -460,10 +465,8 @@ class ClientState {
         addHotkey(
             com.bylins.client.hotkeys.Hotkey(
                 id = "f1-info",
-                name = "Info",
                 key = androidx.compose.ui.input.key.Key.F1,
-                commands = listOf("info"),
-                enabled = true
+                commands = listOf("info")
             )
         )
 
@@ -471,10 +474,8 @@ class ClientState {
         addHotkey(
             com.bylins.client.hotkeys.Hotkey(
                 id = "f2-score",
-                name = "Score",
                 key = androidx.compose.ui.input.key.Key.F2,
-                commands = listOf("score"),
-                enabled = true
+                commands = listOf("score")
             )
         )
 
@@ -482,10 +483,8 @@ class ClientState {
         addHotkey(
             com.bylins.client.hotkeys.Hotkey(
                 id = "f3-inventory",
-                name = "Inventory",
                 key = androidx.compose.ui.input.key.Key.F3,
-                commands = listOf("inventory"),
-                enabled = true
+                commands = listOf("inventory")
             )
         )
 
@@ -493,10 +492,8 @@ class ClientState {
         addHotkey(
             com.bylins.client.hotkeys.Hotkey(
                 id = "f4-look",
-                name = "Look",
                 key = androidx.compose.ui.input.key.Key.F4,
-                commands = listOf("look"),
-                enabled = true
+                commands = listOf("look")
             )
         )
     }
@@ -1456,7 +1453,7 @@ class ClientState {
         isAltPressed: Boolean,
         isShiftPressed: Boolean
     ): Boolean {
-        val handled = hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed)
+        val handled = hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed, _ignoreNumLock.value)
         if (handled) {
             sessionStats.incrementHotkeysUsed()
         }
@@ -1551,7 +1548,8 @@ class ClientState {
             _fontFamily.value,
             _fontSize.value,
             _connectionProfiles.value,
-            _currentProfileId.value
+            _currentProfileId.value,
+            _ignoreNumLock.value
         )
     }
 
@@ -1599,6 +1597,12 @@ class ClientState {
         _fontSize.value = clampedSize
         saveConfig()
         logger.info { "Font size changed to: $clampedSize" }
+    }
+
+    fun setIgnoreNumLock(ignore: Boolean) {
+        _ignoreNumLock.value = ignore
+        saveConfig()
+        logger.info { "Ignore NumLock changed to: $ignore" }
     }
 
     // Управление профилями подключений

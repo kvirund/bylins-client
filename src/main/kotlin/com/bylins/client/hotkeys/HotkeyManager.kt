@@ -34,17 +34,19 @@ class HotkeyManager(
 
     /**
      * Обрабатывает нажатие клавиши и возвращает true, если хоткей сработал
+     * @param ignoreNumLock если true, NumPad клавиши работают независимо от состояния NumLock
      */
     fun processKeyPress(
         key: Key,
         isCtrlPressed: Boolean,
         isAltPressed: Boolean,
-        isShiftPressed: Boolean
+        isShiftPressed: Boolean,
+        ignoreNumLock: Boolean = false
     ): Boolean {
         for (hotkey in _hotkeys.value) {
             if (!hotkey.enabled) continue
 
-            if (hotkey.matches(key, isCtrlPressed, isAltPressed, isShiftPressed)) {
+            if (hotkey.matches(key, isCtrlPressed, isAltPressed, isShiftPressed, ignoreNumLock)) {
                 executeHotkey(hotkey)
                 return true
             }

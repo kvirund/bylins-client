@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -27,6 +28,7 @@ fun MainWindow() {
     var selectedTab by remember { mutableStateOf(0) }
     val inputFocusRequester = remember { FocusRequester() }
     val isConnected by clientState.isConnected.collectAsState()
+    val msdpEnabled by clientState.msdpEnabled.collectAsState()
 
     // Фокусируем input после подключения
     LaunchedEffect(isConnected) {
@@ -138,7 +140,22 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 9,
                         onClick = { selectedTab = 9 },
-                        text = { Text("MSDP") }
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(
+                                            color = if (msdpEnabled) Color(0xFF4CAF50) else Color(0xFFFF5555),
+                                            shape = androidx.compose.foundation.shape.CircleShape
+                                        )
+                                )
+                                Text("MSDP")
+                            }
+                        }
                     )
                     Tab(
                         selected = selectedTab == 10,
