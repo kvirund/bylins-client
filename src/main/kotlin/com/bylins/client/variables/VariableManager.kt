@@ -105,16 +105,32 @@ class VariableManager {
             }
         }
 
+        // #vars name=value - установить переменную (альтернативный синтаксис)
+        if (trimmed.startsWith("#vars ") && trimmed.contains("=")) {
+            val assignment = trimmed.substring(6).trim()
+            val eqIndex = assignment.indexOf('=')
+            if (eqIndex > 0) {
+                val name = assignment.substring(0, eqIndex).trim()
+                val value = assignment.substring(eqIndex + 1).trim()
+                setVariable(name, value)
+                outputCallback("\u001B[1;32m[Переменная установлена: $name = $value]\u001B[0m")
+                return true
+            }
+        }
+
         // #vars - показать все переменные
         if (trimmed == "#vars") {
             val vars = _variables.value
             if (vars.isEmpty()) {
                 outputCallback("\u001B[1;33m[Переменные не установлены]\u001B[0m")
             } else {
-                outputCallback("\u001B[1;36m[Переменные (${vars.size}):]\u001B[0m")
+                // Выводим всё одним блоком без лишних пустых строк
+                val sb = StringBuilder()
+                sb.append("\u001B[1;36m[Переменные (${vars.size}):]\u001B[0m")
                 vars.entries.sortedBy { it.key }.forEach { (name, value) ->
-                    outputCallback("\u001B[1;32m  $name\u001B[0m = \u001B[1;37m$value\u001B[0m")
+                    sb.append("\n\u001B[1;32m  $name\u001B[0m = \u001B[1;37m$value\u001B[0m")
                 }
+                outputCallback(sb.toString())
             }
             return true
         }

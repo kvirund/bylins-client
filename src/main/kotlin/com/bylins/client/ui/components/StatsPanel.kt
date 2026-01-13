@@ -2,6 +2,8 @@ package com.bylins.client.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,6 +13,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.ui.theme.LocalAppColorScheme
 import kotlinx.coroutines.delay
 
 @Composable
@@ -20,6 +23,8 @@ fun StatsPanel(
 ) {
     val stats by clientState.stats.collectAsState()
     val isConnected by clientState.isConnected.collectAsState()
+    val scrollState = rememberScrollState()
+    val colorScheme = LocalAppColorScheme.current
 
     // Обновляем длительность каждую секунду
     var duration by remember { mutableStateOf("00:00:00") }
@@ -34,26 +39,27 @@ fun StatsPanel(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Заголовок
         Text(
             text = "Статистика сессии",
-            color = Color.White,
+            color = colorScheme.onSurface,
             fontSize = 18.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        Divider(color = Color.Gray, thickness = 1.dp)
+        Divider(color = colorScheme.divider, thickness = 1.dp)
 
         if (!isConnected || stats.sessionStart == null) {
             // Нет активной сессии
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF2D2D2D),
+                backgroundColor = colorScheme.surface,
                 elevation = 2.dp
             ) {
                 Column(
@@ -63,13 +69,13 @@ fun StatsPanel(
                 ) {
                     Text(
                         text = "Нет активной сессии",
-                        color = Color(0xFF888888),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "Подключитесь к серверу для начала сбора статистики",
-                        color = Color(0xFF666666),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(top = 8.dp)
@@ -80,7 +86,7 @@ fun StatsPanel(
             // Карточка с общей информацией
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF2D2D2D),
+                backgroundColor = colorScheme.surface,
                 elevation = 2.dp
             ) {
                 Column(
@@ -89,22 +95,22 @@ fun StatsPanel(
                 ) {
                     Text(
                         text = "Информация о сессии",
-                        color = Color.White,
+                        color = colorScheme.onSurface,
                         fontSize = 16.sp,
                         fontFamily = FontFamily.Monospace
                     )
 
-                    Divider(color = Color.Gray, thickness = 1.dp)
+                    Divider(color = colorScheme.divider, thickness = 1.dp)
 
                     StatRow("Начало сессии:", stats.getStartTimeFormatted())
-                    StatRow("Длительность:", duration, Color(0xFF00FF00))
+                    StatRow("Длительность:", duration, colorScheme.success)
                 }
             }
 
             // Карточка с сетевой статистикой
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF2D2D2D),
+                backgroundColor = colorScheme.surface,
                 elevation = 2.dp
             ) {
                 Column(
@@ -113,22 +119,22 @@ fun StatsPanel(
                 ) {
                     Text(
                         text = "Сетевая активность",
-                        color = Color.White,
+                        color = colorScheme.onSurface,
                         fontSize = 16.sp,
                         fontFamily = FontFamily.Monospace
                     )
 
-                    Divider(color = Color.Gray, thickness = 1.dp)
+                    Divider(color = colorScheme.divider, thickness = 1.dp)
 
-                    StatRow("Отправлено команд:", stats.commandsSent.toString(), Color(0xFF2196F3))
-                    StatRow("Получено данных:", clientState.getFormattedBytes(), Color(0xFFFF9800))
+                    StatRow("Отправлено команд:", stats.commandsSent.toString(), colorScheme.primary)
+                    StatRow("Получено данных:", clientState.getFormattedBytes(), colorScheme.warning)
                 }
             }
 
             // Карточка с автоматизацией
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF2D2D2D),
+                backgroundColor = colorScheme.surface,
                 elevation = 2.dp
             ) {
                 Column(
@@ -137,23 +143,23 @@ fun StatsPanel(
                 ) {
                     Text(
                         text = "Автоматизация",
-                        color = Color.White,
+                        color = colorScheme.onSurface,
                         fontSize = 16.sp,
                         fontFamily = FontFamily.Monospace
                     )
 
-                    Divider(color = Color.Gray, thickness = 1.dp)
+                    Divider(color = colorScheme.divider, thickness = 1.dp)
 
-                    StatRow("Сработало триггеров:", stats.triggersActivated.toString(), Color(0xFFFF5555))
-                    StatRow("Выполнено алиасов:", stats.aliasesExecuted.toString(), Color(0xFFFFEB3B))
-                    StatRow("Использовано хоткеев:", stats.hotkeysUsed.toString(), Color(0xFF9C27B0))
+                    StatRow("Сработало триггеров:", stats.triggersActivated.toString(), colorScheme.error)
+                    StatRow("Выполнено алиасов:", stats.aliasesExecuted.toString(), colorScheme.warning)
+                    StatRow("Использовано хоткеев:", stats.hotkeysUsed.toString(), colorScheme.secondary)
                 }
             }
 
             // Карточка с дополнительной информацией
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF2D2D2D),
+                backgroundColor = colorScheme.surface,
                 elevation = 2.dp
             ) {
                 Column(
@@ -162,12 +168,12 @@ fun StatsPanel(
                 ) {
                     Text(
                         text = "Средние показатели",
-                        color = Color.White,
+                        color = colorScheme.onSurface,
                         fontSize = 16.sp,
                         fontFamily = FontFamily.Monospace
                     )
 
-                    Divider(color = Color.Gray, thickness = 1.dp)
+                    Divider(color = colorScheme.divider, thickness = 1.dp)
 
                     // Команд в минуту
                     val durationSeconds = clientState.getSessionDuration()
@@ -183,7 +189,7 @@ fun StatsPanel(
                         0
                     }
 
-                    StatRow("Команд в минуту:", commandsPerMinute.toString(), Color(0xFF00BCD4))
+                    StatRow("Команд в минуту:", commandsPerMinute.toString(), colorScheme.secondary)
 
                     // Байт в секунду
                     val bytesPerSecond = if (durationSeconds > 0) {
@@ -191,7 +197,7 @@ fun StatsPanel(
                     } else {
                         0
                     }
-                    StatRow("Байт/сек:", bytesPerSecond.toString(), Color(0xFF00BCD4))
+                    StatRow("Байт/сек:", bytesPerSecond.toString(), colorScheme.secondary)
                 }
             }
         }
@@ -199,7 +205,9 @@ fun StatsPanel(
 }
 
 @Composable
-private fun StatRow(label: String, value: String, valueColor: Color = Color.White) {
+private fun StatRow(label: String, value: String, valueColor: Color? = null) {
+    val colorScheme = LocalAppColorScheme.current
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -207,13 +215,13 @@ private fun StatRow(label: String, value: String, valueColor: Color = Color.Whit
     ) {
         Text(
             text = label,
-            color = Color(0xFFBBBBBB),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace
         )
         Text(
             text = value,
-            color = valueColor,
+            color = valueColor ?: colorScheme.onSurface,
             fontSize = 14.sp,
             fontFamily = FontFamily.Monospace
         )

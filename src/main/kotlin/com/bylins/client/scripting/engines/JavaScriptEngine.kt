@@ -3,10 +3,14 @@ package com.bylins.client.scripting.engines
 import com.bylins.client.scripting.Script
 import com.bylins.client.scripting.ScriptAPI
 import com.bylins.client.scripting.ScriptEngine
+import mu.KotlinLogging
 import java.io.File
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import javax.script.Invocable
 import javax.script.ScriptEngineManager
+
+private val logger = KotlinLogging.logger("JavaScript")
 
 /**
  * JavaScript движок (использует Nashorn или GraalVM)
@@ -17,6 +21,10 @@ class JavaScriptEngine : ScriptEngine {
 
     private var engine: javax.script.ScriptEngine? = null
     private lateinit var api: ScriptAPI
+
+    // Реестр callback'ов
+    private val triggerCallbacks = ConcurrentHashMap<String, Any>()
+    private val timerCallbacks = ConcurrentHashMap<String, Any>()
 
     override fun isAvailable(): Boolean {
         return try {
@@ -44,52 +52,104 @@ class JavaScriptEngine : ScriptEngine {
         // Добавляем API в глобальный контекст
         engine?.put("api", api)
 
-        // Добавляем вспомогательные функции
-        engine?.eval("""
-            // Глобальные функции для удобства
-            function send(command) { api.send(command); }
-            function echo(text) { api.echo(text); }
-            function log(message) { api.log(message); }
-            function print(message) { api.print(message); }
+        // Добавляем хелперы для callback'ов
+        engine?.put("_triggerHelper", TriggerHelper())
+        engine?.put("_timerHelper", TimerHelper())
 
-            // Переменные
-            function getVar(name) { return api.getVariable(name); }
-            function setVar(name, value) { api.setVariable(name, value); }
+        // Загружаем вспомогательные функции из ресурсов
+        val helperCode = javaClass.getResourceAsStream("/javascript_helper.js")
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.readText()
+            ?: throw IllegalStateException("javascript_helper.js not found in resources")
+        engine?.eval(helperCode)
+    }
 
-            // Триггеры
-            function addTrigger(pattern, callback) {
-                return api.addTrigger(pattern, callback);
+    /**
+     * Вызывает JavaScript callback через рефлексию (универсально для разных JS движков)
+     */
+    private fun invokeJsCallback(callback: Any, vararg args: Any?) {
+        try {
+            // Пробуем найти метод call(Object, Object...)
+            val callMethod = callback.javaClass.getMethod("call", Object::class.java, Array<Any>::class.java)
+            callMethod.invoke(callback, null, args)
+        } catch (e: NoSuchMethodException) {
+            try {
+                // Альтернативный вариант - метод call с varargs
+                val methods = callback.javaClass.methods.filter { it.name == "call" }
+                for (method in methods) {
+                    try {
+                        if (method.parameterCount == 2) {
+                            method.invoke(callback, null, args)
+                            return
+                        } else if (method.isVarArgs) {
+                            method.invoke(callback, null, *args)
+                            return
+                        }
+                    } catch (_: Exception) { }
+                }
+                logger.warn { "Could not find suitable call method" }
+            } catch (ex: Exception) {
+                logger.error { "Error invoking callback: ${ex.message}" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error in callback: ${e.message}" }
+        }
+    }
+
+    /**
+     * Хелпер для регистрации триггеров с JavaScript callback'ами
+     */
+    inner class TriggerHelper {
+        fun register(pattern: String, callback: Any): String {
+            // DEBUG: проверяем что пришло из JavaScript
+            val patternBytes = pattern.toByteArray(Charsets.UTF_8).joinToString(" ") { "%02X".format(it) }
+            logger.debug { "TriggerHelper.register pattern='$pattern' bytes=[$patternBytes]" }
+
+            val kotlinCallback: (String, Map<Int, String>) -> Unit = { line, groups ->
+                invokeJsCallback(callback, line, groups)
             }
 
-            // Алиасы
-            function addAlias(pattern, replacement) {
-                return api.addAlias(pattern, replacement);
+            val triggerId = api.addTrigger(pattern, kotlinCallback)
+            triggerCallbacks[triggerId] = callback
+            return triggerId
+        }
+    }
+
+    /**
+     * Хелпер для регистрации таймеров с JavaScript callback'ами
+     */
+    inner class TimerHelper {
+        fun registerTimeout(callback: Any, delay: Long): String {
+            val kotlinCallback: () -> Unit = {
+                invokeJsCallback(callback)
             }
 
-            // Таймеры
-            function setTimeout(callback, delay) {
-                return api.setTimeout(delay, callback);
+            val timerId = api.setTimeout(delay, kotlinCallback)
+            timerCallbacks[timerId] = callback
+            return timerId
+        }
+
+        fun registerInterval(callback: Any, interval: Long): String {
+            val kotlinCallback: () -> Unit = {
+                invokeJsCallback(callback)
             }
 
-            function setInterval(callback, interval) {
-                return api.setInterval(interval, callback);
-            }
-
-            function clearTimer(id) {
-                api.clearTimer(id);
-            }
-        """.trimIndent())
+            val timerId = api.setInterval(interval, kotlinCallback)
+            timerCallbacks[timerId] = callback
+            return timerId
+        }
     }
 
     override fun loadScript(scriptPath: String): Script? {
         val file = File(scriptPath)
         if (!file.exists()) {
-            println("[JavaScriptEngine] Script not found: $scriptPath")
+            logger.warn { "Script not found: $scriptPath" }
             return null
         }
 
         return try {
-            val scriptCode = file.readText()
+            // Явно читаем скрипт в UTF-8
+            val scriptCode = file.readText(Charsets.UTF_8)
             engine?.eval(scriptCode)
 
             Script(
@@ -100,7 +160,7 @@ class JavaScriptEngine : ScriptEngine {
                 enabled = true
             )
         } catch (e: Exception) {
-            println("[JavaScriptEngine] Error loading script: ${e.message}")
+            logger.error { "Error loading script: ${e.message}" }
             e.printStackTrace()
             null
         }
@@ -110,7 +170,7 @@ class JavaScriptEngine : ScriptEngine {
         try {
             engine?.eval(code)
         } catch (e: Exception) {
-            println("[JavaScriptEngine] Error executing code: ${e.message}")
+            logger.error { "Error executing code: ${e.message}" }
             e.printStackTrace()
         }
     }
@@ -123,7 +183,7 @@ class JavaScriptEngine : ScriptEngine {
             // Функция не найдена - это нормально
             null
         } catch (e: Exception) {
-            println("[JavaScriptEngine] Error calling $functionName: ${e.message}")
+            logger.debug { "Error calling $functionName: ${e.message}" }
             null
         }
     }

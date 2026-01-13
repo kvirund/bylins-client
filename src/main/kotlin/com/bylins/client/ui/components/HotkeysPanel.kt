@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import mu.KotlinLogging
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,10 +15,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.hotkeys.Hotkey
+import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
+private val logger = KotlinLogging.logger("HotkeysPanel")
 @Composable
 fun HotkeysPanel(
     clientState: ClientState,
@@ -26,11 +29,12 @@ fun HotkeysPanel(
     val hotkeys by clientState.hotkeys.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingHotkey by remember { mutableStateOf<Hotkey?>(null) }
+    val colorScheme = LocalAppColorScheme.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
             .padding(8.dp)
     ) {
         // Заголовок с кнопками
@@ -43,7 +47,7 @@ fun HotkeysPanel(
         ) {
             Text(
                 text = "Горячие клавиши",
-                color = Color.White,
+                color = colorScheme.onBackground,
                 fontSize = 16.sp,
                 fontFamily = FontFamily.Monospace
             )
@@ -64,15 +68,15 @@ fun HotkeysPanel(
                                 val hotkeyIds = hotkeys.map { it.id }
                                 val json = clientState.exportHotkeys(hotkeyIds)
                                 fileChooser.selectedFile.writeText(json)
-                                println("[HotkeysPanel] Hotkeys exported to ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Hotkeys exported to ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[HotkeysPanel] Export error: ${e.message}")
+                                logger.error { "Export error: ${e.message}" }
                                 e.printStackTrace()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF2196F3)
+                        backgroundColor = colorScheme.primary
                     )
                 ) {
                     Text("Экспорт", color = Color.White)
@@ -88,15 +92,15 @@ fun HotkeysPanel(
                             try {
                                 val json = fileChooser.selectedFile.readText()
                                 val count = clientState.importHotkeys(json, merge = true)
-                                println("[HotkeysPanel] Imported $count hotkeys from ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Imported $count hotkeys from ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[HotkeysPanel] Import error: ${e.message}")
+                                logger.error { "Import error: ${e.message}" }
                                 e.printStackTrace()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFFFF9800)
+                        backgroundColor = colorScheme.warning
                     )
                 ) {
                     Text("Импорт", color = Color.White)
@@ -107,7 +111,7 @@ fun HotkeysPanel(
                         showAddDialog = true
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF4CAF50)
+                        backgroundColor = colorScheme.success
                     )
                 ) {
                     Text("+ Добавить", color = Color.White)
@@ -138,7 +142,7 @@ fun HotkeysPanel(
             )
         }
 
-        Divider(color = Color.Gray, thickness = 1.dp)
+        Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Список хоткеев (отсортированный)
         val sortedHotkeys = remember(hotkeys) {
@@ -152,7 +156,9 @@ fun HotkeysPanel(
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(sortedHotkeys) { hotkey ->
@@ -182,7 +188,7 @@ fun HotkeysPanel(
             ) {
                 Text(
                     text = "Нет горячих клавиш",
-                    color = Color.Gray,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -198,12 +204,13 @@ private fun HotkeyItem(
     onDelete: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val colorScheme = LocalAppColorScheme.current
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = Color(0xFF2D2D2D),
+        backgroundColor = colorScheme.surface,
         elevation = 2.dp
     ) {
         Column(
@@ -219,13 +226,13 @@ private fun HotkeyItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = hotkey.name,
-                        color = if (hotkey.enabled) Color.White else Color.Gray,
+                        color = if (hotkey.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = hotkey.getKeyCombo(),
-                        color = Color(0xFF00FF00),
+                        color = colorScheme.success,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -243,8 +250,8 @@ private fun HotkeyItem(
                             onToggle(hotkey.id, enabled)
                         },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF4CAF50),
-                            uncheckedThumbColor = Color.Gray
+                            checkedThumbColor = colorScheme.success,
+                            uncheckedThumbColor = colorScheme.onSurfaceVariant
                         )
                     )
 
@@ -252,14 +259,14 @@ private fun HotkeyItem(
                     Button(
                         onClick = { expanded = !expanded },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF424242)
+                            backgroundColor = colorScheme.surfaceVariant
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = if (expanded) "▲" else "▼",
-                            color = Color.White,
+                            color = colorScheme.onSurface,
                             fontSize = 10.sp
                         )
                     }
@@ -268,7 +275,7 @@ private fun HotkeyItem(
                     Button(
                         onClick = { onEdit(hotkey) },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF2196F3)
+                            backgroundColor = colorScheme.primary
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
@@ -284,7 +291,7 @@ private fun HotkeyItem(
                     Button(
                         onClick = { onDelete(hotkey.id) },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFD32F2F)
+                            backgroundColor = colorScheme.error
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
@@ -301,7 +308,7 @@ private fun HotkeyItem(
             // Развернутая информация
             if (expanded) {
                 Divider(
-                    color = Color.Gray,
+                    color = colorScheme.divider,
                     thickness = 1.dp,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
@@ -337,20 +344,22 @@ private fun HotkeyItem(
 
 @Composable
 private fun InfoRow(label: String, value: String) {
+    val colorScheme = LocalAppColorScheme.current
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
             text = label,
-            color = Color(0xFF888888),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.width(120.dp)
         )
         Text(
             text = value,
-            color = Color.White,
+            color = colorScheme.onSurface,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.weight(1f)

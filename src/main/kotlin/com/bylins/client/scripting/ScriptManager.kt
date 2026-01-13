@@ -2,7 +2,10 @@ package com.bylins.client.scripting
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import mu.KotlinLogging
 import java.io.File
+
+private val logger = KotlinLogging.logger("ScriptManager")
 
 /**
  * Управляет скриптами и их выполнением
@@ -30,42 +33,62 @@ class ScriptManager(
         if (engine.isAvailable()) {
             engine.initialize(api)
             engines.add(engine)
-            println("[ScriptManager] Registered engine: ${engine.name}")
+            logger.info { "Registered engine: ${engine.name}" }
         } else {
-            println("[ScriptManager] Engine ${engine.name} is not available")
+            logger.warn { "Engine ${engine.name} is not available" }
         }
     }
 
     /**
      * Загружает скрипт из файла
+     * @param file файл скрипта
+     * @param forceDisabled принудительно создать как отключённый (не выполнять код)
      */
-    fun loadScript(file: File): Script? {
-        val extension = file.extension
+    fun loadScript(file: File, forceDisabled: Boolean = false): Script? {
+        val isDisabled = forceDisabled || file.name.contains(".disabled")
+
+        // Определяем расширение (убираем .disabled если есть)
+        val cleanName = file.name.replace(".disabled", "")
+        val extension = cleanName.substringAfterLast(".", "")
         val engine = engines.firstOrNull { it.fileExtensions.contains(".$extension") }
 
         if (engine == null) {
-            println("[ScriptManager] No engine found for extension: .$extension")
+            logger.warn { "No engine found for extension: .$extension" }
             return null
         }
 
         return try {
-            val script = engine.loadScript(file.absolutePath)
-            if (script != null) {
+            if (isDisabled) {
+                // Для отключённых скриптов - только добавляем в список без выполнения
+                val script = Script(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = cleanName.substringBeforeLast("."),
+                    path = file.absolutePath,
+                    engine = engine,
+                    enabled = false
+                )
                 _scripts.value = _scripts.value + script
+                logger.info { "Added disabled ${engine.name} script: $cleanName" }
+                script
+            } else {
+                // Для включённых - полная загрузка с выполнением кода
+                val script = engine.loadScript(file.absolutePath)
+                if (script != null) {
+                    _scripts.value = _scripts.value + script
 
-                // Вызываем on_load если функция существует
-                try {
-                    script.call("on_load", api)
-                } catch (e: Exception) {
-                    println("[ScriptManager] Error calling on_load for ${script.name}: ${e.message}")
+                    // Вызываем on_load если функция существует
+                    try {
+                        script.call("on_load", api)
+                    } catch (e: Exception) {
+                        logger.warn { "Error calling on_load for ${script.name}: ${e.message}" }
+                    }
+
+                    logger.info { "Loaded ${engine.name} script: $cleanName" }
                 }
-
-                println("[ScriptManager] Loaded script: ${script.name}")
+                script
             }
-            script
         } catch (e: Exception) {
-            println("[ScriptManager] Error loading script ${file.name}: ${e.message}")
-            e.printStackTrace()
+            logger.error(e) { "Error loading ${engine.name} script $cleanName: ${e.message}" }
             null
         }
     }
@@ -80,28 +103,114 @@ class ScriptManager(
         try {
             script.call("on_unload")
         } catch (e: Exception) {
-            println("[ScriptManager] Error calling on_unload for ${script.name}: ${e.message}")
+            logger.error { "Error calling on_unload for ${script.name}: ${e.message}" }
         }
 
         _scripts.value = _scripts.value.filter { it.id != scriptId }
-        println("[ScriptManager] Unloaded script: ${script.name}")
+        logger.info { "Unloaded ${script.engine.name} script: ${script.name}" }
     }
 
     /**
-     * Включает скрипт
+     * Включает скрипт (переименовывает файл и загружает код)
      */
     fun enableScript(scriptId: String) {
-        _scripts.value = _scripts.value.map { script ->
-            if (script.id == scriptId) script.copy(enabled = true) else script
+        val currentList = _scripts.value
+        val scriptIndex = currentList.indexOfFirst { it.id == scriptId }
+        if (scriptIndex == -1) return
+
+        val script = currentList[scriptIndex]
+        if (script.enabled) return // Уже включён
+
+        val file = File(script.path)
+        if (!file.exists()) {
+            logger.warn { "Script file not found: ${script.path}" }
+            return
+        }
+
+        try {
+            // Переименовываем файл (убираем .disabled)
+            val newPath = script.path.replace(".disabled", "")
+            val newFile = File(newPath)
+            if (file.renameTo(newFile)) {
+                // Загружаем скрипт заново (уже как включённый), но не добавляем в список
+                val engine = script.engine
+                val newScript = engine.loadScript(newFile.absolutePath)
+
+                if (newScript != null) {
+                    // Заменяем в списке на том же месте
+                    _scripts.value = currentList.toMutableList().apply {
+                        set(scriptIndex, newScript)
+                    }
+
+                    // Вызываем on_load если функция существует
+                    try {
+                        newScript.call("on_load", api)
+                    } catch (e: Exception) {
+                        logger.warn { "Error calling on_load for ${newScript.name}: ${e.message}" }
+                    }
+
+                    logger.info { "Enabled ${engine.name} script: ${newScript.name}" }
+                }
+            } else {
+                logger.error { "Failed to rename file: ${script.path}" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error enabling script: ${e.message}" }
         }
     }
 
     /**
-     * Выключает скрипт
+     * Выключает скрипт (выгружает код и переименовывает файл)
      */
     fun disableScript(scriptId: String) {
-        _scripts.value = _scripts.value.map { script ->
-            if (script.id == scriptId) script.copy(enabled = false) else script
+        val currentList = _scripts.value
+        val scriptIndex = currentList.indexOfFirst { it.id == scriptId }
+        if (scriptIndex == -1) return
+
+        val script = currentList[scriptIndex]
+        if (!script.enabled) return // Уже выключен
+
+        val file = File(script.path)
+        if (!file.exists()) {
+            logger.warn { "Script file not found: ${script.path}" }
+            return
+        }
+
+        try {
+            // Вызываем on_unload
+            try {
+                script.call("on_unload")
+            } catch (e: Exception) {
+                // Игнорируем если функции нет
+            }
+
+            // Переименовываем файл (добавляем .disabled перед расширением)
+            val ext = file.extension
+            val newPath = script.path.replace(".$ext", ".$ext.disabled")
+            val newFile = File(newPath)
+
+            if (file.renameTo(newFile)) {
+                // Создаём отключённый скрипт на том же месте
+                val cleanName = newFile.name.replace(".disabled", "")
+                val newScript = Script(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = cleanName.substringBeforeLast("."),
+                    path = newFile.absolutePath,
+                    engine = script.engine,
+                    enabled = false
+                )
+
+                // Заменяем в списке на том же месте
+                _scripts.value = currentList.toMutableList().apply {
+                    set(scriptIndex, newScript)
+                }
+
+                logger.info { "Disabled ${script.engine.name} script: ${script.name}" }
+            } else {
+                logger.error { "Failed to rename file: ${script.path}" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error disabling script: ${e.message}" }
         }
     }
 
@@ -113,15 +222,27 @@ class ScriptManager(
             return
         }
 
-        val scriptFiles = scriptsDirectory.listFiles { file ->
+        val allFiles = scriptsDirectory.listFiles { file ->
             file.isFile && engines.any { engine ->
-                engine.fileExtensions.any { ext -> file.name.endsWith(ext) }
+                engine.fileExtensions.any { ext ->
+                    file.name.endsWith(ext) || file.name.contains(ext)
+                }
             }
         } ?: emptyArray()
 
-        println("[ScriptManager] Auto-loading ${scriptFiles.size} scripts...")
+        val (disabledFiles, enabledFiles) = allFiles.partition { file ->
+            file.name.contains(".disabled")
+        }
 
-        scriptFiles.forEach { file ->
+        logger.info { "Found ${enabledFiles.size} enabled and ${disabledFiles.size} disabled scripts" }
+
+        // Загружаем включённые скрипты (с выполнением кода)
+        enabledFiles.forEach { file ->
+            loadScript(file)
+        }
+
+        // Добавляем отключённые скрипты в список (без выполнения кода)
+        disabledFiles.forEach { file ->
             loadScript(file)
         }
     }
@@ -161,7 +282,7 @@ class ScriptManager(
             } catch (e: Exception) {
                 // Игнорируем ошибки если функция не существует
                 if (!e.message.toString().contains("not found", ignoreCase = true)) {
-                    println("[ScriptManager] Error in ${script.name}.${functionName}: ${e.message}")
+                    logger.error { "Error in ${script.name}.${functionName}: ${e.message}" }
                 }
             }
         }
@@ -181,7 +302,7 @@ class ScriptManager(
             try {
                 engine.shutdown()
             } catch (e: Exception) {
-                println("[ScriptManager] Error shutting down ${engine.name}: ${e.message}")
+                logger.error { "Error shutting down ${engine.name}: ${e.message}" }
             }
         }
 

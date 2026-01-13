@@ -1,8 +1,15 @@
 package com.bylins.client.ui.components
 
+import mu.KotlinLogging
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -11,35 +18,42 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.ui.theme.LocalAppColorScheme
+import java.awt.Desktop
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
+@OptIn(ExperimentalMaterialApi::class)
+private val logger = KotlinLogging.logger("SettingsPanel")
 @Composable
 fun SettingsPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
     var statusMessage by remember { mutableStateOf<String?>(null) }
-    var statusColor by remember { mutableStateOf(Color.White) }
+    var statusColor by remember { mutableStateOf<Color?>(null) }
+    val scrollState = rememberScrollState()
+    val colorScheme = LocalAppColorScheme.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Заголовок
         Text(
             text = "Настройки",
-            color = Color.White,
+            color = colorScheme.onSurface,
             fontSize = 18.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        Divider(color = Color.Gray, thickness = 1.dp)
+        Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Логирование
         val isLogging by clientState.isLogging.collectAsState()
@@ -47,7 +61,7 @@ fun SettingsPanel(
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
+            backgroundColor = colorScheme.surface,
             elevation = 2.dp
         ) {
             Column(
@@ -56,12 +70,12 @@ fun SettingsPanel(
             ) {
                 Text(
                     text = "Логирование",
-                    color = Color.White,
+                    color = colorScheme.onSurface,
                     fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
-                Divider(color = Color.Gray, thickness = 1.dp)
+                Divider(color = colorScheme.divider, thickness = 1.dp)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -70,14 +84,14 @@ fun SettingsPanel(
                 ) {
                     Text(
                         text = "Статус:",
-                        color = Color(0xFFBBBBBB),
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace
                     )
 
                     Text(
                         text = if (isLogging) "Активно" else "Остановлено",
-                        color = if (isLogging) Color(0xFF00FF00) else Color(0xFFFF5555),
+                        color = if (isLogging) colorScheme.success else colorScheme.error,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -85,26 +99,12 @@ fun SettingsPanel(
 
                 if (currentLogFile != null) {
                     Text(
-                        text = "Текущий файл:",
-                        color = Color(0xFFBBBBBB),
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-
-                    Text(
-                        text = currentLogFile!!,
-                        color = Color(0xFF00FF00),
+                        text = "Файл: $currentLogFile",
+                        color = colorScheme.success,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
-
-                Text(
-                    text = "Директория логов: ${clientState.getLogsDirectory()}",
-                    color = Color(0xFF888888),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -115,51 +115,32 @@ fun SettingsPanel(
                             if (isLogging) {
                                 clientState.stopLogging()
                                 statusMessage = "Логирование остановлено"
-                                statusColor = Color(0xFFFFAA00)
+                                statusColor = colorScheme.warning
                             } else {
                                 clientState.startLogging(stripAnsi = true)
                                 statusMessage = "Логирование начато"
-                                statusColor = Color(0xFF00FF00)
+                                statusColor = colorScheme.success
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = if (isLogging) Color(0xFFFF5555) else Color(0xFF4CAF50)
+                            backgroundColor = if (isLogging) colorScheme.error else colorScheme.success
                         )
                     ) {
                         Text(
                             text = if (isLogging) "Остановить" else "Начать",
-                            color = Color.White
+                            color = colorScheme.onSurface
                         )
                     }
 
                     Button(
                         onClick = {
-                            try {
-                                val logsDir = clientState.getLogsDirectory()
-                                val os = System.getProperty("os.name").lowercase()
-                                when {
-                                    os.contains("win") -> {
-                                        Runtime.getRuntime().exec(arrayOf("explorer", logsDir))
-                                    }
-                                    os.contains("mac") -> {
-                                        Runtime.getRuntime().exec(arrayOf("open", logsDir))
-                                    }
-                                    else -> {
-                                        Runtime.getRuntime().exec(arrayOf("xdg-open", logsDir))
-                                    }
-                                }
-                                statusMessage = "Открыта директория логов"
-                                statusColor = Color(0xFF00FF00)
-                            } catch (e: Exception) {
-                                statusMessage = "Ошибка открытия: ${e.message}"
-                                statusColor = Color(0xFFFF5555)
-                            }
+                            openDirectory(clientState.getLogsDirectory())
+                            statusMessage = "Открыта директория логов"
+                            statusColor = colorScheme.success
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF2196F3)
-                        )
+                        colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
                     ) {
-                        Text("Открыть папку", color = Color.White)
+                        Text("Открыть папку", color = colorScheme.onSurface)
                     }
 
                     Button(
@@ -167,128 +148,53 @@ fun SettingsPanel(
                             val count = clientState.getLogFiles().size
                             clientState.cleanOldLogs(30)
                             val newCount = clientState.getLogFiles().size
-                            val removed = count - newCount
-                            statusMessage = "Удалено старых логов: $removed"
-                            statusColor = Color(0xFF00FF00)
+                            statusMessage = "Удалено старых логов: ${count - newCount}"
+                            statusColor = colorScheme.success
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFFF9800)
-                        )
+                        colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning)
                     ) {
-                        Text("Очистить старые", color = Color.White)
+                        Text("Очистить старые", color = colorScheme.onSurface)
                     }
                 }
 
-                Text(
-                    text = "Всего лог-файлов: ${clientState.getLogFiles().size}",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
+                // Галочка "Сохранять цвета в логах"
+                val logWithColors by clientState.logWithColors.collectAsState()
 
-        // Настройка ширины миникарты
-        val miniMapWidth by clientState.miniMapWidth.collectAsState()
-        var widthInput by remember { mutableStateOf(miniMapWidth.toString()) }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
-            elevation = 2.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Мини-карта",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Divider(color = Color.Gray, thickness = 1.dp)
-
-                Text(
-                    text = "Ширина боковой панели (150-500 dp):",
-                    color = Color(0xFFBBBBBB),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = widthInput,
-                        onValueChange = { widthInput = it },
-                        modifier = Modifier.width(120.dp),
-                        singleLine = true,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
-                            cursorColor = Color.White,
-                            focusedBorderColor = Color(0xFF4CAF50),
-                            unfocusedBorderColor = Color.Gray
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = logWithColors,
+                        onCheckedChange = { clientState.setLogWithColors(it) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = colorScheme.success,
+                            uncheckedColor = colorScheme.onSurfaceVariant
                         )
                     )
-
-                    Button(
-                        onClick = {
-                            try {
-                                val width = widthInput.toInt()
-                                clientState.setMiniMapWidth(width)
-                                statusMessage = "Ширина миникарты установлена: $width dp"
-                                statusColor = Color(0xFF00FF00)
-                            } catch (e: NumberFormatException) {
-                                statusMessage = "Ошибка: введите число от 150 до 500"
-                                statusColor = Color(0xFFFF5555)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF4CAF50)
-                        )
-                    ) {
-                        Text("Применить", color = Color.White)
-                    }
-
-                    Button(
-                        onClick = {
-                            clientState.setMiniMapWidth(250)
-                            widthInput = "250"
-                            statusMessage = "Ширина миникарты сброшена до 250 dp"
-                            statusColor = Color(0xFF00FF00)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF2196F3)
-                        )
-                    ) {
-                        Text("Сброс", color = Color.White)
-                    }
-                }
-
-                Text(
-                    text = "Текущая ширина: $miniMapWidth dp",
-                    color = Color(0xFF888888),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                // Обновляем widthInput при изменении miniMapWidth
-                LaunchedEffect(miniMapWidth) {
-                    widthInput = miniMapWidth.toString()
+                    Text(
+                        text = "Сохранять цвета (ANSI-коды)",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
                 }
             }
         }
 
-        // Выбор темы оформления
+        // Тема оформления
         val currentTheme by clientState.currentTheme.collectAsState()
+        var themeExpanded by remember { mutableStateOf(false) }
+
+        val themes = listOf(
+            "DARK" to "Тёмная",
+            "LIGHT" to "Светлая",
+            "DARK_BLUE" to "Тёмно-синяя",
+            "SOLARIZED_DARK" to "Solarized Dark",
+            "MONOKAI" to "Monokai"
+        )
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
+            backgroundColor = colorScheme.surface,
             elevation = 2.dp
         ) {
             Column(
@@ -297,83 +203,243 @@ fun SettingsPanel(
             ) {
                 Text(
                     text = "Тема оформления",
-                    color = Color.White,
+                    color = colorScheme.onSurface,
                     fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
-                Divider(color = Color.Gray, thickness = 1.dp)
+                Divider(color = colorScheme.divider, thickness = 1.dp)
 
+                ExposedDropdownMenuBox(
+                    expanded = themeExpanded,
+                    onExpandedChange = { themeExpanded = !themeExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = themes.find { it.first == currentTheme }?.second ?: currentTheme,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = themeExpanded) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = colorScheme.onSurface,
+                            focusedBorderColor = colorScheme.success,
+                            unfocusedBorderColor = colorScheme.border
+                        )
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = themeExpanded,
+                        onDismissRequest = { themeExpanded = false }
+                    ) {
+                        themes.forEach { (themeId, themeName) ->
+                            DropdownMenuItem(onClick = {
+                                clientState.setTheme(themeId)
+                                themeExpanded = false
+                                statusMessage = "Тема изменена. Перезапустите приложение."
+                                statusColor = colorScheme.warning
+                            }) {
+                                Text(themeName, color = colorScheme.onSurface)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Шрифты
+        val currentFontFamily by clientState.fontFamily.collectAsState()
+        val currentFontSize by clientState.fontSize.collectAsState()
+        var fontExpanded by remember { mutableStateOf(false) }
+
+        val fontFamilies = listOf(
+            "MONOSPACE" to Pair("Monospace", FontFamily.Monospace),
+            "SERIF" to Pair("Serif", FontFamily.Serif),
+            "SANS_SERIF" to Pair("Sans Serif", FontFamily.SansSerif),
+            "CURSIVE" to Pair("Cursive", FontFamily.Cursive)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = colorScheme.surface,
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
-                    text = "Выберите цветовую схему:",
-                    color = Color(0xFFBBBBBB),
-                    fontSize = 12.sp,
+                    text = "Шрифты",
+                    color = colorScheme.onSurface,
+                    fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
-                val themes = listOf(
-                    "DARK" to "Тёмная",
-                    "LIGHT" to "Светлая",
-                    "DARK_BLUE" to "Тёмно-синяя",
-                    "SOLARIZED_DARK" to "Solarized Dark",
-                    "MONOKAI" to "Monokai"
-                )
+                Divider(color = colorScheme.divider, thickness = 1.dp)
 
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                // Выбор шрифта
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    themes.forEach { (themeId, themeName) ->
-                        Row(
+                    Text(
+                        text = "Шрифт:",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.width(80.dp)
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = fontExpanded,
+                        onExpandedChange = { fontExpanded = !fontExpanded },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        val currentFont = fontFamilies.find { it.first == currentFontFamily }
+
+                        OutlinedTextField(
+                            value = currentFont?.second?.first ?: currentFontFamily,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fontExpanded) },
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            textStyle = LocalTextStyle.current.copy(
+                                fontFamily = currentFont?.second?.second ?: FontFamily.Monospace
+                            ),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = colorScheme.onSurface,
+                                focusedBorderColor = colorScheme.success,
+                                unfocusedBorderColor = colorScheme.border
+                            )
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = fontExpanded,
+                            onDismissRequest = { fontExpanded = false }
                         ) {
-                            RadioButton(
-                                selected = currentTheme == themeId,
-                                onClick = {
-                                    clientState.setTheme(themeId)
-                                    statusMessage = "Тема изменена на: $themeName"
-                                    statusColor = Color(0xFF00FF00)
-                                },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = Color(0xFF4CAF50),
-                                    unselectedColor = Color.Gray
-                                )
-                            )
-                            Text(
-                                text = themeName,
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
+                            fontFamilies.forEach { (familyId, fontInfo) ->
+                                DropdownMenuItem(onClick = {
+                                    clientState.setFontFamily(familyId)
+                                    fontExpanded = false
+                                    statusMessage = "Шрифт изменён"
+                                    statusColor = colorScheme.success
+                                }) {
+                                    Text(
+                                        text = fontInfo.first,
+                                        fontFamily = fontInfo.second,
+                                        color = colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
-                Text(
-                    text = "Текущая тема: ${themes.find { it.first == currentTheme }?.second ?: currentTheme}",
-                    color = Color(0xFF888888),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+                // Размер шрифта (спиннер)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Размер:",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.width(80.dp)
+                    )
 
+                    var sizeInput by remember(currentFontSize) { mutableStateOf(currentFontSize.toString()) }
+
+                    OutlinedTextField(
+                        value = sizeInput,
+                        onValueChange = { newValue ->
+                            sizeInput = newValue.filter { it.isDigit() }
+                            sizeInput.toIntOrNull()?.let { size ->
+                                if (size in 10..24) {
+                                    clientState.setFontSize(size)
+                                }
+                            }
+                        },
+                        modifier = Modifier.width(80.dp),
+                        singleLine = true,
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = colorScheme.onSurface,
+                            focusedBorderColor = colorScheme.success,
+                            unfocusedBorderColor = colorScheme.border
+                        )
+                    )
+
+                    Column {
+                        IconButton(
+                            onClick = {
+                                val newSize = (currentFontSize + 1).coerceAtMost(24)
+                                clientState.setFontSize(newSize)
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Увеличить",
+                                tint = colorScheme.onSurface
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                val newSize = (currentFontSize - 1).coerceAtLeast(10)
+                                clientState.setFontSize(newSize)
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Уменьшить",
+                                tint = colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "sp",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    TextButton(onClick = {
+                        clientState.setFontSize(14)
+                        statusMessage = "Размер сброшен"
+                        statusColor = colorScheme.success
+                    }) {
+                        Text("Сброс", color = colorScheme.primary)
+                    }
+                }
+
+                // Превью
                 Text(
-                    text = "Примечание: изменение темы требует перезапуска приложения",
-                    color = Color(0xFFFFAA00),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
+                    text = "Пример текста выбранным шрифтом",
+                    color = colorScheme.onSurface,
+                    fontSize = currentFontSize.sp,
+                    fontFamily = fontFamilies.find { it.first == currentFontFamily }?.second?.second
+                        ?: FontFamily.Monospace
                 )
             }
         }
 
-        // Настройка шрифтов
-        val currentFontFamily by clientState.fontFamily.collectAsState()
-        val currentFontSize by clientState.fontSize.collectAsState()
+        // Кодировка
+        val currentEncoding = clientState.encoding
+        var encodingExpanded by remember { mutableStateOf(false) }
+
+        val encodings = listOf(
+            "Windows-1251" to "Windows-1251 (Bylins)",
+            "UTF-8" to "UTF-8 (Универсальная)",
+            "KOI8-R" to "KOI8-R (старая)",
+            "CP866" to "CP866 (DOS)"
+        )
 
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
+            backgroundColor = colorScheme.surface,
             elevation = 2.dp
         ) {
             Column(
@@ -381,143 +447,61 @@ fun SettingsPanel(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Шрифты",
-                    color = Color.White,
+                    text = "Кодировка",
+                    color = colorScheme.onSurface,
                     fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
-                Divider(color = Color.Gray, thickness = 1.dp)
-
-                // Выбор семейства шрифта
-                Text(
-                    text = "Семейство шрифта:",
-                    color = Color(0xFFBBBBBB),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                val fontFamilies = listOf(
-                    "MONOSPACE" to "Monospace (стандартный)",
-                    "SERIF" to "Serif",
-                    "SANS_SERIF" to "Sans Serif",
-                    "CURSIVE" to "Cursive"
-                )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    fontFamilies.forEach { (familyId, familyName) ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = currentFontFamily == familyId,
-                                onClick = {
-                                    clientState.setFontFamily(familyId)
-                                    statusMessage = "Шрифт изменён на: $familyName"
-                                    statusColor = Color(0xFF00FF00)
-                                },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = Color(0xFF4CAF50),
-                                    unselectedColor = Color.Gray
-                                )
-                            )
-                            Text(
-                                text = familyName,
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Выбор размера шрифта
-                Text(
-                    text = "Размер шрифта (10-24 sp):",
-                    color = Color(0xFFBBBBBB),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                var sizeInput by remember { mutableStateOf(currentFontSize.toString()) }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = sizeInput,
-                        onValueChange = { sizeInput = it },
-                        modifier = Modifier.width(100.dp),
-                        singleLine = true,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = Color.White,
-                            cursorColor = Color.White,
-                            focusedBorderColor = Color(0xFF4CAF50),
-                            unfocusedBorderColor = Color.Gray
-                        )
-                    )
-
-                    Button(
-                        onClick = {
-                            try {
-                                val size = sizeInput.toInt()
-                                clientState.setFontSize(size)
-                                statusMessage = "Размер шрифта установлен: $size sp"
-                                statusColor = Color(0xFF00FF00)
-                            } catch (e: NumberFormatException) {
-                                statusMessage = "Ошибка: введите число от 10 до 24"
-                                statusColor = Color(0xFFFF5555)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF4CAF50)
-                        )
-                    ) {
-                        Text("Применить", color = Color.White)
-                    }
-
-                    Button(
-                        onClick = {
-                            clientState.setFontSize(14)
-                            sizeInput = "14"
-                            statusMessage = "Размер шрифта сброшен до 14 sp"
-                            statusColor = Color(0xFF00FF00)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF2196F3)
-                        )
-                    ) {
-                        Text("Сброс", color = Color.White)
-                    }
-                }
+                Divider(color = colorScheme.divider, thickness = 1.dp)
 
                 Text(
-                    text = "Текущий размер: $currentFontSize sp",
-                    color = Color(0xFF888888),
+                    text = "Выберите кодировку сервера. Для Bylins обычно Windows-1251.",
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
-                // Обновляем sizeInput при изменении currentFontSize
-                LaunchedEffect(currentFontSize) {
-                    sizeInput = currentFontSize.toString()
+                ExposedDropdownMenuBox(
+                    expanded = encodingExpanded,
+                    onExpandedChange = { encodingExpanded = !encodingExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = encodings.find { it.first == currentEncoding }?.second ?: currentEncoding,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = encodingExpanded) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = colorScheme.onSurface,
+                            focusedBorderColor = colorScheme.success,
+                            unfocusedBorderColor = colorScheme.border
+                        )
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = encodingExpanded,
+                        onDismissRequest = { encodingExpanded = false }
+                    ) {
+                        encodings.forEach { (encodingId, encodingName) ->
+                            DropdownMenuItem(onClick = {
+                                clientState.setEncoding(encodingId)
+                                encodingExpanded = false
+                                statusMessage = "Кодировка изменена на $encodingId"
+                                statusColor = colorScheme.success
+                            }) {
+                                Text(encodingName, color = colorScheme.onSurface)
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Информация о конфигурации
+        // Конфигурация
         Card(
             modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
+            backgroundColor = colorScheme.surface,
             elevation = 2.dp
         ) {
             Column(
@@ -526,175 +510,115 @@ fun SettingsPanel(
             ) {
                 Text(
                     text = "Конфигурация",
-                    color = Color.White,
+                    color = colorScheme.onSurface,
                     fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace
                 )
 
-                Divider(color = Color.Gray, thickness = 1.dp)
+                Divider(color = colorScheme.divider, thickness = 1.dp)
 
-                Text(
-                    text = "Путь к конфигу:",
-                    color = Color(0xFFBBBBBB),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = clientState.getConfigPath(),
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f)
+                    )
 
-                Text(
-                    text = clientState.getConfigPath(),
-                    color = Color(0xFF00FF00),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+                    Button(
+                        onClick = {
+                            openFile(clientState.getConfigPath())
+                            statusMessage = "Открыт файл конфигурации"
+                            statusColor = colorScheme.success
+                        },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                    ) {
+                        Text("Открыть", color = colorScheme.onSurface)
+                    }
+                }
 
                 val triggers by clientState.triggers.collectAsState()
                 val aliases by clientState.aliases.collectAsState()
                 val hotkeys by clientState.hotkeys.collectAsState()
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Триггеров: ${triggers.size}",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Text(
-                    text = "Алиасов: ${aliases.size}",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Text(
-                    text = "Горячих клавиш: ${hotkeys.size}",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Text(
-                    text = "Конфигурация сохраняется автоматически при каждом изменении.",
-                    color = Color(0xFF888888),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        }
-
-        // Экспорт конфигурации
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
-            elevation = 2.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Экспорт конфигурации",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Divider(color = Color.Gray, thickness = 1.dp)
-
-                Text(
-                    text = "Сохранить триггеры и алиасы в файл.",
-                    color = Color(0xFFBBBBBB),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.dialogTitle = "Экспорт конфигурации"
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON файлы", "json")
-                        fileChooser.selectedFile = File("bylins-config.json")
-
-                        val result = fileChooser.showSaveDialog(null)
-                        if (result == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val file = fileChooser.selectedFile
-                                val finalFile = if (!file.name.endsWith(".json")) {
-                                    File(file.parentFile, file.name + ".json")
-                                } else {
-                                    file
-                                }
-
-                                clientState.exportConfig(finalFile)
-                                statusMessage = "Конфигурация экспортирована: ${finalFile.absolutePath}"
-                                statusColor = Color(0xFF00FF00)
-                            } catch (e: Exception) {
-                                statusMessage = "Ошибка экспорта: ${e.message}"
-                                statusColor = Color(0xFFFF5555)
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF2196F3)
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Экспортировать", color = Color.White)
+                    Text(
+                        text = "Триггеров: ${triggers.size}",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = "Алиасов: ${aliases.size}",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = "Хоткеев: ${hotkeys.size}",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
-            }
-        }
 
-        // Импорт конфигурации
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF2D2D2D),
-            elevation = 2.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Импорт конфигурации",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.Monospace
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val fileChooser = JFileChooser()
+                            fileChooser.dialogTitle = "Экспорт конфигурации"
+                            fileChooser.fileFilter = FileNameExtensionFilter("JSON файлы", "json")
+                            fileChooser.selectedFile = File("bylins-config.json")
 
-                Divider(color = Color.Gray, thickness = 1.dp)
-
-                Text(
-                    text = "Загрузить триггеры и алиасы из файла. ВНИМАНИЕ: текущие настройки будут заменены!",
-                    color = Color(0xFFFFAA00),
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-
-                Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.dialogTitle = "Импорт конфигурации"
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON файлы", "json")
-
-                        val result = fileChooser.showOpenDialog(null)
-                        if (result == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val file = fileChooser.selectedFile
-                                clientState.importConfig(file)
-                                statusMessage = "Конфигурация импортирована из: ${file.absolutePath}"
-                                statusColor = Color(0xFF00FF00)
-                            } catch (e: Exception) {
-                                statusMessage = "Ошибка импорта: ${e.message}"
-                                statusColor = Color(0xFFFF5555)
+                            if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                                try {
+                                    var file = fileChooser.selectedFile
+                                    if (!file.name.endsWith(".json")) {
+                                        file = File(file.parentFile, file.name + ".json")
+                                    }
+                                    clientState.exportConfig(file)
+                                    statusMessage = "Конфигурация экспортирована"
+                                    statusColor = colorScheme.success
+                                } catch (e: Exception) {
+                                    statusMessage = "Ошибка: ${e.message}"
+                                    statusColor = colorScheme.error
+                                }
                             }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFFFF9800)
-                    )
-                ) {
-                    Text("Импортировать", color = Color.White)
+                        },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                    ) {
+                        Text("Экспорт", color = colorScheme.onSurface)
+                    }
+
+                    Button(
+                        onClick = {
+                            val fileChooser = JFileChooser()
+                            fileChooser.dialogTitle = "Импорт конфигурации"
+                            fileChooser.fileFilter = FileNameExtensionFilter("JSON файлы", "json")
+
+                            if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                                try {
+                                    clientState.importConfig(fileChooser.selectedFile)
+                                    statusMessage = "Конфигурация импортирована"
+                                    statusColor = colorScheme.success
+                                } catch (e: Exception) {
+                                    statusMessage = "Ошибка: ${e.message}"
+                                    statusColor = colorScheme.error
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning)
+                    ) {
+                        Text("Импорт", color = colorScheme.onSurface)
+                    }
                 }
             }
         }
@@ -703,38 +627,58 @@ fun SettingsPanel(
         if (statusMessage != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF2D2D2D),
+                backgroundColor = colorScheme.surface,
                 elevation = 2.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
                         text = statusMessage!!,
-                        color = statusColor,
+                        color = statusColor ?: colorScheme.onSurface,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.weight(1f)
                     )
 
-                    Button(
-                        onClick = { statusMessage = null },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF424242)
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = "✕",
-                            color = Color.White,
-                            fontSize = 14.sp
-                        )
+                    TextButton(onClick = { statusMessage = null }) {
+                        Text("✕", color = colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
+    }
+}
+
+private fun openDirectory(path: String) {
+    try {
+        val os = System.getProperty("os.name").lowercase()
+        when {
+            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", path))
+            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", path))
+            else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
+        }
+    } catch (e: Exception) {
+        logger.error { "Error opening directory: ${e.message}" }
+    }
+}
+
+private fun openFile(path: String) {
+    try {
+        val file = File(path)
+        if (Desktop.isDesktopSupported()) {
+            Desktop.getDesktop().open(file)
+        } else {
+            val os = System.getProperty("os.name").lowercase()
+            when {
+                os.contains("win") -> Runtime.getRuntime().exec(arrayOf("notepad", path))
+                os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", "-t", path))
+                else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
+            }
+        }
+    } catch (e: Exception) {
+        logger.error { "Error opening file: ${e.message}" }
     }
 }

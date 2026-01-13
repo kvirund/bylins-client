@@ -1,5 +1,6 @@
 package com.bylins.client.network
 
+import mu.KotlinLogging
 import kotlinx.serialization.json.*
 
 /**
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.*
  * Формат сообщения: Package.SubPackage JSON_DATA
  * Пример: Char.Vitals {"hp": 100, "maxhp": 120}
  */
+private val logger = KotlinLogging.logger("GmcpParser")
 class GmcpParser {
 
     private val json = Json {
@@ -51,8 +53,8 @@ class GmcpParser {
             val jsonData = try {
                 json.parseToJsonElement(jsonString)
             } catch (e: Exception) {
-                println("[GmcpParser] Failed to parse JSON: $jsonString")
-                println("[GmcpParser] Error: ${e.message}")
+                logger.error { "Failed to parse JSON: $jsonString" }
+                logger.error { "Error: ${e.message}" }
                 // Возвращаем пустой объект если не удалось распарсить
                 JsonObject(emptyMap())
             }
@@ -62,7 +64,7 @@ class GmcpParser {
                 data = jsonData
             )
         } catch (e: Exception) {
-            println("[GmcpParser] Failed to parse GMCP message: ${e.message}")
+            logger.error { "Failed to parse GMCP message: ${e.message}" }
             e.printStackTrace()
             return null
         }

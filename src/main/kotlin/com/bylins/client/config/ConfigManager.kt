@@ -1,5 +1,6 @@
 package com.bylins.client.config
 
+import mu.KotlinLogging
 import com.bylins.client.aliases.Alias
 import com.bylins.client.hotkeys.Hotkey
 import com.bylins.client.tabs.Tab
@@ -11,6 +12,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
 
+private val logger = KotlinLogging.logger("ConfigManager")
 class ConfigManager {
     private val json = Json {
         prettyPrint = true
@@ -63,9 +65,9 @@ class ConfigManager {
             val jsonString = json.encodeToString(config)
             Files.writeString(configFile, jsonString)
 
-            println("Config saved to: $configFile")
+            logger.info { "Config saved to: $configFile" }
         } catch (e: Exception) {
-            println("Failed to save config: ${e.message}")
+            logger.error { "Failed to save config: ${e.message}" }
             e.printStackTrace()
         }
     }
@@ -76,7 +78,7 @@ class ConfigManager {
     fun loadConfig(): ConfigData {
         try {
             if (!Files.exists(configFile)) {
-                println("Config file not found: $configFile")
+                logger.info { "Config file not found: $configFile" }
                 return ConfigData(
                     emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
                     "UTF-8", 250, "DARK", "MONOSPACE", 14,
@@ -103,10 +105,10 @@ class ConfigManager {
             }
             val currentProfileId = config.currentProfileId
 
-            println("Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles)")
+            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles)" }
             return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme, fontFamily, fontSize, connectionProfiles, currentProfileId)
         } catch (e: Exception) {
-            println("Failed to load config: ${e.message}")
+            logger.error { "Failed to load config: ${e.message}" }
             e.printStackTrace()
             return ConfigData(
                 emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
@@ -138,9 +140,9 @@ class ConfigManager {
             val jsonString = json.encodeToString(config)
             file.writeText(jsonString)
 
-            println("Config exported to: ${file.absolutePath}")
+            logger.info { "Config exported to: ${file.absolutePath}" }
         } catch (e: Exception) {
-            println("Failed to export config: ${e.message}")
+            logger.error { "Failed to export config: ${e.message}" }
             e.printStackTrace()
             throw e
         }
@@ -165,10 +167,10 @@ class ConfigManager {
             val fontFamily = config.fontFamily
             val fontSize = config.fontSize
 
-            println("Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize)")
+            logger.info { "Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize)" }
             return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme, fontFamily, fontSize)
         } catch (e: Exception) {
-            println("Failed to import config: ${e.message}")
+            logger.error { "Failed to import config: ${e.message}" }
             e.printStackTrace()
             throw e
         }

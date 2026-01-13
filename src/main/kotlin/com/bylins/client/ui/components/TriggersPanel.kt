@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import mu.KotlinLogging
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,10 +15,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.triggers.Trigger
+import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
+private val logger = KotlinLogging.logger("TriggersPanel")
 @Composable
 fun TriggersPanel(
     clientState: ClientState,
@@ -26,11 +29,12 @@ fun TriggersPanel(
     val triggers by clientState.triggers.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
     var editingTrigger by remember { mutableStateOf<Trigger?>(null) }
+    val colorScheme = LocalAppColorScheme.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
             .padding(8.dp)
     ) {
         // Заголовок с кнопками
@@ -43,7 +47,7 @@ fun TriggersPanel(
         ) {
             Text(
                 text = "Триггеры",
-                color = Color.White,
+                color = colorScheme.onBackground,
                 fontSize = 16.sp,
                 fontFamily = FontFamily.Monospace
             )
@@ -64,18 +68,18 @@ fun TriggersPanel(
                                 val triggerIds = triggers.map { it.id }
                                 val json = clientState.exportTriggers(triggerIds)
                                 fileChooser.selectedFile.writeText(json)
-                                println("[TriggersPanel] Triggers exported to ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Triggers exported to ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[TriggersPanel] Export error: ${e.message}")
+                                logger.error { "Export error: ${e.message}" }
                                 e.printStackTrace()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF2196F3)
+                        backgroundColor = colorScheme.primary
                     )
                 ) {
-                    Text("Экспорт", color = Color.White)
+                    Text("Экспорт", color = colorScheme.onBackground)
                 }
 
                 Button(
@@ -88,18 +92,18 @@ fun TriggersPanel(
                             try {
                                 val json = fileChooser.selectedFile.readText()
                                 val count = clientState.importTriggers(json, merge = true)
-                                println("[TriggersPanel] Imported $count triggers from ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Imported $count triggers from ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[TriggersPanel] Import error: ${e.message}")
+                                logger.error { "Import error: ${e.message}" }
                                 e.printStackTrace()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFFFF9800)
+                        backgroundColor = colorScheme.warning
                     )
                 ) {
-                    Text("Импорт", color = Color.White)
+                    Text("Импорт", color = colorScheme.onBackground)
                 }
 
                 Button(
@@ -108,19 +112,21 @@ fun TriggersPanel(
                         showDialog = true
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF4CAF50)
+                        backgroundColor = colorScheme.success
                     )
                 ) {
-                    Text("+ Добавить", color = Color.White)
+                    Text("+ Добавить", color = colorScheme.onBackground)
                 }
             }
         }
 
-        Divider(color = Color.Gray, thickness = 1.dp)
+        Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Список триггеров
         LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(triggers) { trigger ->
@@ -151,7 +157,7 @@ fun TriggersPanel(
             ) {
                 Text(
                     text = "Нет триггеров",
-                    color = Color.Gray,
+                    color = colorScheme.divider,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -187,12 +193,13 @@ private fun TriggerItem(
     onDelete: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val colorScheme = LocalAppColorScheme.current
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = Color(0xFF2D2D2D),
+        backgroundColor = colorScheme.surface,
         elevation = 2.dp
     ) {
         Column(
@@ -208,13 +215,13 @@ private fun TriggerItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = trigger.name,
-                        color = if (trigger.enabled) Color.White else Color.Gray,
+                        color = if (trigger.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "ID: ${trigger.id}",
-                        color = Color.Gray,
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -232,8 +239,8 @@ private fun TriggerItem(
                             onToggle(trigger.id, enabled)
                         },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF4CAF50),
-                            uncheckedThumbColor = Color.Gray
+                            checkedThumbColor = colorScheme.success,
+                            uncheckedThumbColor = colorScheme.onSurfaceVariant
                         )
                     )
 
@@ -241,14 +248,14 @@ private fun TriggerItem(
                     Button(
                         onClick = { onEdit(trigger) },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF2196F3)
+                            backgroundColor = colorScheme.primary
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = "✎",
-                            color = Color.White,
+                            color = colorScheme.onBackground,
                             fontSize = 14.sp
                         )
                     }
@@ -257,14 +264,14 @@ private fun TriggerItem(
                     Button(
                         onClick = { expanded = !expanded },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF424242)
+                            backgroundColor = colorScheme.surfaceVariant
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = if (expanded) "▲" else "▼",
-                            color = Color.White,
+                            color = colorScheme.onBackground,
                             fontSize = 10.sp
                         )
                     }
@@ -273,14 +280,14 @@ private fun TriggerItem(
                     Button(
                         onClick = { onDelete(trigger.id) },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFD32F2F)
+                            backgroundColor = colorScheme.error
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = "✕",
-                            color = Color.White,
+                            color = colorScheme.onBackground,
                             fontSize = 14.sp
                         )
                     }
@@ -290,7 +297,7 @@ private fun TriggerItem(
             // Развернутая информация
             if (expanded) {
                 Divider(
-                    color = Color.Gray,
+                    color = colorScheme.divider,
                     thickness = 1.dp,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
@@ -338,20 +345,22 @@ private fun TriggerItem(
 
 @Composable
 private fun InfoRow(label: String, value: String) {
+    val colorScheme = LocalAppColorScheme.current
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
             text = label,
-            color = Color(0xFF888888),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.width(80.dp)
         )
         Text(
             text = value,
-            color = Color.White,
+            color = colorScheme.onBackground,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.weight(1f)

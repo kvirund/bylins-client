@@ -1,6 +1,7 @@
 package com.bylins.client.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -8,18 +9,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.bylins.client.ClientState
 import com.bylins.client.ui.components.*
 import com.bylins.client.ui.theme.AppTheme
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
+import java.awt.Cursor
 
 @Composable
 fun MainWindow() {
     val clientState = remember { ClientState() }
     var selectedTab by remember { mutableStateOf(0) }
     val inputFocusRequester = remember { FocusRequester() }
+    val isConnected by clientState.isConnected.collectAsState()
+
+    // Фокусируем input после подключения
+    LaunchedEffect(isConnected) {
+        if (isConnected) {
+            inputFocusRequester.requestFocus()
+        }
+    }
 
     // Получаем текущую тему
     val currentThemeName by clientState.currentTheme.collectAsState()
@@ -119,11 +133,21 @@ fun MainWindow() {
                     Tab(
                         selected = selectedTab == 8,
                         onClick = { selectedTab = 8 },
-                        text = { Text("GMCP") }
+                        text = { Text("Плагины") }
                     )
                     Tab(
                         selected = selectedTab == 9,
                         onClick = { selectedTab = 9 },
+                        text = { Text("MSDP") }
+                    )
+                    Tab(
+                        selected = selectedTab == 10,
+                        onClick = { selectedTab = 10 },
+                        text = { Text("GMCP") }
+                    )
+                    Tab(
+                        selected = selectedTab == 11,
+                        onClick = { selectedTab = 11 },
                         text = { Text("Настройки") }
                     )
                 }
@@ -140,6 +164,7 @@ fun MainWindow() {
                         0 -> {
                             // Главный вид с выводом текста и боковой панелью
                             val miniMapWidth by clientState.miniMapWidth.collectAsState()
+                            val density = LocalDensity.current
 
                             Row(modifier = Modifier.fillMaxSize()) {
                                 // Область вывода текста
@@ -148,6 +173,24 @@ fun MainWindow() {
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxHeight()
+                                )
+
+                                // Draggable divider (вертикальный разделитель)
+                                Box(
+                                    modifier = Modifier
+                                        .width(4.dp)
+                                        .fillMaxHeight()
+                                        .background(Color(0xFF555555))
+                                        .pointerHoverIcon(PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)))
+                                        .pointerInput(Unit) {
+                                            detectDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                // Уменьшаем ширину при движении вправо (положительный dragAmount.x)
+                                                // и увеличиваем при движении влево (отрицательный dragAmount.x)
+                                                val newWidth = (miniMapWidth - dragAmount.x / density.density).toInt()
+                                                clientState.setMiniMapWidth(newWidth)
+                                            }
+                                        }
                                 )
 
                                 // Боковая панель с статусом и мини-картой
@@ -226,13 +269,27 @@ fun MainWindow() {
                             )
                         }
                         8 -> {
+                            // Панель плагинов
+                            PluginsPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        9 -> {
+                            // Панель MSDP данных
+                            MsdpPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        10 -> {
                             // Панель GMCP данных
                             GmcpPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        9 -> {
+                        11 -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,

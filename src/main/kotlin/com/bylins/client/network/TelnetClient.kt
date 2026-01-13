@@ -1,5 +1,6 @@
 package com.bylins.client.network
 
+import mu.KotlinLogging
 import com.bylins.client.ClientState
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,6 +10,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 
+private val logger = KotlinLogging.logger("TelnetClient")
 class TelnetClient(
     private val clientState: ClientState? = null,
     encoding: String = "UTF-8"
@@ -33,7 +35,7 @@ class TelnetClient(
      */
     fun setEncoding(encoding: String) {
         telnetParser.setEncoding(encoding)
-        println("[TelnetClient] Encoding changed to: $encoding")
+        logger.info { "Encoding changed to: $encoding" }
     }
 
     // Ограничение на размер буфера вывода (1 МБ)
@@ -111,12 +113,22 @@ class TelnetClient(
 
     /**
      * Добавляет произвольный текст в output (для системных сообщений)
+     * Обрабатывает триггеры
      */
     fun addToOutput(text: String) {
         val textWithNewline = text + "\n"
         // Обрабатываем текст триггерами и получаем модифицированную версию с colorize
         val modifiedText = clientState?.processIncomingText(textWithNewline) ?: textWithNewline
         appendToBuffer(modifiedText)
+    }
+
+    /**
+     * Добавляет текст в output БЕЗ обработки триггерами
+     * Используется для echo из скриптов чтобы избежать рекурсии
+     */
+    fun addToOutputRaw(text: String) {
+        val textWithNewline = text + "\n"
+        appendToBuffer(textWithNewline)
     }
 
     /**
@@ -256,7 +268,7 @@ class TelnetClient(
             clientState?.updateMsdpData(msdpData)
 
             // Debug output
-            println("MSDP Data: $msdpData")
+            logger.info { "MSDP Data: $msdpData" }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -268,10 +280,10 @@ class TelnetClient(
             if (gmcpMessage != null) {
                 clientState?.updateGmcpData(gmcpMessage)
             } else {
-                println("[TelnetClient] Failed to parse GMCP message")
+                logger.error { "Failed to parse GMCP message" }
             }
         } catch (e: Exception) {
-            println("[TelnetClient] Error parsing GMCP: ${e.message}")
+            logger.error { "Error parsing GMCP: ${e.message}" }
             e.printStackTrace()
         }
     }

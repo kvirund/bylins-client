@@ -1,5 +1,6 @@
 package com.bylins.client.logging
 
+import mu.KotlinLogging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -9,12 +10,21 @@ import java.nio.file.StandardOpenOption
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
+private val logger = KotlinLogging.logger("LogManager")
 class LogManager {
     private val _isLogging = MutableStateFlow(false)
     val isLogging: StateFlow<Boolean> = _isLogging
 
     private val _currentLogFile = MutableStateFlow<String?>(null)
     val currentLogFile: StateFlow<String?> = _currentLogFile
+
+    /** Сохранять ANSI-коды (цвета) в логах */
+    private val _logWithColors = MutableStateFlow(false)
+    val logWithColors: StateFlow<Boolean> = _logWithColors
+
+    fun setLogWithColors(enabled: Boolean) {
+        _logWithColors.value = enabled
+    }
 
     private val logsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "logs")
     private var currentFile: File? = null
@@ -56,7 +66,7 @@ class LogManager {
 
         writeToFile(header)
 
-        println("Logging started: ${currentFile?.absolutePath}")
+        logger.info { "Logging started: ${currentFile?.absolutePath}" }
     }
 
     /**
@@ -79,16 +89,16 @@ class LogManager {
         _currentLogFile.value = null
         currentFile = null
 
-        println("Logging stopped")
+        logger.info { "Logging stopped" }
     }
 
     /**
      * Записывает текст в лог-файл
      */
-    fun log(text: String, stripAnsi: Boolean = true) {
+    fun log(text: String) {
         if (!_isLogging.value || currentFile == null) return
 
-        val processedText = if (stripAnsi) {
+        val processedText = if (!_logWithColors.value) {
             text.replace(ansiRegex, "")
         } else {
             text
@@ -106,7 +116,7 @@ class LogManager {
                 file.appendText(text)
             }
         } catch (e: Exception) {
-            println("Failed to write to log file: ${e.message}")
+            logger.error { "Failed to write to log file: ${e.message}" }
             e.printStackTrace()
         }
     }
@@ -135,9 +145,9 @@ class LogManager {
             if (file.lastModified() < cutoffTime) {
                 try {
                     file.delete()
-                    println("Deleted old log file: ${file.name}")
+                    logger.info { "Deleted old log file: ${file.name}" }
                 } catch (e: Exception) {
-                    println("Failed to delete log file ${file.name}: ${e.message}")
+                    logger.error { "Failed to delete log file ${file.name}: ${e.message}" }
                 }
             }
         }

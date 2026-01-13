@@ -1,18 +1,17 @@
 package com.bylins.client.mapper
 
+import mu.KotlinLogging
 import kotlinx.serialization.Serializable
 
 /**
  * Представляет комнату в MUD
  */
+private val logger = KotlinLogging.logger("Room")
 @Serializable
 data class Room(
     val id: String,
     val name: String,
     val description: String = "",
-    val x: Int,
-    val y: Int,
-    val z: Int = 0,
     val exits: MutableMap<Direction, Exit> = mutableMapOf(),
     val terrain: String = "",
     val zone: String = "",
@@ -23,9 +22,43 @@ data class Room(
 ) {
     /**
      * Добавляет выход в указанном направлении
+     * Защита от самоссылок - выход на саму себя игнорируется
      */
     fun addExit(direction: Direction, targetRoomId: String) {
+        // Не допускаем самоссылающиеся выходы (баг защита)
+        if (targetRoomId == id) {
+            logger.warn { "WARNING: Ignoring self-referencing exit $direction for room $id" }
+            return
+        }
         exits[direction] = Exit(targetRoomId)
+    }
+
+    /**
+     * Добавляет неизведанный выход (знаем что есть, но не знаем куда ведёт)
+     */
+    fun addUnexploredExit(direction: Direction) {
+        val existingExit = exits[direction]
+        if (existingExit == null) {
+            // Выхода нет - добавляем
+            exits[direction] = Exit("")
+            logger.info { "Added unexplored exit: $direction to room $id" }
+        } else if (existingExit.targetRoomId == id) {
+            // Самоссылающийся выход (баг) - исправляем
+            exits[direction] = Exit("")
+            logger.info { "Fixed self-referencing exit $direction in room $id" }
+        } else if (existingExit.targetRoomId.isNotEmpty()) {
+            // Нормальный изведанный выход - не трогаем
+            logger.info { "Skipped exit $direction - already explored in room $id" }
+        }
+        // Если targetRoomId пустой - это уже неизведанный выход, ничего не делаем
+    }
+
+    /**
+     * Проверяет изведан ли выход (знаем ли куда ведёт)
+     */
+    fun isExitExplored(direction: Direction): Boolean {
+        val exit = exits[direction] ?: return false
+        return exit.targetRoomId.isNotEmpty()
     }
 
     /**
@@ -54,6 +87,24 @@ data class Room(
      */
     fun getAvailableDirections(): List<Direction> {
         return exits.keys.toList()
+    }
+
+    /**
+     * Конвертирует комнату в Map для передачи плагинам
+     */
+    fun toMap(): Map<String, Any> {
+        return mapOf(
+            "id" to id,
+            "name" to name,
+            "description" to description,
+            "exits" to getAvailableDirections().map { it.name },
+            "terrain" to terrain,
+            "zone" to zone,
+            "notes" to notes,
+            "color" to (color ?: ""),
+            "visited" to visited,
+            "tags" to tags.toList()
+        )
     }
 }
 

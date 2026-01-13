@@ -45,10 +45,29 @@ dependencies {
 
     // SQLite для хранения карт
     implementation("org.xerial:sqlite-jdbc:3.44.1.0")
+
+    // YAML для plugin.yml
+    implementation("org.yaml:snakeyaml:2.0")
+
+    // Testing
+    testImplementation(kotlin("test"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 kotlin {
     jvmToolchain(17)
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+    kotlinOptions {
+        freeCompilerArgs = listOf(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.material.ExperimentalMaterialApi",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi"
+        )
+    }
 }
 
 compose.desktop {
@@ -71,4 +90,8 @@ compose.desktop {
             }
         }
     }
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

@@ -21,178 +21,157 @@ fun ConnectionPanel(
     val isConnected by clientState.isConnected.collectAsState()
     val errorMessage by clientState.errorMessage.collectAsState()
 
-    var host by remember { mutableStateOf("bylins.su") }
-    var port by remember { mutableStateOf("4000") }
-    var encoding by remember { mutableStateOf(clientState.encoding) }
     var profileMenuExpanded by remember { mutableStateOf(false) }
-    var encodingMenuExpanded by remember { mutableStateOf(false) }
     var showProfileDialog by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf<com.bylins.client.connection.ConnectionProfile?>(null) }
 
-    val availableEncodings = listOf("UTF-8", "windows-1251", "KOI8-R", "ISO-8859-1")
-
-    // Синхронизация с выбранным профилем
-    LaunchedEffect(currentProfileId) {
-        val profile = connectionProfiles.find { it.id == currentProfileId }
-        if (profile != null) {
-            host = profile.host
-            port = profile.port.toString()
-            encoding = profile.encoding
-            clientState.setEncoding(profile.encoding)
-        }
-    }
+    val currentProfile = connectionProfiles.find { it.id == currentProfileId }
 
     Column(modifier = modifier) {
-        // Первая строка: выбор профиля + управление
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Dropdown выбора профиля
-            Box(modifier = Modifier.weight(1f)) {
-                OutlinedTextField(
-                    value = connectionProfiles.find { it.id == currentProfileId }?.name ?: "Выберите профиль",
-                    onValueChange = { },
-                    label = { Text("Профиль") },
-                    enabled = !isConnected,
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                DropdownMenu(
-                    expanded = profileMenuExpanded && !isConnected,
-                    onDismissRequest = { profileMenuExpanded = false }
+        if (isConnected) {
+            // Компактный вид при подключении
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    connectionProfiles.forEach { profile ->
-                        DropdownMenuItem(
-                            text = { Text(profile.getDisplayName()) },
-                            onClick = {
-                                clientState.setCurrentProfile(profile.id)
-                                profileMenuExpanded = false
-                            }
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Circle,
+                        contentDescription = "Connected",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = currentProfile?.name ?: "Подключено",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "${currentProfile?.host ?: ""}:${currentProfile?.port ?: ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = currentProfile?.encoding ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                if (!isConnected) {
+
+                Button(
+                    onClick = { clientState.disconnect() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.LinkOff, contentDescription = "Disconnect")
+                    Spacer(Modifier.width(4.dp))
+                    Text("Отключиться")
+                }
+            }
+        } else {
+            // Расширенный вид при отключении - одна строка
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Dropdown выбора профиля - занимает всё доступное место
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = if (currentProfile != null) {
+                            "${currentProfile.name} — ${currentProfile.host}:${currentProfile.port} (${currentProfile.encoding})"
+                        } else {
+                            "Выберите профиль"
+                        },
+                        onValueChange = { },
+                        label = { Text("Профиль подключения") },
+                        readOnly = true,
+                        singleLine = true,
+                        trailingIcon = {
+                            Icon(
+                                if (profileMenuExpanded) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                contentDescription = "Выбрать"
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    DropdownMenu(
+                        expanded = profileMenuExpanded,
+                        onDismissRequest = { profileMenuExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.7f)
+                    ) {
+                        connectionProfiles.forEach { profile ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(profile.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "${profile.host}:${profile.port} (${profile.encoding})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    clientState.setCurrentProfile(profile.id)
+                                    profileMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .matchParentSize()
                             .clickable { profileMenuExpanded = true }
                     )
                 }
-            }
 
-            // Кнопка добавления профиля
-            IconButton(
-                onClick = {
-                    editingProfile = null
-                    showProfileDialog = true
-                },
-                enabled = !isConnected
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Добавить профиль")
-            }
-
-            // Кнопка редактирования текущего профиля
-            IconButton(
-                onClick = {
-                    editingProfile = connectionProfiles.find { it.id == currentProfileId }
-                    showProfileDialog = true
-                },
-                enabled = !isConnected && currentProfileId != null
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = "Редактировать профиль")
-            }
-
-            // Кнопка удаления текущего профиля
-            IconButton(
-                onClick = {
-                    currentProfileId?.let { clientState.removeConnectionProfile(it) }
-                },
-                enabled = !isConnected && currentProfileId != null && connectionProfiles.size > 1
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = "Удалить профиль")
-            }
-        }
-
-        // Вторая строка: host, port, encoding, connect
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = host,
-                onValueChange = { host = it },
-                label = { Text("Host") },
-                enabled = !isConnected,
-                modifier = Modifier.weight(1f)
-            )
-
-            OutlinedTextField(
-                value = port,
-                onValueChange = { port = it },
-                label = { Text("Port") },
-                enabled = !isConnected,
-                modifier = Modifier.width(100.dp)
-            )
-
-            // Dropdown для выбора кодировки
-            Box(modifier = Modifier.width(150.dp)) {
-                OutlinedTextField(
-                    value = encoding,
-                    onValueChange = { },
-                    label = { Text("Кодировка") },
-                    enabled = !isConnected,
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                DropdownMenu(
-                    expanded = encodingMenuExpanded && !isConnected,
-                    onDismissRequest = { encodingMenuExpanded = false }
+                // Кнопка добавления профиля
+                IconButton(
+                    onClick = {
+                        editingProfile = null
+                        showProfileDialog = true
+                    }
                 ) {
-                    availableEncodings.forEach { enc ->
-                        DropdownMenuItem(
-                            text = { Text(enc) },
-                            onClick = {
-                                encoding = enc
-                                clientState.setEncoding(enc)
-                                encodingMenuExpanded = false
-                            }
-                        )
-                    }
+                    Icon(Icons.Default.Add, contentDescription = "Добавить профиль")
                 }
-                // Кликабельная область для открытия меню
-                if (!isConnected) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable { encodingMenuExpanded = true }
-                    )
-                }
-            }
 
-            Button(
-                onClick = {
-                    if (isConnected) {
-                        clientState.disconnect()
-                    } else {
-                        val portInt = port.toIntOrNull() ?: 4000
-                        clientState.connect(host, portInt)
-                    }
-                },
-                colors = if (isConnected) {
-                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                } else {
-                    ButtonDefaults.buttonColors()
+                // Кнопка редактирования
+                IconButton(
+                    onClick = {
+                        editingProfile = currentProfile
+                        showProfileDialog = true
+                    },
+                    enabled = currentProfile != null
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Редактировать")
                 }
-            ) {
-                Icon(
-                    imageVector = if (isConnected) Icons.Default.LinkOff else Icons.Default.Link,
-                    contentDescription = if (isConnected) "Disconnect" else "Connect"
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(if (isConnected) "Отключиться" else "Подключиться")
+
+                // Кнопка удаления
+                IconButton(
+                    onClick = {
+                        currentProfileId?.let { clientState.removeConnectionProfile(it) }
+                    },
+                    enabled = currentProfileId != null && connectionProfiles.size > 1
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Удалить")
+                }
+
+                // Кнопка подключения
+                Button(
+                    onClick = {
+                        if (currentProfile != null) {
+                            clientState.connect(currentProfile.host, currentProfile.port)
+                        }
+                    },
+                    enabled = currentProfile != null
+                ) {
+                    Icon(Icons.Default.Link, contentDescription = "Connect")
+                    Spacer(Modifier.width(4.dp))
+                    Text("Подключиться")
+                }
             }
         }
 

@@ -38,3 +38,5 @@ scripts/**/node_modules/
 scripts/**/*.pyc
 scripts/**/venv/
 scripts/**/.venv/
+tmpclaude-*
+bin/

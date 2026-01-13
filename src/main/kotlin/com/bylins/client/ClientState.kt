@@ -1,5 +1,6 @@
 package com.bylins.client
 
+import mu.KotlinLogging
 import com.bylins.client.aliases.AliasManager
 import com.bylins.client.config.ConfigManager
 import com.bylins.client.hotkeys.HotkeyManager
@@ -19,12 +20,17 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 import java.io.File
 
+private val logger = KotlinLogging.logger("ClientState")
 class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val configManager = ConfigManager()
 
     // Флаг для предотвращения множественного сохранения при инициализации
     private var isInitializing = true
+
+    // Debounce для сохранения конфига
+    private var saveConfigJob: kotlinx.coroutines.Job? = null
+    private val saveConfigDebounceMs = 500L
 
     // Менеджеры инициализируются первыми
     private val aliasManager = AliasManager(
@@ -36,6 +42,16 @@ class ClientState {
             // Уведомляем скрипты о срабатывании алиаса
             if (::scriptManager.isInitialized) {
                 scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ALIAS, alias, command, groups)
+            }
+
+            // Уведомляем плагины о срабатывании алиаса
+            if (::pluginManager.isInitialized) {
+                pluginEventBus.post(com.bylins.client.plugins.events.AliasFiredEvent(
+                    aliasId = alias.id,
+                    aliasName = alias.name,
+                    input = command,
+                    groups = groups.values.toList()
+                ))
             }
         }
     )
@@ -49,6 +65,16 @@ class ClientState {
             // Уведомляем скрипты о срабатывании триггера
             if (::scriptManager.isInitialized) {
                 scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_TRIGGER, trigger, line, groups)
+            }
+
+            // Уведомляем плагины о срабатывании триггера
+            if (::pluginManager.isInitialized) {
+                pluginEventBus.post(com.bylins.client.plugins.events.TriggerFiredEvent(
+                    triggerId = trigger.id,
+                    triggerName = trigger.name,
+                    line = line,
+                    groups = groups.values.toList()
+                ))
             }
         }
     )
@@ -65,6 +91,47 @@ class ClientState {
     private val variableManager = VariableManager()
     private val tabManager = TabManager()
 
+    // Хранилище триггеров из скриптов
+    private data class ScriptTrigger(
+        val id: String,
+        val pattern: Regex,
+        val callback: (String, Map<Int, String>) -> Unit,
+        var enabled: Boolean = true
+    )
+    private val scriptTriggers = java.util.concurrent.ConcurrentHashMap<String, ScriptTrigger>()
+
+    /**
+     * Проверяет скриптовые триггеры на совпадение с строкой
+     */
+    private fun checkScriptTriggers(line: String) {
+        if (line.contains("Вых") || line.contains("[") && line.contains("]")) {
+        }
+        for (trigger in scriptTriggers.values) {
+            if (!trigger.enabled) continue
+
+            try {
+                val matchResult = trigger.pattern.find(line)
+                if (matchResult != null) {
+                    // Формируем groups как Map<Int, String>
+                    val groups = mutableMapOf<Int, String>()
+                    matchResult.groupValues.forEachIndexed { index, value ->
+                        groups[index] = value
+                    }
+
+                    // Вызываем callback
+                    try {
+                        trigger.callback(line, groups)
+                    } catch (e: Exception) {
+                        logger.error { "[ScriptAPI] Error in trigger callback: ${e.message}" }
+                        e.printStackTrace()
+                    }
+                }
+            } catch (e: Exception) {
+                logger.error { "[ScriptAPI] Error matching trigger ${trigger.id}: ${e.message}" }
+            }
+        }
+    }
+
     // Для throttling звуковых уведомлений
     private var lastLowHpSoundTime = 0L
     private val mapManager = com.bylins.client.mapper.MapManager(
@@ -72,6 +139,15 @@ class ClientState {
             // Уведомляем скрипты о входе в комнату
             if (::scriptManager.isInitialized) {
                 scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ROOM_ENTER, room)
+            }
+
+            // Уведомляем плагины о входе в комнату
+            if (::pluginManager.isInitialized) {
+                pluginEventBus.post(com.bylins.client.plugins.events.RoomEnterEvent(
+                    roomId = room.id,
+                    roomName = room.name,
+                    fromDirection = null // TODO: передать направление откуда пришли
+                ))
             }
         }
     )
@@ -103,6 +179,10 @@ class ClientState {
 
     // Скриптинг - инициализируется позже
     private lateinit var scriptManager: com.bylins.client.scripting.ScriptManager
+
+    // Плагины - инициализируются после скриптинга
+    private lateinit var pluginManager: com.bylins.client.plugins.PluginManager
+    private val pluginEventBus = com.bylins.client.plugins.events.EventBus()
 
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
     val receivedData: StateFlow<String> = telnetClient.receivedData
@@ -158,8 +238,16 @@ class ClientState {
     val mapEnabled = mapManager.mapEnabled
 
     init {
+        // Регистрируем shutdown hook для корректного завершения
+        Runtime.getRuntime().addShutdownHook(Thread {
+            shutdown()
+        })
+
         // Инициализируем скриптинг
         initializeScripting()
+
+        // Инициализируем плагины
+        initializePlugins()
 
         // Продолжаем стандартную инициализацию
         // Пытаемся загрузить сохранённую конфигурацию
@@ -201,6 +289,33 @@ class ClientState {
         // Завершаем инициализацию и сохраняем конфиг один раз
         isInitializing = false
         saveConfig()
+
+        // Мониторинг состояния соединения для автосохранения карты при разрыве
+        scope.launch {
+            var wasConnected = false
+            isConnected.collect { connected ->
+                if (wasConnected && !connected) {
+                    // Соединение было разорвано - сохраняем снапшот карты
+                    if (mapManager.rooms.value.isNotEmpty()) {
+                        logger.info { "Connection lost, auto-saving map snapshot..." }
+                        mapManager.saveSnapshot()
+                    }
+                    // Останавливаем сбор статистики
+                    sessionStats.stopSession()
+                    // Останавливаем логирование
+                    logManager.stopLogging()
+                    // Уведомляем скрипты
+                    if (::scriptManager.isInitialized) {
+                        scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_DISCONNECT)
+                    }
+                    // Уведомляем плагины
+                    firePluginEvent(com.bylins.client.plugins.events.DisconnectEvent(
+                        reason = com.bylins.client.plugins.events.DisconnectReason.SERVER_CLOSED
+                    ))
+                }
+                wasConnected = connected
+            }
+        }
     }
 
     private fun loadDefaultAliases() {
@@ -411,17 +526,33 @@ class ClientState {
                 if (::scriptManager.isInitialized) {
                     scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_CONNECT)
                 }
+
+                // Уведомляем плагины о подключении
+                firePluginEvent(com.bylins.client.plugins.events.ConnectEvent(host, port))
             } catch (e: Exception) {
-                _errorMessage.value = "Ошибка подключения: ${e.message}"
-                e.printStackTrace()
+                val userFriendlyError = when {
+                    e is java.net.ConnectException && e.message?.contains("Connection refused") == true ->
+                        "Не удалось подключиться к $host:$port — сервер недоступен или порт закрыт"
+                    e is java.net.UnknownHostException ->
+                        "Неизвестный хост: $host"
+                    e is java.net.SocketTimeoutException ->
+                        "Превышено время ожидания подключения к $host:$port"
+                    e is java.net.NoRouteToHostException ->
+                        "Нет маршрута до хоста $host"
+                    e is java.io.IOException ->
+                        "Ошибка сети: ${e.message ?: "неизвестная ошибка"}"
+                    else ->
+                        "Ошибка подключения: ${e.message ?: "неизвестная ошибка"}"
+                }
+                _errorMessage.value = userFriendlyError
             }
         }
     }
 
     fun disconnect() {
-        // Автосохранение карты перед отключением
+        // Автосохранение карты перед отключением (снапшот)
         if (mapManager.rooms.value.isNotEmpty()) {
-            mapManager.saveToFile()
+            mapManager.saveSnapshot()
         }
 
         telnetClient.disconnect()
@@ -433,6 +564,29 @@ class ClientState {
         if (::scriptManager.isInitialized) {
             scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_DISCONNECT)
         }
+
+        // Уведомляем плагины об отключении
+        firePluginEvent(com.bylins.client.plugins.events.DisconnectEvent(
+            reason = com.bylins.client.plugins.events.DisconnectReason.USER_REQUEST
+        ))
+    }
+
+    /**
+     * Вызывается при закрытии приложения
+     */
+    fun shutdown() {
+        logger.info { "Shutting down..." }
+        // Отключаемся если подключены
+        if (isConnected.value) {
+            disconnect()
+        }
+        // Сохраняем конфигурацию
+        saveConfig()
+        // Завершаем работу маппера (сохраняет снапшот)
+        mapManager.shutdown()
+        // Выгружаем плагины
+        pluginManager.shutdown()
+        logger.info { "Shutdown complete" }
     }
 
     fun send(command: String) {
@@ -466,12 +620,27 @@ class ClientState {
     }
 
     private fun sendRaw(command: String) {
+        // Проверяем алиасы плагинов
+        if (::pluginManager.isInitialized) {
+            val manager = pluginManager as? com.bylins.client.plugins.PluginManagerImpl
+            if (manager?.checkPluginAliases(command) == true) {
+                return // Алиас плагина обработал команду
+            }
+        }
+
         // Сохраняем команду для автомаппера
         lastCommand = command
 
         // Уведомляем скрипты
         if (::scriptManager.isInitialized) {
             scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_COMMAND, command)
+        }
+
+        // Уведомляем плагины о команде (cancellable)
+        val commandEvent = com.bylins.client.plugins.events.CommandSendEvent(command)
+        pluginEventBus.post(commandEvent)
+        if (commandEvent.isCancelled) {
+            return // Команда отменена плагином
         }
 
         // Эхо команды в лог
@@ -876,6 +1045,11 @@ class ClientState {
         if (::scriptManager.isInitialized) {
             scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_MSDP, data)
         }
+
+        // Уведомляем плагины
+        data.forEach { (key, value) ->
+            firePluginEvent(com.bylins.client.plugins.events.MsdpEvent(key, value))
+        }
     }
 
     /**
@@ -885,7 +1059,7 @@ class ClientState {
         // Обновляем хранилище GMCP данных
         _gmcpData.value = _gmcpData.value + (message.packageName to message.data)
 
-        println("[ClientState] GMCP: ${message.packageName} = ${message.data}")
+        logger.debug { "GMCP: ${message.packageName} = ${message.data}" }
 
         // Парсим JSON в Map для переменных
         val parser = com.bylins.client.network.GmcpParser()
@@ -906,6 +1080,9 @@ class ClientState {
             )
             scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_GMCP, eventData)
         }
+
+        // Уведомляем плагины о GMCP событии
+        firePluginEvent(com.bylins.client.plugins.events.GmcpEvent(message.packageName, message.data.toString()))
     }
 
     /**
@@ -943,10 +1120,36 @@ class ClientState {
             // Удаляем ANSI-коды перед проверкой триггерами
             val cleanLine = ansiParser.stripAnsi(line)
 
+            // Уведомляем плагины о новой строке (cancellable)
+            val lineEvent = com.bylins.client.plugins.events.LineReceivedEvent(
+                line = cleanLine,
+                rawLine = line
+            )
+            pluginEventBus.post(lineEvent)
+            if (lineEvent.isCancelled) {
+                continue // Строка отменена плагином (gag)
+            }
+
+            // Проверяем триггеры плагинов
+            if (::pluginManager.isInitialized) {
+                val manager = pluginManager as? com.bylins.client.plugins.PluginManagerImpl
+                val triggerResult = manager?.checkPluginTriggers(cleanLine, line)
+                if (triggerResult == com.bylins.client.plugins.TriggerResult.GAG) {
+                    continue // Строка скрыта триггером плагина
+                }
+                if (triggerResult == com.bylins.client.plugins.TriggerResult.STOP) {
+                    modifiedLines.add(line)
+                    continue // Дальнейшая обработка триггеров не нужна
+                }
+            }
+
             // Уведомляем скрипты о новой строке
             if (::scriptManager.isInitialized) {
                 scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_LINE, cleanLine)
             }
+
+            // Проверяем триггеры из скриптов
+            checkScriptTriggers(cleanLine)
 
             val matches = triggerManager.processLine(cleanLine)
 
@@ -1225,6 +1428,23 @@ class ClientState {
         // Не сохраняем во время инициализации, чтобы не создавать множество записей
         if (isInitializing) return
 
+        // Debounce: отменяем предыдущий запрос и ждём перед сохранением
+        saveConfigJob?.cancel()
+        saveConfigJob = scope.launch(Dispatchers.IO) {
+            delay(saveConfigDebounceMs)
+            doSaveConfig()
+        }
+    }
+
+    /**
+     * Немедленное сохранение конфига (без debounce)
+     */
+    fun saveConfigNow() {
+        saveConfigJob?.cancel()
+        doSaveConfig()
+    }
+
+    private fun doSaveConfig() {
         configManager.saveConfig(
             triggers.value,
             aliases.value,
@@ -1265,7 +1485,7 @@ class ClientState {
     fun setTheme(themeName: String) {
         _currentTheme.value = themeName
         saveConfig()
-        println("[ClientState] Theme changed to: $themeName")
+        logger.info { "Theme changed to: $themeName" }
     }
 
     /**
@@ -1274,7 +1494,7 @@ class ClientState {
     fun setFontFamily(family: String) {
         _fontFamily.value = family
         saveConfig()
-        println("[ClientState] Font family changed to: $family")
+        logger.info { "Font family changed to: $family" }
     }
 
     /**
@@ -1284,14 +1504,14 @@ class ClientState {
         val clampedSize = size.coerceIn(10, 24)
         _fontSize.value = clampedSize
         saveConfig()
-        println("[ClientState] Font size changed to: $clampedSize")
+        logger.info { "Font size changed to: $clampedSize" }
     }
 
     // Управление профилями подключений
     fun addConnectionProfile(profile: com.bylins.client.connection.ConnectionProfile) {
         _connectionProfiles.value = _connectionProfiles.value + profile
         saveConfig()
-        println("[ClientState] Added connection profile: ${profile.name}")
+        logger.info { "Added connection profile: ${profile.name}" }
     }
 
     fun updateConnectionProfile(profile: com.bylins.client.connection.ConnectionProfile) {
@@ -1299,7 +1519,7 @@ class ClientState {
             if (it.id == profile.id) profile else it
         }
         saveConfig()
-        println("[ClientState] Updated connection profile: ${profile.name}")
+        logger.info { "Updated connection profile: ${profile.name}" }
     }
 
     fun removeConnectionProfile(profileId: String) {
@@ -1309,7 +1529,7 @@ class ClientState {
             _currentProfileId.value = null
         }
         saveConfig()
-        println("[ClientState] Removed connection profile: $profileId")
+        logger.info { "Removed connection profile: $profileId" }
     }
 
     fun setCurrentProfile(profileId: String?) {
@@ -1322,7 +1542,7 @@ class ClientState {
             }
         }
         saveConfig()
-        println("[ClientState] Set current profile: $profileId")
+        logger.info { "Set current profile: $profileId" }
     }
 
     fun getCurrentProfile(): com.bylins.client.connection.ConnectionProfile? {
@@ -1399,6 +1619,12 @@ class ClientState {
 
     fun getLogsDirectory(): String {
         return logManager.getLogsDirectory()
+    }
+
+    val logWithColors = logManager.logWithColors
+
+    fun setLogWithColors(enabled: Boolean) {
+        logManager.setLogWithColors(enabled)
     }
 
     fun cleanOldLogs(daysToKeep: Int = 30) {
@@ -1482,14 +1708,6 @@ class ClientState {
         mapManager.setRoomTags(roomId, tags)
     }
 
-    fun getMapBounds(level: Int): com.bylins.client.mapper.MapBounds? {
-        return mapManager.getMapBounds(level)
-    }
-
-    fun getRoomsOnLevel(level: Int): List<com.bylins.client.mapper.Room> {
-        return mapManager.getRoomsOnLevel(level)
-    }
-
     fun exportMap(): Map<String, com.bylins.client.mapper.Room> {
         return mapManager.exportMap()
     }
@@ -1553,8 +1771,8 @@ class ClientState {
         // Создаем реализацию ScriptAPI
         val scriptAPI = com.bylins.client.scripting.ScriptAPIImpl(
             sendCommand = { command -> send(command) },
-            echoText = { text -> telnetClient.addToOutput(text) },
-            logMessage = { message -> println(message) },
+            echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
+            logMessage = { message -> logger.info { message } },
             triggerActions = createTriggerActions(),
             aliasActions = createAliasActions(),
             timerActions = createTimerActions(),
@@ -1577,23 +1795,141 @@ class ClientState {
         scriptManager.autoLoadScripts()
     }
 
+    /**
+     * Инициализация системы плагинов
+     */
+    private fun initializePlugins() {
+        logger.info { "Initializing plugin system..." }
+
+        pluginManager = com.bylins.client.plugins.PluginManagerImpl(
+            eventBus = pluginEventBus,
+            apiFactory = { pluginId, dataFolder ->
+                createPluginAPI(pluginId, dataFolder)
+            }
+        )
+
+        // Автозагрузка плагинов
+        pluginManager.autoLoadPlugins()
+    }
+
+    /**
+     * Создаёт PluginAPI для плагина
+     */
+    private fun createPluginAPI(pluginId: String, dataFolder: java.io.File): com.bylins.client.plugins.PluginAPIImpl {
+        return com.bylins.client.plugins.PluginAPIImpl(
+            pluginId = pluginId,
+            sendCommand = { command -> send(command) },
+            echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
+            eventBus = pluginEventBus,
+            variableGetter = { name -> variableManager.getVariable(name) },
+            variableSetter = { name, value -> variableManager.setVariable(name, value) },
+            variableDeleter = { name -> variableManager.removeVariable(name) },
+            getAllVariablesFunc = { variableManager.getAllVariables() },
+            msdpGetter = { key -> _msdpData.value[key] },
+            getAllMsdpFunc = { _msdpData.value },
+            gmcpGetter = { packageName -> _gmcpData.value[packageName]?.toString() },
+            getAllGmcpFunc = { _gmcpData.value.mapValues { it.value.toString() } },
+            gmcpSender = { packageName, data -> /* TODO: отправка GMCP */ },
+            // Маппер - чтение
+            getCurrentRoomFunc = { mapManager.getCurrentRoom()?.toMap() },
+            getRoomFunc = { roomId -> mapManager.getRoom(roomId)?.toMap() },
+            searchRoomsFunc = { query -> mapManager.searchRooms(query).map { it.toMap() } },
+            findPathFunc = { targetId -> mapManager.findPathFromCurrent(targetId)?.map { it.name } },
+            // Маппер - модификация
+            setRoomNoteFunc = { roomId, note -> mapManager.setRoomNote(roomId, note) },
+            setRoomColorFunc = { roomId, color -> mapManager.setRoomColor(roomId, color) },
+            setRoomZoneFunc = { roomId, zone -> mapManager.setRoomZone(roomId, zone) },
+            setRoomTagsFunc = { roomId, tags -> mapManager.setRoomTags(roomId, tags.toSet()) },
+            // Маппер - создание
+            createRoomFunc = { id, name ->
+                if (mapManager.getRoom(id) != null) false
+                else {
+                    mapManager.addRoom(com.bylins.client.mapper.Room(id = id, name = name))
+                    true
+                }
+            },
+            createRoomWithExitsFunc = { id, name, exits ->
+                if (mapManager.getRoom(id) != null) false
+                else {
+                    val room = com.bylins.client.mapper.Room(id = id, name = name)
+                    exits.forEach { (dirName, targetId) ->
+                        com.bylins.client.mapper.Direction.fromCommand(dirName)?.let { dir ->
+                            room.addExit(dir, targetId)
+                        }
+                    }
+                    mapManager.addRoom(room)
+                    true
+                }
+            },
+            linkRoomsFunc = { fromId, direction, toId ->
+                val fromRoom = mapManager.getRoom(fromId)
+                val toRoom = mapManager.getRoom(toId)
+                val dir = com.bylins.client.mapper.Direction.fromCommand(direction)
+                if (fromRoom != null && toRoom != null && dir != null) {
+                    val updated = fromRoom.copy()
+                    updated.addExit(dir, toId)
+                    mapManager.addRoom(updated)
+                    val reverseUpdated = toRoom.copy()
+                    reverseUpdated.addExit(dir.getOpposite(), fromId)
+                    mapManager.addRoom(reverseUpdated)
+                }
+            },
+            handleMovementFunc = { direction, roomName, exits ->
+                val dir = com.bylins.client.mapper.Direction.fromCommand(direction)
+                if (dir != null) {
+                    val exitDirs = exits.mapNotNull { com.bylins.client.mapper.Direction.fromCommand(it) }
+                    mapManager.handleMovement(dir, roomName, exitDirs)?.toMap()
+                } else null
+            },
+            // Маппер - управление
+            setMapEnabledFunc = { enabled -> mapManager.setMapEnabled(enabled) },
+            isMapEnabledFunc = { mapManager.mapEnabled.value },
+            clearMapFunc = { mapManager.clearMap() },
+            setCurrentRoomFunc = { roomId -> mapManager.setCurrentRoom(roomId) },
+            isPluginLoadedFunc = { id -> pluginManager.isPluginLoaded(id) },
+            dataFolder = dataFolder
+        )
+    }
+
+    /**
+     * Отправляет событие всем плагинам
+     */
+    private fun firePluginEvent(event: com.bylins.client.plugins.events.PluginEvent) {
+        if (::pluginManager.isInitialized) {
+            pluginEventBus.post(event)
+        }
+    }
+
     private fun createTriggerActions() = object : com.bylins.client.scripting.TriggerActions {
         override fun addTrigger(pattern: String, callback: (String, Map<Int, String>) -> Unit): String {
             val triggerId = java.util.UUID.randomUUID().toString()
-            // TODO: Добавить триггер из скрипта
+            // DEBUG: выводим байты паттерна
+            val patternBytes = pattern.toByteArray(Charsets.UTF_8).joinToString(" ") { "%02X".format(it) }
+            try {
+                val regex = pattern.toRegex()
+                val trigger = ScriptTrigger(
+                    id = triggerId,
+                    pattern = regex,
+                    callback = callback,
+                    enabled = true
+                )
+                scriptTriggers[triggerId] = trigger
+            } catch (e: Exception) {
+                logger.error { "[ScriptAPI] Error adding trigger: ${e.message}" }
+            }
             return triggerId
         }
 
         override fun removeTrigger(id: String) {
-            removeTrigger(id)
+            scriptTriggers.remove(id)
         }
 
         override fun enableTrigger(id: String) {
-            enableTrigger(id)
+            scriptTriggers[id]?.enabled = true
         }
 
         override fun disableTrigger(id: String) {
-            disableTrigger(id)
+            scriptTriggers[id]?.enabled = false
         }
     }
 
@@ -1619,7 +1955,7 @@ class ClientState {
                 try {
                     callback()
                 } catch (e: Exception) {
-                    println("[Timer] Error in setTimeout: ${e.message}")
+                    logger.error { "[Timer] Error in setTimeout: ${e.message}" }
                 }
                 timers.remove(timerId)
             }
@@ -1635,7 +1971,7 @@ class ClientState {
                     try {
                         callback()
                     } catch (e: Exception) {
-                        println("[Timer] Error in setInterval: ${e.message}")
+                        logger.error { "[Timer] Error in setInterval: ${e.message}" }
                     }
                 }
             }
@@ -1656,10 +1992,12 @@ class ClientState {
 
         override fun setVariable(name: String, value: String) {
             variableManager.setVariable(name, value)
+            saveConfig()
         }
 
         override fun deleteVariable(name: String) {
             variableManager.removeVariable(name)
+            saveConfig()
         }
 
         override fun getAllVariables(): Map<String, String> {
@@ -1690,29 +2028,19 @@ class ClientState {
 
     private fun createMapperActions() = object : com.bylins.client.scripting.MapperActions {
         override fun getCurrentRoom(): Map<String, Any>? {
-            val room = mapManager.getCurrentRoom() ?: return null
-            return mapOf(
-                "id" to room.id,
-                "name" to room.name,
-                "x" to room.x,
-                "y" to room.y,
-                "z" to room.z,
-                "exits" to room.getAvailableDirections().map { it.name },
-                "notes" to room.notes
-            )
+            return mapManager.getCurrentRoom()?.toMap()
         }
 
-        override fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>? {
-            val room = mapManager.findRoomAt(x, y, z) ?: return null
-            return mapOf(
-                "id" to room.id,
-                "name" to room.name,
-                "x" to room.x,
-                "y" to room.y,
-                "z" to room.z,
-                "exits" to room.getAvailableDirections().map { it.name },
-                "notes" to room.notes
-            )
+        override fun getRoom(roomId: String): Map<String, Any>? {
+            return mapManager.getRoom(roomId)?.toMap()
+        }
+
+        override fun searchRooms(query: String): List<Map<String, Any>> {
+            return mapManager.searchRooms(query).map { it.toMap() }
+        }
+
+        override fun findPath(targetRoomId: String): List<String>? {
+            return mapManager.findPathFromCurrent(targetRoomId)?.map { it.name }
         }
 
         override fun setRoomNote(roomId: String, note: String) {
@@ -1721,6 +2049,102 @@ class ClientState {
 
         override fun setRoomColor(roomId: String, color: String?) {
             mapManager.setRoomColor(roomId, color)
+        }
+
+        override fun setRoomZone(roomId: String, zone: String) {
+            mapManager.setRoomZone(roomId, zone)
+        }
+
+        override fun setRoomTags(roomId: String, tags: List<String>) {
+            mapManager.setRoomTags(roomId, tags.toSet())
+        }
+
+        override fun createRoom(id: String, name: String): Boolean {
+            // Проверяем, что комната с таким ID не существует
+            if (mapManager.getRoom(id) != null) {
+                return false
+            }
+            val room = com.bylins.client.mapper.Room(
+                id = id,
+                name = name
+            )
+            mapManager.addRoom(room)
+            return true
+        }
+
+        override fun createRoomWithExits(id: String, name: String, exits: Map<String, String>): Boolean {
+            if (mapManager.getRoom(id) != null) {
+                return false
+            }
+            val room = com.bylins.client.mapper.Room(
+                id = id,
+                name = name
+            )
+            // Добавляем выходы
+            exits.forEach { (dirName, targetId) ->
+                val direction = com.bylins.client.mapper.Direction.fromCommand(dirName)
+                if (direction != null) {
+                    room.addExit(direction, targetId)
+                }
+            }
+            mapManager.addRoom(room)
+            return true
+        }
+
+        override fun linkRooms(fromRoomId: String, direction: String, toRoomId: String) {
+            val fromRoom = mapManager.getRoom(fromRoomId) ?: return
+            val toRoom = mapManager.getRoom(toRoomId) ?: return
+            val dir = com.bylins.client.mapper.Direction.fromCommand(direction) ?: return
+
+            // Добавляем выход из fromRoom в toRoom
+            val updated = fromRoom.copy()
+            updated.addExit(dir, toRoomId)
+            mapManager.addRoom(updated)
+
+            // Добавляем обратный выход
+            val reverseUpdated = toRoom.copy()
+            reverseUpdated.addExit(dir.getOpposite(), fromRoomId)
+            mapManager.addRoom(reverseUpdated)
+        }
+
+        override fun addUnexploredExits(roomId: String, exits: List<String>) {
+            val room = mapManager.getRoom(roomId) ?: return
+            val updated = room.copy()
+            exits.forEach { exitStr ->
+                val dir = com.bylins.client.mapper.Direction.fromCommand(exitStr)
+                if (dir != null) {
+                    updated.addUnexploredExit(dir)
+                }
+            }
+            mapManager.addRoom(updated)
+        }
+
+        override fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String?): Map<String, Any>? {
+            val dir = com.bylins.client.mapper.Direction.fromCommand(direction) ?: run {
+                return null
+            }
+            val exitDirections = exits.mapNotNull { exitStr ->
+                val d = com.bylins.client.mapper.Direction.fromCommand(exitStr)
+                d
+            }
+            val room = mapManager.handleMovement(dir, roomName, exitDirections, roomId)
+            return room?.toMap()
+        }
+
+        override fun setMapEnabled(enabled: Boolean) {
+            mapManager.setMapEnabled(enabled)
+        }
+
+        override fun isMapEnabled(): Boolean {
+            return mapManager.mapEnabled.value
+        }
+
+        override fun clearMap() {
+            mapManager.clearMap()
+        }
+
+        override fun setCurrentRoom(roomId: String) {
+            mapManager.setCurrentRoom(roomId)
         }
     }
 
@@ -1732,6 +2156,15 @@ class ClientState {
     fun disableScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.disableScript(scriptId) else Unit
     fun reloadScript(scriptId: String) = if (::scriptManager.isInitialized) scriptManager.reloadScript(scriptId) else Unit
     fun getScriptsDirectory() = if (::scriptManager.isInitialized) scriptManager.getScriptsDirectory() else "scripts"
+
+    // === Управление плагинами ===
+    fun getPlugins() = if (::pluginManager.isInitialized) pluginManager.plugins else kotlinx.coroutines.flow.MutableStateFlow(emptyList())
+    fun loadPlugin(file: java.io.File) = if (::pluginManager.isInitialized) pluginManager.loadPlugin(file) else null
+    fun unloadPlugin(pluginId: String) = if (::pluginManager.isInitialized) pluginManager.unloadPlugin(pluginId) else false
+    fun enablePlugin(pluginId: String) = if (::pluginManager.isInitialized) pluginManager.enablePlugin(pluginId) else false
+    fun disablePlugin(pluginId: String) = if (::pluginManager.isInitialized) pluginManager.disablePlugin(pluginId) else false
+    fun reloadPlugin(pluginId: String) = if (::pluginManager.isInitialized) pluginManager.reloadPlugin(pluginId) else false
+    fun getPluginsDirectory() = if (::pluginManager.isInitialized) pluginManager.pluginsDirectory.absolutePath else "plugins"
 
     // Управление звуками
     fun setSoundEnabled(enabled: Boolean) = soundManager.setSoundEnabled(enabled)

@@ -1,5 +1,7 @@
 package com.bylins.client.mapper
 
+import mu.KotlinLogging
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.encodeToString
@@ -11,6 +13,7 @@ import java.nio.file.Paths
 /**
  * Управляет картой мира MUD
  */
+private val logger = KotlinLogging.logger("MapManager")
 class MapManager(
     private val onRoomEnter: ((Room) -> Unit)? = null
 ) {
@@ -26,11 +29,26 @@ class MapManager(
     private val pathfinder = Pathfinder()
     private val database = MapDatabase()
 
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var snapshotJob: Job? = null
+    private val SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000L // 5 минут
+
+    init {
+        // Загружаем автосохранение при старте
+        loadAutoSave()
+        // Запускаем периодические снапшоты
+        startPeriodicSnapshots()
+    }
+
     /**
      * Добавляет или обновляет комнату на карте
      */
     fun addRoom(room: Room) {
         _rooms.value = _rooms.value + (room.id to room)
+        // Инкрементальное сохранение в БД
+        scope.launch {
+            database.saveRoomIncremental(room)
+        }
     }
 
     /**
@@ -47,6 +65,10 @@ class MapManager(
         _rooms.value = _rooms.value - id
         if (_currentRoomId.value == id) {
             _currentRoomId.value = null
+        }
+        // Удаляем из автосохранения
+        scope.launch {
+            database.deleteRoomFromAutoSave(id)
         }
     }
 
@@ -83,27 +105,18 @@ class MapManager(
     /**
      * Обрабатывает движение в указанном направлении
      * Создает новую комнату если необходимо
+     * @param roomId ID комнаты из игры (обязателен для создания новых комнат)
      */
-    fun handleMovement(direction: Direction, newRoomName: String, exits: List<Direction>): Room? {
+    fun handleMovement(direction: Direction, newRoomName: String, exits: List<Direction>, roomId: String? = null): Room? {
+        logger.info { "handleMovement: dir=$direction name='$newRoomName' exits=$exits roomId=$roomId" }
         val currentRoom = getCurrentRoom()
 
         if (!_mapEnabled.value) {
             return null
         }
 
-        // Вычисляем координаты новой комнаты
-        val (x, y, z) = if (currentRoom != null) {
-            Triple(
-                currentRoom.x + direction.dx,
-                currentRoom.y + direction.dy,
-                currentRoom.z + direction.dz
-            )
-        } else {
-            Triple(0, 0, 0)
-        }
-
-        // Проверяем есть ли уже комната в этих координатах
-        val existingRoom = findRoomAt(x, y, z)
+        // Проверяем есть ли уже комната с таким ID
+        val existingRoom = roomId?.let { _rooms.value[it] }
 
         val targetRoom = if (existingRoom != null) {
             // Комната уже существует, обновляем информацию
@@ -111,30 +124,19 @@ class MapManager(
                 name = newRoomName,
                 visited = true
             )
-            // Обновляем выходы
-            exits.forEach { dir ->
-                if (!updated.hasExit(dir)) {
-                    // Не перезаписываем существующие выходы
-                }
-            }
             addRoom(updated)
             updated
         } else {
-            // Создаем новую комнату
-            val newRoomId = generateRoomId(x, y, z)
+            // Создаем новую комнату - требуется ID из игры
+            val newRoomId = roomId ?: run {
+                logger.info { "ERROR: roomId required for new rooms" }
+                return null
+            }
             val newRoom = Room(
                 id = newRoomId,
                 name = newRoomName,
-                x = x,
-                y = y,
-                z = z,
                 visited = true
             )
-
-            // Добавляем выходы в новую комнату
-            exits.forEach { dir ->
-                // Выходы будут добавлены при следующих движениях
-            }
 
             addRoom(newRoom)
             newRoom
@@ -147,9 +149,20 @@ class MapManager(
             updatedCurrent.addExit(direction, targetRoom.id)
             addRoom(updatedCurrent)
 
-            // Добавляем обратный выход
+            // Добавляем обратный выход и все известные выходы на целевую комнату
             val updatedTarget = targetRoom.copy()
             updatedTarget.addExit(direction.getOpposite(), currentRoom.id)
+            // Добавляем неизведанные выходы из промпта
+            exits.forEach { exitDir ->
+                updatedTarget.addUnexploredExit(exitDir)
+            }
+            addRoom(updatedTarget)
+        } else {
+            // Начальная комната - добавляем неизведанные выходы
+            val updatedTarget = targetRoom.copy()
+            exits.forEach { exitDir ->
+                updatedTarget.addUnexploredExit(exitDir)
+            }
             addRoom(updatedTarget)
         }
 
@@ -160,27 +173,15 @@ class MapManager(
     }
 
     /**
-     * Находит комнату в указанных координатах
-     */
-    fun findRoomAt(x: Int, y: Int, z: Int): Room? {
-        return _rooms.value.values.firstOrNull {
-            it.x == x && it.y == y && it.z == z
-        }
-    }
-
-    /**
-     * Генерирует ID комнаты на основе координат
-     */
-    private fun generateRoomId(x: Int, y: Int, z: Int): String {
-        return "room_${x}_${y}_${z}"
-    }
-
-    /**
      * Очищает всю карту
      */
     fun clearMap() {
         _rooms.value = emptyMap()
         _currentRoomId.value = null
+        // Очищаем автосохранение
+        scope.launch {
+            database.clearAutoSave()
+        }
     }
 
     /**
@@ -188,28 +189,6 @@ class MapManager(
      */
     fun setMapEnabled(enabled: Boolean) {
         _mapEnabled.value = enabled
-    }
-
-    /**
-     * Возвращает все комнаты на указанном уровне (z)
-     */
-    fun getRoomsOnLevel(z: Int): List<Room> {
-        return _rooms.value.values.filter { it.z == z }
-    }
-
-    /**
-     * Возвращает границы карты (min/max координаты)
-     */
-    fun getMapBounds(z: Int): MapBounds? {
-        val roomsOnLevel = getRoomsOnLevel(z)
-        if (roomsOnLevel.isEmpty()) return null
-
-        val minX = roomsOnLevel.minOf { it.x }
-        val maxX = roomsOnLevel.maxOf { it.x }
-        val minY = roomsOnLevel.minOf { it.y }
-        val maxY = roomsOnLevel.maxOf { it.y }
-
-        return MapBounds(minX, maxX, minY, maxY)
     }
 
     /**
@@ -311,10 +290,10 @@ class MapManager(
             val jsonString = json.encodeToString(_rooms.value)
             file.writeText(jsonString)
 
-            println("[MapManager] Map saved: ${file.absolutePath} (${_rooms.value.size} rooms)")
+            logger.info { "Map saved: ${file.absolutePath} (${_rooms.value.size} rooms)" }
             true
         } catch (e: Exception) {
-            println("[MapManager] Error saving map: ${e.message}")
+            logger.error { "Error saving map: ${e.message}" }
             e.printStackTrace()
             false
         }
@@ -333,7 +312,7 @@ class MapManager(
             }
 
             if (!file.exists()) {
-                println("[MapManager] Map file not found: ${file.absolutePath}")
+                logger.info { "Map file not found: ${file.absolutePath}" }
                 return false
             }
 
@@ -346,10 +325,10 @@ class MapManager(
             val rooms = json.decodeFromString<Map<String, Room>>(jsonString)
 
             _rooms.value = rooms
-            println("[MapManager] Map loaded: ${file.absolutePath} (${rooms.size} rooms)")
+            logger.info { "Map loaded: ${file.absolutePath} (${rooms.size} rooms)" }
             true
         } catch (e: Exception) {
-            println("[MapManager] Error loading map: ${e.message}")
+            logger.error { "Error loading map: ${e.message}" }
             e.printStackTrace()
             false
         }
@@ -417,7 +396,7 @@ class MapManager(
      */
     fun detectAndAssignZones() {
         _rooms.value = zoneDetector.detectAndAssignZones(_rooms.value)
-        println("[MapManager] Zones detected and assigned")
+        logger.info { "Zones detected and assigned" }
     }
 
     /**
@@ -461,7 +440,7 @@ class MapManager(
         _rooms.value = _rooms.value.mapValues { (_, room) ->
             room.copy(zone = "")
         }
-        println("[MapManager] All zones cleared")
+        logger.info { "All zones cleared" }
     }
 
     // === Работа с базой данных ===
@@ -471,7 +450,7 @@ class MapManager(
      */
     fun saveMapToDatabase(name: String, description: String = ""): Boolean {
         if (_rooms.value.isEmpty()) {
-            println("[MapManager] No rooms to save")
+            logger.info { "No rooms to save" }
             return false
         }
         return database.saveMap(name, _rooms.value, description)
@@ -511,17 +490,77 @@ class MapManager(
     fun closeDatabase() {
         database.close()
     }
-}
 
-/**
- * Границы карты
- */
-data class MapBounds(
-    val minX: Int,
-    val maxX: Int,
-    val minY: Int,
-    val maxY: Int
-) {
-    val width: Int get() = maxX - minX + 1
-    val height: Int get() = maxY - minY + 1
+    // ============================================
+    // Автосохранение и снапшоты
+    // ============================================
+
+    /**
+     * Загружает карту из автосохранения при старте
+     */
+    private fun loadAutoSave() {
+        val savedRooms = database.loadAutoSave()
+        if (savedRooms != null && savedRooms.isNotEmpty()) {
+            _rooms.value = savedRooms
+            logger.info { "Loaded ${savedRooms.size} rooms from autosave" }
+        }
+    }
+
+    /**
+     * Запускает периодическое сохранение снапшотов
+     */
+    private fun startPeriodicSnapshots() {
+        snapshotJob?.cancel()
+        snapshotJob = scope.launch {
+            while (isActive) {
+                delay(SNAPSHOT_INTERVAL_MS)
+                if (_rooms.value.isNotEmpty()) {
+                    saveSnapshot()
+                }
+            }
+        }
+    }
+
+    /**
+     * Сохраняет полный снапшот карты в JSON файл
+     */
+    fun saveSnapshot() {
+        if (_rooms.value.isEmpty()) return
+
+        try {
+            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
+            if (!Files.exists(mapsDir)) {
+                Files.createDirectories(mapsDir)
+            }
+
+            val file = mapsDir.resolve("autosave.json").toFile()
+            val json = Json {
+                prettyPrint = true
+                ignoreUnknownKeys = true
+            }
+
+            val jsonString = json.encodeToString(_rooms.value)
+            file.writeText(jsonString)
+
+            logger.info { "Snapshot saved: ${file.absolutePath} (${_rooms.value.size} rooms)" }
+        } catch (e: Exception) {
+            logger.error { "Error saving snapshot: ${e.message}" }
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Вызывается при закрытии приложения - сохраняет финальный снапшот
+     */
+    fun shutdown() {
+        snapshotJob?.cancel()
+        if (_rooms.value.isNotEmpty()) {
+            // Синхронно сохраняем снапшот при закрытии
+            runBlocking {
+                saveSnapshot()
+            }
+        }
+        scope.cancel()
+        database.close()
+    }
 }

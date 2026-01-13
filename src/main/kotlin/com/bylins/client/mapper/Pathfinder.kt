@@ -164,9 +164,10 @@ class Pathfinder {
             return emptyList() // Уже в нужной комнате
         }
 
-        // Эвристика: манхэттенское расстояние в 3D
-        fun heuristic(room: Room): Int {
-            return abs(room.x - endRoom.x) + abs(room.y - endRoom.y) + abs(room.z - endRoom.z)
+        // Эвристика: без координат возвращаем 0 (превращает A* в Dijkstra)
+        // Координаты теперь вычисляются динамически при рендеринге
+        fun heuristic(@Suppress("UNUSED_PARAMETER") room: Room): Int {
+            return 0
         }
 
         // Priority queue для A* (сортируется по f = g + h)
@@ -235,10 +236,12 @@ class Pathfinder {
 
         val queryLower = query.lowercase()
         return rooms.values.filter { room ->
+            // Поиск по ID (точное совпадение)
+            val idMatch = room.id == query
             val nameMatch = room.name.lowercase().contains(queryLower)
             val descMatch = searchInDescription && room.description.lowercase().contains(queryLower)
             val notesMatch = room.notes.lowercase().contains(queryLower)
-            nameMatch || descMatch || notesMatch
+            idMatch || nameMatch || descMatch || notesMatch
         }
     }
 

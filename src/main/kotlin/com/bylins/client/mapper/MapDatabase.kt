@@ -1,5 +1,6 @@
 package com.bylins.client.mapper
 
+import mu.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.sql.Connection
@@ -15,6 +16,7 @@ import java.time.Instant
  * - rooms: комнаты (id, map_id, room_id, name, x, y, z, visited, color, notes, terrain)
  * - exits: выходы между комнатами (id, room_id, direction, target_room_id)
  */
+private val logger = KotlinLogging.logger("MapDatabase")
 class MapDatabase {
     private var connection: Connection? = null
     private val dbPath: String
@@ -29,6 +31,7 @@ class MapDatabase {
         dbPath = mapsDir.resolve("maps.db").toString()
         connect()
         createTables()
+        createAutoSaveTables()
     }
 
     /**
@@ -38,9 +41,9 @@ class MapDatabase {
         try {
             Class.forName("org.sqlite.JDBC")
             connection = DriverManager.getConnection("jdbc:sqlite:$dbPath")
-            println("[MapDatabase] Connected to database: $dbPath")
+            logger.info { "Connected to database: $dbPath" }
         } catch (e: Exception) {
-            println("[MapDatabase] Error connecting to database: ${e.message}")
+            logger.error { "Error connecting to database: ${e.message}" }
             e.printStackTrace()
         }
     }
@@ -99,9 +102,9 @@ class MapDatabase {
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_exits_room ON exits(room_id)")
 
             statement?.close()
-            println("[MapDatabase] Tables created successfully")
+            logger.info { "Tables created successfully" }
         } catch (e: Exception) {
-            println("[MapDatabase] Error creating tables: ${e.message}")
+            logger.error { "Error creating tables: ${e.message}" }
             e.printStackTrace()
         }
     }
@@ -143,12 +146,12 @@ class MapDatabase {
             connection?.commit()
             connection?.autoCommit = true
 
-            println("[MapDatabase] Map '$name' saved successfully (${rooms.size} rooms)")
+            logger.info { "Map '$name' saved successfully (${rooms.size} rooms)" }
             true
         } catch (e: Exception) {
             connection?.rollback()
             connection?.autoCommit = true
-            println("[MapDatabase] Error saving map: ${e.message}")
+            logger.error { "Error saving map: ${e.message}" }
             e.printStackTrace()
             false
         }
@@ -201,10 +204,10 @@ class MapDatabase {
                 exitsStmt?.close()
             }
 
-            println("[MapDatabase] Map '$name' loaded successfully (${rooms.size} rooms)")
+            logger.info { "Map '$name' loaded successfully (${rooms.size} rooms)" }
             rooms
         } catch (e: Exception) {
-            println("[MapDatabase] Error loading map: ${e.message}")
+            logger.error { "Error loading map: ${e.message}" }
             e.printStackTrace()
             null
         }
@@ -239,7 +242,7 @@ class MapDatabase {
             rs?.close()
             stmt?.close()
         } catch (e: Exception) {
-            println("[MapDatabase] Error listing maps: ${e.message}")
+            logger.error { "Error listing maps: ${e.message}" }
             e.printStackTrace()
         }
         return maps
@@ -256,11 +259,11 @@ class MapDatabase {
             stmt?.close()
 
             if (deleted > 0) {
-                println("[MapDatabase] Map '$name' deleted")
+                logger.info { "Map '$name' deleted" }
             }
             deleted > 0
         } catch (e: Exception) {
-            println("[MapDatabase] Error deleting map: ${e.message}")
+            logger.error { "Error deleting map: ${e.message}" }
             e.printStackTrace()
             false
         }
@@ -289,7 +292,7 @@ class MapDatabase {
             idStmt?.close()
             id
         } catch (e: Exception) {
-            println("[MapDatabase] Error creating map: ${e.message}")
+            logger.error { "Error creating map: ${e.message}" }
             null
         }
     }
@@ -317,9 +320,9 @@ class MapDatabase {
             stmt?.setLong(1, mapId)
             stmt?.setString(2, room.id)
             stmt?.setString(3, room.name)
-            stmt?.setInt(4, room.x)
-            stmt?.setInt(5, room.y)
-            stmt?.setInt(6, room.z)
+            stmt?.setInt(4, 0)  // x - deprecated, not used
+            stmt?.setInt(5, 0)  // y - deprecated, not used
+            stmt?.setInt(6, 0)  // z - deprecated, not used
             stmt?.setInt(7, if (room.visited) 1 else 0)
             stmt?.setString(8, room.color)
             stmt?.setString(9, room.notes)
@@ -335,7 +338,7 @@ class MapDatabase {
             idStmt?.close()
             id
         } catch (e: Exception) {
-            println("[MapDatabase] Error inserting room: ${e.message}")
+            logger.error { "Error inserting room: ${e.message}" }
             null
         }
     }
@@ -351,7 +354,7 @@ class MapDatabase {
             stmt?.executeUpdate()
             stmt?.close()
         } catch (e: Exception) {
-            println("[MapDatabase] Error inserting exit: ${e.message}")
+            logger.error { "Error inserting exit: ${e.message}" }
         }
     }
 
@@ -359,9 +362,7 @@ class MapDatabase {
         return Room(
             id = rs.getString("room_id"),
             name = rs.getString("name"),
-            x = rs.getInt("x"),
-            y = rs.getInt("y"),
-            z = rs.getInt("z"),
+            // x, y, z - deprecated, not used (coordinates calculated via BFS)
             visited = rs.getInt("visited") == 1,
             color = rs.getString("color"),
             notes = rs.getString("notes") ?: "",
@@ -375,9 +376,249 @@ class MapDatabase {
     fun close() {
         try {
             connection?.close()
-            println("[MapDatabase] Database connection closed")
+            logger.info { "Database connection closed" }
         } catch (e: Exception) {
-            println("[MapDatabase] Error closing database: ${e.message}")
+            logger.error { "Error closing database: ${e.message}" }
+        }
+    }
+
+    // ============================================
+    // Инкрементальное автосохранение
+    // ============================================
+
+    /**
+     * Создание таблиц для автосохранения
+     */
+    private fun createAutoSaveTables() {
+        try {
+            val statement = connection?.createStatement()
+
+            // Таблица автосохранения комнат
+            statement?.execute("""
+                CREATE TABLE IF NOT EXISTS autosave_rooms (
+                    room_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    x INTEGER NOT NULL,
+                    y INTEGER NOT NULL,
+                    z INTEGER NOT NULL,
+                    visited INTEGER NOT NULL DEFAULT 0,
+                    color TEXT,
+                    notes TEXT,
+                    terrain TEXT,
+                    zone TEXT,
+                    tags TEXT,
+                    updated_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            // Таблица автосохранения выходов
+            statement?.execute("""
+                CREATE TABLE IF NOT EXISTS autosave_exits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    room_id TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    target_room_id TEXT,
+                    door TEXT,
+                    locked INTEGER DEFAULT 0,
+                    hidden INTEGER DEFAULT 0,
+                    one_way INTEGER DEFAULT 0,
+                    UNIQUE(room_id, direction),
+                    FOREIGN KEY (room_id) REFERENCES autosave_rooms(room_id) ON DELETE CASCADE
+                )
+            """.trimIndent())
+
+            // Индексы
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_autosave_exits_room ON autosave_exits(room_id)")
+
+            statement?.close()
+        } catch (e: Exception) {
+            logger.error { "Error creating autosave tables: ${e.message}" }
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Сохраняет одну комнату инкрементально (upsert)
+     */
+    @Synchronized
+    fun saveRoomIncremental(room: Room) {
+        try {
+            connection?.autoCommit = false
+
+            val now = Instant.now().epochSecond
+            val tagsJson = room.tags.joinToString(",")
+
+            // UPSERT комнаты
+            val roomStmt = connection?.prepareStatement("""
+                INSERT OR REPLACE INTO autosave_rooms
+                (room_id, name, description, x, y, z, visited, color, notes, terrain, zone, tags, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent())
+            roomStmt?.setString(1, room.id)
+            roomStmt?.setString(2, room.name)
+            roomStmt?.setString(3, room.description)
+            roomStmt?.setInt(4, 0)  // x - deprecated
+            roomStmt?.setInt(5, 0)  // y - deprecated
+            roomStmt?.setInt(6, 0)  // z - deprecated
+            roomStmt?.setInt(7, if (room.visited) 1 else 0)
+            roomStmt?.setString(8, room.color)
+            roomStmt?.setString(9, room.notes)
+            roomStmt?.setString(10, room.terrain)
+            roomStmt?.setString(11, room.zone)
+            roomStmt?.setString(12, tagsJson)
+            roomStmt?.setLong(13, now)
+            roomStmt?.executeUpdate()
+            roomStmt?.close()
+
+            // Удаляем старые выходы
+            val deleteExitsStmt = connection?.prepareStatement(
+                "DELETE FROM autosave_exits WHERE room_id = ?"
+            )
+            deleteExitsStmt?.setString(1, room.id)
+            deleteExitsStmt?.executeUpdate()
+            deleteExitsStmt?.close()
+
+            // Добавляем новые выходы
+            for ((direction, exit) in room.exits) {
+                val exitStmt = connection?.prepareStatement("""
+                    INSERT INTO autosave_exits
+                    (room_id, direction, target_room_id, door, locked, hidden, one_way)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent())
+                exitStmt?.setString(1, room.id)
+                exitStmt?.setString(2, direction.name)
+                exitStmt?.setString(3, exit.targetRoomId)
+                exitStmt?.setString(4, exit.door)
+                exitStmt?.setInt(5, if (exit.locked) 1 else 0)
+                exitStmt?.setInt(6, if (exit.hidden) 1 else 0)
+                exitStmt?.setInt(7, if (exit.oneWay) 1 else 0)
+                exitStmt?.executeUpdate()
+                exitStmt?.close()
+            }
+
+            connection?.commit()
+            connection?.autoCommit = true
+        } catch (e: Exception) {
+            connection?.rollback()
+            connection?.autoCommit = true
+            logger.error { "Error saving room incrementally: ${e.message}" }
+        }
+    }
+
+    /**
+     * Удаляет комнату из автосохранения
+     */
+    fun deleteRoomFromAutoSave(roomId: String) {
+        try {
+            val stmt = connection?.prepareStatement(
+                "DELETE FROM autosave_rooms WHERE room_id = ?"
+            )
+            stmt?.setString(1, roomId)
+            stmt?.executeUpdate()
+            stmt?.close()
+        } catch (e: Exception) {
+            logger.error { "Error deleting room from autosave: ${e.message}" }
+        }
+    }
+
+    /**
+     * Загружает все комнаты из автосохранения
+     */
+    fun loadAutoSave(): Map<String, Room>? {
+        return try {
+            val rooms = mutableMapOf<String, Room>()
+
+            // Загружаем комнаты
+            val roomsStmt = connection?.createStatement()
+            val roomsRs = roomsStmt?.executeQuery("SELECT * FROM autosave_rooms")
+
+            while (roomsRs?.next() == true) {
+                val tagsStr = roomsRs.getString("tags") ?: ""
+                val tags = if (tagsStr.isNotEmpty()) tagsStr.split(",").toSet() else emptySet()
+
+                val room = Room(
+                    id = roomsRs.getString("room_id"),
+                    name = roomsRs.getString("name"),
+                    description = roomsRs.getString("description") ?: "",
+                    // x, y, z - deprecated (coordinates calculated via BFS)
+                    visited = roomsRs.getInt("visited") == 1,
+                    color = roomsRs.getString("color"),
+                    notes = roomsRs.getString("notes") ?: "",
+                    terrain = roomsRs.getString("terrain") ?: "",
+                    zone = roomsRs.getString("zone") ?: "",
+                    tags = tags
+                )
+                rooms[room.id] = room
+            }
+            roomsRs?.close()
+            roomsStmt?.close()
+
+            // Загружаем выходы
+            val exitsStmt = connection?.createStatement()
+            val exitsRs = exitsStmt?.executeQuery("SELECT * FROM autosave_exits")
+
+            while (exitsRs?.next() == true) {
+                val roomId = exitsRs.getString("room_id")
+                val room = rooms[roomId] ?: continue
+
+                val directionName = exitsRs.getString("direction")
+                val direction = try {
+                    Direction.valueOf(directionName)
+                } catch (e: Exception) {
+                    continue
+                }
+
+                val exit = Exit(
+                    targetRoomId = exitsRs.getString("target_room_id") ?: "",
+                    door = exitsRs.getString("door"),
+                    locked = exitsRs.getInt("locked") == 1,
+                    hidden = exitsRs.getInt("hidden") == 1,
+                    oneWay = exitsRs.getInt("one_way") == 1
+                )
+                room.exits[direction] = exit
+            }
+            exitsRs?.close()
+            exitsStmt?.close()
+
+            if (rooms.isNotEmpty()) {
+                logger.info { "AutoSave loaded: ${rooms.size} rooms" }
+            }
+            rooms.ifEmpty { null }
+        } catch (e: Exception) {
+            logger.error { "Error loading autosave: ${e.message}" }
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Очищает автосохранение
+     */
+    fun clearAutoSave() {
+        try {
+            val stmt = connection?.createStatement()
+            stmt?.execute("DELETE FROM autosave_rooms")
+            stmt?.close()
+            logger.info { "AutoSave cleared" }
+        } catch (e: Exception) {
+            logger.error { "Error clearing autosave: ${e.message}" }
+        }
+    }
+
+    /**
+     * Возвращает количество комнат в автосохранении
+     */
+    fun getAutoSaveRoomCount(): Int {
+        return try {
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("SELECT COUNT(*) FROM autosave_rooms")
+            val count = if (rs?.next() == true) rs.getInt(1) else 0
+            rs?.close()
+            stmt?.close()
+            count
+        } catch (e: Exception) {
+            0
         }
     }
 }

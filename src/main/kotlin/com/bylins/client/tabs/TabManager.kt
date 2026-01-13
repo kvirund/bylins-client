@@ -1,11 +1,13 @@
 package com.bylins.client.tabs
 
+import mu.KotlinLogging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Менеджер вкладок
  */
+private val logger = KotlinLogging.logger("TabManager")
 class TabManager {
     private val _tabs = MutableStateFlow<List<Tab>>(emptyList())
     val tabs: StateFlow<List<Tab>> = _tabs
@@ -39,7 +41,7 @@ class TabManager {
      */
     fun addTab(tab: Tab) {
         if (_tabs.value.any { it.id == tab.id }) {
-            println("Tab with id ${tab.id} already exists")
+            logger.info { "Tab with id ${tab.id} already exists" }
             return
         }
         _tabs.value = _tabs.value + tab
@@ -50,7 +52,7 @@ class TabManager {
      */
     fun updateTab(id: String, name: String, filters: List<TabFilter>, captureMode: CaptureMode) {
         if (id == "main") {
-            println("Cannot update main tab")
+            logger.info { "Cannot update main tab" }
             return
         }
         _tabs.value = _tabs.value.map { tab ->
@@ -80,7 +82,7 @@ class TabManager {
      */
     fun removeTab(id: String) {
         if (id == "main") {
-            println("Cannot remove main tab")
+            logger.info { "Cannot remove main tab" }
             return
         }
         _tabs.value = _tabs.value.filter { it.id != id }

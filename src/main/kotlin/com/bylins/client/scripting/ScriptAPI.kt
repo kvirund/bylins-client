@@ -37,11 +37,30 @@ interface ScriptAPI {
     fun getGmcpValue(packageName: String): String?
     fun getAllGmcpData(): Map<String, String>
 
-    // Маппер
+    // Маппер - чтение
     fun getCurrentRoom(): Map<String, Any>?
-    fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>?
+    fun getRoom(roomId: String): Map<String, Any>?
+    fun searchRooms(query: String): List<Map<String, Any>>
+    fun findPath(targetRoomId: String): List<String>?
+
+    // Маппер - модификация
     fun setRoomNote(roomId: String, note: String)
     fun setRoomColor(roomId: String, color: String?)
+    fun setRoomZone(roomId: String, zone: String)
+    fun setRoomTags(roomId: String, tags: List<String>)
+
+    // Маппер - создание комнат
+    fun createRoom(id: String, name: String): Boolean
+    fun createRoomWithExits(id: String, name: String, exits: Map<String, String>): Boolean
+    fun linkRooms(fromRoomId: String, direction: String, toRoomId: String)
+    fun addUnexploredExits(roomId: String, exits: List<String>)
+    fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String? = null): Map<String, Any>?
+
+    // Маппер - управление
+    fun setMapEnabled(enabled: Boolean)
+    fun isMapEnabled(): Boolean
+    fun clearMap()
+    fun setCurrentRoom(roomId: String)
 
     // Утилиты
     fun log(message: String)
@@ -103,9 +122,30 @@ class ScriptAPIImpl(
     override fun getAllGmcpData(): Map<String, String> = gmcpActions.getAllGmcpData()
 
     override fun getCurrentRoom(): Map<String, Any>? = mapperActions.getCurrentRoom()
-    override fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>? = mapperActions.getRoomAt(x, y, z)
+    override fun getRoom(roomId: String): Map<String, Any>? = mapperActions.getRoom(roomId)
+    override fun searchRooms(query: String): List<Map<String, Any>> = mapperActions.searchRooms(query)
+    override fun findPath(targetRoomId: String): List<String>? = mapperActions.findPath(targetRoomId)
+
     override fun setRoomNote(roomId: String, note: String) = mapperActions.setRoomNote(roomId, note)
     override fun setRoomColor(roomId: String, color: String?) = mapperActions.setRoomColor(roomId, color)
+    override fun setRoomZone(roomId: String, zone: String) = mapperActions.setRoomZone(roomId, zone)
+    override fun setRoomTags(roomId: String, tags: List<String>) = mapperActions.setRoomTags(roomId, tags)
+
+    override fun createRoom(id: String, name: String): Boolean =
+        mapperActions.createRoom(id, name)
+    override fun createRoomWithExits(id: String, name: String, exits: Map<String, String>): Boolean =
+        mapperActions.createRoomWithExits(id, name, exits)
+    override fun linkRooms(fromRoomId: String, direction: String, toRoomId: String) =
+        mapperActions.linkRooms(fromRoomId, direction, toRoomId)
+    override fun addUnexploredExits(roomId: String, exits: List<String>) =
+        mapperActions.addUnexploredExits(roomId, exits)
+    override fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String?): Map<String, Any>? =
+        mapperActions.handleMovement(direction, roomName, exits, roomId)
+
+    override fun setMapEnabled(enabled: Boolean) = mapperActions.setMapEnabled(enabled)
+    override fun isMapEnabled(): Boolean = mapperActions.isMapEnabled()
+    override fun clearMap() = mapperActions.clearMap()
+    override fun setCurrentRoom(roomId: String) = mapperActions.setCurrentRoom(roomId)
 
     override fun log(message: String) = logMessage("[SCRIPT] $message")
     override fun print(message: String) = echoText(message)
@@ -148,8 +188,28 @@ interface GmcpActions {
 }
 
 interface MapperActions {
+    // Чтение
     fun getCurrentRoom(): Map<String, Any>?
-    fun getRoomAt(x: Int, y: Int, z: Int): Map<String, Any>?
+    fun getRoom(roomId: String): Map<String, Any>?
+    fun searchRooms(query: String): List<Map<String, Any>>
+    fun findPath(targetRoomId: String): List<String>?
+
+    // Модификация
     fun setRoomNote(roomId: String, note: String)
     fun setRoomColor(roomId: String, color: String?)
+    fun setRoomZone(roomId: String, zone: String)
+    fun setRoomTags(roomId: String, tags: List<String>)
+
+    // Создание
+    fun createRoom(id: String, name: String): Boolean
+    fun createRoomWithExits(id: String, name: String, exits: Map<String, String>): Boolean
+    fun linkRooms(fromRoomId: String, direction: String, toRoomId: String)
+    fun addUnexploredExits(roomId: String, exits: List<String>)
+    fun handleMovement(direction: String, roomName: String, exits: List<String>, roomId: String? = null): Map<String, Any>?
+
+    // Управление
+    fun setMapEnabled(enabled: Boolean)
+    fun isMapEnabled(): Boolean
+    fun clearMap()
+    fun setCurrentRoom(roomId: String)
 }

@@ -91,11 +91,6 @@ fun RoomDetailsDialog(
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        text = "Координаты: [${room.x}, ${room.y}, ${room.z}]",
-                        color = Color.White,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
                         text = "Выходы: ${room.getAvailableDirections().joinToString(", ") { it.shortName }}",
                         color = Color.White,
                         fontFamily = FontFamily.Monospace

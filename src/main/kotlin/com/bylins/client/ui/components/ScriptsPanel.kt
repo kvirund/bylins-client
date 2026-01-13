@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import mu.KotlinLogging
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,7 @@ import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
+private val logger = KotlinLogging.logger("ScriptsPanel")
 @Composable
 fun ScriptsPanel(
     clientState: ClientState,
@@ -78,7 +80,7 @@ fun ScriptsPanel(
                             val desktop = java.awt.Desktop.getDesktop()
                             desktop.open(File(scriptsDirectory))
                         } catch (e: Exception) {
-                            println("Error opening scripts directory: ${e.message}")
+                            logger.error { "Error opening scripts directory: ${e.message}" }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(

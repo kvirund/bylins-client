@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import mu.KotlinLogging
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -11,17 +12,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import kotlin.math.abs
 import com.bylins.client.ClientState
-import com.bylins.client.mapper.Direction
 import com.bylins.client.mapper.Room
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -29,19 +25,8 @@ import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
-// Функция для парсинга HEX цвета
-private fun parseHexColor(hex: String): Color? {
-    return try {
-        val cleanHex = hex.removePrefix("#")
-        val r = cleanHex.substring(0, 2).toInt(16) / 255f
-        val g = cleanHex.substring(2, 4).toInt(16) / 255f
-        val b = cleanHex.substring(4, 6).toInt(16) / 255f
-        Color(r, g, b)
-    } catch (e: Exception) {
-        null
-    }
-}
-
+@OptIn(ExperimentalComposeUiApi::class)
+private val logger = KotlinLogging.logger("MapPanel")
 @Composable
 fun MapPanel(
     clientState: ClientState,
@@ -54,10 +39,52 @@ fun MapPanel(
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
     var zoom by remember { mutableStateOf(1f) }
-    var currentLevel by remember { mutableStateOf(0) }
     var selectedRoom by remember { mutableStateOf<Room?>(null) }
     var showRoomDialog by remember { mutableStateOf(false) }
     var showDatabaseDialog by remember { mutableStateOf(false) }
+    var hoveredRoom by remember { mutableStateOf<Room?>(null) }
+    var mousePosition by remember { mutableStateOf(Offset.Zero) }
+    var canvasSize by remember { mutableStateOf(Pair(0f, 0f)) }
+
+    // Центр обзора карты (может отличаться от текущей комнаты)
+    var viewCenterRoomId by remember { mutableStateOf<String?>(null) }
+    var followPlayer by remember { mutableStateOf(true) }
+
+    // Автоследование за игроком
+    LaunchedEffect(currentRoomId, followPlayer) {
+        if (followPlayer && currentRoomId != null) {
+            viewCenterRoomId = currentRoomId
+            offsetX = 0f
+            offsetY = 0f
+        }
+    }
+
+    // Используем viewCenterRoomId или currentRoomId
+    val effectiveCenterRoomId = viewCenterRoomId ?: currentRoomId
+
+    // Параметры отрисовки (масштабируемые)
+    val baseRoomSize = 32f
+    val baseRoomSpacing = 50f
+    val roomSize = baseRoomSize * zoom
+    val roomSpacing = baseRoomSpacing * zoom
+
+    // Вычисляем позиции комнат с учётом смещения (вынесено из Column для доступа в статистике)
+    val displayRooms = remember(rooms, effectiveCenterRoomId, canvasSize, offsetX, offsetY, zoom) {
+        if (canvasSize.first > 0 && canvasSize.second > 0 && effectiveCenterRoomId != null) {
+            calculateRoomPositions(
+                rooms = rooms,
+                startRoomId = effectiveCenterRoomId,
+                centerX = canvasSize.first / 2 + offsetX,
+                centerY = canvasSize.second / 2 + offsetY,
+                roomSize = roomSize,
+                roomSpacing = roomSpacing,
+                canvasWidth = canvasSize.first,
+                canvasHeight = canvasSize.second
+            )
+        } else {
+            emptyMap()
+        }
+    }
 
     Column(modifier = modifier) {
         // Панель управления
@@ -79,35 +106,28 @@ fun MapPanel(
                     checked = mapEnabled,
                     onCheckedChange = { clientState.setMapEnabled(it) }
                 )
-            }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Уровень: $currentLevel", color = Color.White)
+                Spacer(modifier = Modifier.width(16.dp))
 
-                Button(
-                    onClick = { currentLevel++ },
-                    modifier = Modifier.size(32.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("+")
-                }
+                // Следовать за игроком
+                Text("Следовать", color = if (followPlayer) Color.White else Color(0xFF888888))
+                Switch(
+                    checked = followPlayer,
+                    onCheckedChange = { followPlayer = it }
+                )
 
-                Button(
-                    onClick = { currentLevel-- },
-                    modifier = Modifier.size(32.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("-")
-                }
-
-                Button(
-                    onClick = { currentLevel = 0 },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("0")
+                // Центрировать на текущей комнате
+                if (!followPlayer) {
+                    Button(
+                        onClick = {
+                            viewCenterRoomId = currentRoomId
+                            offsetX = 0f
+                            offsetY = 0f
+                        },
+                        contentPadding = PaddingValues(8.dp)
+                    ) {
+                        Text("К игроку")
+                    }
                 }
             }
 
@@ -116,7 +136,7 @@ fun MapPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { zoom = (zoom * 1.2f).coerceAtMost(5f) },
+                    onClick = { zoom = (zoom * 1.2f).coerceAtMost(3f) },
                     modifier = Modifier.size(32.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -126,7 +146,7 @@ fun MapPanel(
                 Text("${(zoom * 100).toInt()}%", color = Color.White)
 
                 Button(
-                    onClick = { zoom = (zoom / 1.2f).coerceAtLeast(0.2f) },
+                    onClick = { zoom = (zoom / 1.2f).coerceAtLeast(0.3f) },
                     modifier = Modifier.size(32.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) {
@@ -153,7 +173,6 @@ fun MapPanel(
 
                 Button(
                     onClick = {
-                        // Экспорт карты
                         val fileChooser = JFileChooser()
                         fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
                         fileChooser.selectedFile = File("map.json")
@@ -167,10 +186,9 @@ fun MapPanel(
                                 }
                                 val jsonString = json.encodeToString(exportedRooms)
                                 fileChooser.selectedFile.writeText(jsonString)
-                                println("[MapPanel] Map exported to ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Map exported to ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[MapPanel] Export error: ${e.message}")
-                                e.printStackTrace()
+                                logger.error { "Export error: ${e.message}" }
                             }
                         }
                     },
@@ -181,7 +199,6 @@ fun MapPanel(
 
                 Button(
                     onClick = {
-                        // Импорт карты
                         val fileChooser = JFileChooser()
                         fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
 
@@ -194,26 +211,15 @@ fun MapPanel(
                                 }
                                 val importedRooms = json.decodeFromString<Map<String, Room>>(jsonString)
                                 clientState.importMap(importedRooms)
-                                println("[MapPanel] Map imported from ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Map imported from ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[MapPanel] Import error: ${e.message}")
-                                e.printStackTrace()
+                                logger.error { "Import error: ${e.message}" }
                             }
                         }
                     },
                     contentPadding = PaddingValues(8.dp)
                 ) {
                     Text("Импорт")
-                }
-
-                Button(
-                    onClick = {
-                        clientState.detectAndAssignZones()
-                        println("[MapPanel] Zones detected. Statistics: ${clientState.getZoneStatistics()}")
-                    },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("Детектировать зоны")
                 }
 
                 Button(
@@ -225,126 +231,138 @@ fun MapPanel(
             }
         }
 
-        // Canvas для отображения карты
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF1A1A1A))
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        offsetX += dragAmount.x
-                        offsetY += dragAmount.y
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures { tapOffset ->
-                        // Определяем на какую комнату кликнули
-                        val roomsOnLevel = rooms.values.filter { it.z == currentLevel }
-                        val roomSize = 40f * zoom
-                        val roomSpacing = 60f * zoom
-                        val centerX = size.width / 2 + offsetX
-                        val centerY = size.height / 2 + offsetY
-
-                        roomsOnLevel.forEach { room ->
-                            val roomX = centerX + room.x * roomSpacing
-                            val roomY = centerY + room.y * roomSpacing
-
-                            if (abs(tapOffset.x - roomX) < roomSize / 2 &&
-                                abs(tapOffset.y - roomY) < roomSize / 2) {
-                                selectedRoom = room
-                                showRoomDialog = true
-                            }
+        // Основная область карты
+        Box(
+            modifier = Modifier.fillMaxSize().weight(1f)
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF1A1A1A))
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            offsetX += dragAmount.x
+                            offsetY += dragAmount.y
                         }
                     }
-                }
-        ) {
-            val roomsOnLevel = rooms.values.filter { it.z == currentLevel }
-
-            if (roomsOnLevel.isEmpty()) {
-                // Показываем сообщение если нет комнат
-                return@Canvas
-            }
-
-            val roomSize = 40f * zoom
-            val roomSpacing = 60f * zoom
-
-            // Центрируем карту
-            val centerX = size.width / 2 + offsetX
-            val centerY = size.height / 2 + offsetY
-
-            // Рисуем соединения между комнатами
-            roomsOnLevel.forEach { room ->
-                val roomX = centerX + room.x * roomSpacing
-                val roomY = centerY + room.y * roomSpacing
-
-                room.exits.forEach { (direction, exit) ->
-                    val targetRoom = rooms[exit.targetRoomId]
-                    if (targetRoom != null && targetRoom.z == currentLevel) {
-                        val targetX = centerX + targetRoom.x * roomSpacing
-                        val targetY = centerY + targetRoom.y * roomSpacing
-
-                        // Рисуем линию
-                        drawLine(
-                            color = Color(0xFF666666),
-                            start = Offset(roomX, roomY),
-                            end = Offset(targetX, targetY),
-                            strokeWidth = 2f * zoom
+                    .pointerInput(displayRooms, roomSize) {
+                        detectTapGestures(
+                            onTap = { tapOffset ->
+                                // Одинарный клик - открыть диалог редактирования
+                                val room = findRoomAtPosition(displayRooms, tapOffset.x, tapOffset.y, roomSize)
+                                if (room != null) {
+                                    selectedRoom = room
+                                    showRoomDialog = true
+                                }
+                            },
+                            onDoubleTap = { tapOffset ->
+                                // Двойной клик - центрировать на комнате
+                                val room = findRoomAtPosition(displayRooms, tapOffset.x, tapOffset.y, roomSize)
+                                if (room != null) {
+                                    followPlayer = false
+                                    viewCenterRoomId = room.id
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                }
+                            }
                         )
                     }
+                    .onPointerEvent(PointerEventType.Move) { event ->
+                        mousePosition = event.changes.first().position
+                        hoveredRoom = findRoomAtPosition(displayRooms, mousePosition.x, mousePosition.y, roomSize)
+                    }
+                    .onPointerEvent(PointerEventType.Exit) {
+                        hoveredRoom = null
+                    }
+            ) {
+                canvasSize = Pair(size.width, size.height)
+
+                if (displayRooms.isEmpty() && rooms.isNotEmpty()) {
+                    // Нет текущей комнаты, но есть данные
+                    return@Canvas
+                }
+
+                if (displayRooms.isNotEmpty()) {
+                    drawMap(
+                        displayRooms = displayRooms,
+                        allRooms = rooms,
+                        currentRoomId = currentRoomId,
+                        hoveredRoomId = hoveredRoom?.id,
+                        roomSize = roomSize,
+                        zoom = zoom
+                    )
                 }
             }
 
-            // Рисуем комнаты
-            roomsOnLevel.forEach { room ->
-                val roomX = centerX + room.x * roomSpacing
-                val roomY = centerY + room.y * roomSpacing
-
-                // Цвет комнаты (пользовательский или стандартный)
-                val roomColor = if (room.color != null) {
-                    parseHexColor(room.color) ?: when {
-                        room.id == currentRoomId -> Color(0xFF00FF00)
-                        room.visited -> Color(0xFF4444FF)
-                        else -> Color(0xFF888888)
-                    }
-                } else {
-                    when {
-                        room.id == currentRoomId -> Color(0xFF00FF00) // Текущая комната - зеленая
-                        room.visited -> Color(0xFF4444FF) // Посещенная - синяя
-                        else -> Color(0xFF888888) // Непосещенная - серая
-                    }
-                }
-
-                // Рисуем квадрат комнаты
-                drawRect(
-                    color = roomColor,
-                    topLeft = Offset(roomX - roomSize / 2, roomY - roomSize / 2),
-                    size = Size(roomSize, roomSize),
-                    style = Stroke(width = 2f * zoom)
+            // Тултип при наведении
+            if (hoveredRoom != null) {
+                RoomTooltip(
+                    room = hoveredRoom!!,
+                    allRooms = rooms,
+                    mouseX = mousePosition.x,
+                    mouseY = mousePosition.y,
+                    maxWidth = 280
                 )
+            }
 
-                // Рисуем заполнение для текущей комнаты или комнаты с цветом
-                if (room.id == currentRoomId) {
-                    drawRect(
-                        color = roomColor.copy(alpha = 0.3f),
-                        topLeft = Offset(roomX - roomSize / 2, roomY - roomSize / 2),
-                        size = Size(roomSize, roomSize)
-                    )
-                } else if (room.color != null) {
-                    drawRect(
-                        color = roomColor.copy(alpha = 0.2f),
-                        topLeft = Offset(roomX - roomSize / 2, roomY - roomSize / 2),
-                        size = Size(roomSize, roomSize)
+            // Информационная панель если нет текущей комнаты
+            if (currentRoomId == null && rooms.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Карта пуста. Начните исследование!",
+                        color = Color(0xFF888888),
+                        style = MaterialTheme.typography.bodyLarge
                     )
                 }
+            }
 
-                // Индикатор заметки
-                if (room.notes.isNotEmpty()) {
-                    drawCircle(
-                        color = Color(0xFFFFFF00), // Жёлтый кружок
-                        radius = 4f * zoom,
-                        center = Offset(roomX + roomSize / 2 - 6f * zoom, roomY - roomSize / 2 + 6f * zoom)
-                    )
+            // Кнопки навигации вверх/вниз (если есть выходы)
+            val viewCenterRoom = effectiveCenterRoomId?.let { rooms[it] }
+            if (viewCenterRoom != null) {
+                val upExit = viewCenterRoom.exits.entries.find { it.key.dz > 0 && it.value.targetRoomId.isNotEmpty() }
+                val downExit = viewCenterRoom.exits.entries.find { it.key.dz < 0 && it.value.targetRoomId.isNotEmpty() }
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (upExit != null) {
+                        val targetRoom = rooms[upExit.value.targetRoomId]
+                        Button(
+                            onClick = {
+                                followPlayer = false
+                                viewCenterRoomId = upExit.value.targetRoomId
+                                offsetX = 0f
+                                offsetY = 0f
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00AAAA)),
+                            contentPadding = PaddingValues(8.dp)
+                        ) {
+                            Text("↑ ${targetRoom?.name?.take(15) ?: "Вверх"}")
+                        }
+                    }
+
+                    if (downExit != null) {
+                        val targetRoom = rooms[downExit.value.targetRoomId]
+                        Button(
+                            onClick = {
+                                followPlayer = false
+                                viewCenterRoomId = downExit.value.targetRoomId
+                                offsetX = 0f
+                                offsetY = 0f
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAA00AA)),
+                            contentPadding = PaddingValues(8.dp)
+                        ) {
+                            Text("↓ ${targetRoom?.name?.take(15) ?: "Вниз"}")
+                        }
+                    }
                 }
             }
         }
@@ -367,7 +385,7 @@ fun MapPanel(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Координаты: (${currentRoom.x}, ${currentRoom.y}, ${currentRoom.z})",
+                            text = "ID: ${currentRoom.id}",
                             color = Color(0xFFBBBBBB),
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -385,8 +403,8 @@ fun MapPanel(
                         }
                         if (currentRoom.notes.isNotEmpty()) {
                             Text(
-                                text = "Заметки: ${currentRoom.notes}",
-                                color = Color(0xFFFFFF00),
+                                text = "Заметка: ${currentRoom.notes}",
+                                color = Color(0xFFFFD700),
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -413,7 +431,7 @@ fun MapPanel(
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    text = "Комнат на уровне $currentLevel: ${rooms.values.count { it.z == currentLevel }}",
+                    text = "Отображается: ${displayRooms.size}",
                     color = Color(0xFFBBBBBB),
                     style = MaterialTheme.typography.bodySmall
                 )

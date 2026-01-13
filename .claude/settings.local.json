@@ -34,7 +34,23 @@
       "Bash(jstack:*)",
       "Bash(./gradlew.bat run:*)",
       "Bash(unset JAVA_HOME)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(set \"JAVA_HOME=C:\\\\Program Files\\\\Java\\\\jdk-17\")",
+      "Bash(cmd.exe /c \"set JAVA_HOME=C:\\\\Program Files\\\\Java\\\\jdk-17 && gradlew.bat compileKotlin --no-daemon\")",
+      "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew:*)",
+      "Bash(C:/dev/games/bylins-client/gradlew.bat compileKotlin)",
+      "Bash(cmd.exe /c \"gradlew.bat compileKotlin\")",
+      "Bash(.gradlew.bat compileKotlin)",
+      "Bash(cmd /c \"gradlew.bat compileKotlin\")",
+      "Bash(./gradlew.bat:*)",
+      "Bash(JAVA_HOME=\"/c/Program Files/Java/jdk-17\" ./gradlew compileKotlin:*)",
+      "Bash(cmd /c:*)",
+      "Bash(powershell -Command \"Get-Process java -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; ''Done''\")",
+      "Bash(powershell -Command:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(python3:*)",
+      "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew.bat compileKotlin:*)"
     ]
   }
 }

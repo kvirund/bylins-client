@@ -35,10 +35,15 @@ fun InputPanel(
     }
 
     fun sendCommand() {
-        if (isConnected) {
+        val text = inputText.text
+        val isLocalCommand = text.startsWith("#")
+
+        // Локальные команды (#vars, #help и т.д.) работают всегда
+        // Остальные команды требуют подключения
+        if (isLocalCommand || isConnected) {
             // Добавляем в историю только непустые команды
-            if (inputText.text.isNotBlank()) {
-                commandHistory.add(inputText.text)
+            if (text.isNotBlank()) {
+                commandHistory.add(text)
 
                 // Ограничиваем размер истории
                 if (commandHistory.size > MAX_HISTORY_SIZE) {
@@ -46,7 +51,7 @@ fun InputPanel(
                 }
             }
             historyIndex = -1
-            clientState.send(inputText.text)
+            clientState.send(text)
             inputText = TextFieldValue("")
         }
     }
@@ -59,8 +64,8 @@ fun InputPanel(
         OutlinedTextField(
             value = inputText,
             onValueChange = { inputText = it },
-            label = { Text("Команда") },
-            enabled = isConnected,
+            label = { Text(if (isConnected) "Команда" else "Команда (# для локальных)") },
+            enabled = true,  // Всегда включено для локальных команд (#vars, #help и т.д.)
             modifier = Modifier
                 .weight(1f)
                 .focusRequester(focusRequester)
@@ -103,7 +108,7 @@ fun InputPanel(
 
         IconButton(
             onClick = { sendCommand() },
-            enabled = isConnected
+            enabled = true  // Всегда включено для локальных команд
         ) {
             Icon(Icons.Default.Send, contentDescription = "Отправить")
         }

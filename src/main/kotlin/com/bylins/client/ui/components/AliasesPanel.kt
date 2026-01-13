@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components
 
+import mu.KotlinLogging
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,10 +15,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.aliases.Alias
+import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 
+private val logger = KotlinLogging.logger("AliasesPanel")
 @Composable
 fun AliasesPanel(
     clientState: ClientState,
@@ -26,11 +29,12 @@ fun AliasesPanel(
     val aliases by clientState.aliases.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
     var editingAlias by remember { mutableStateOf<Alias?>(null) }
+    val colorScheme = LocalAppColorScheme.current
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
             .padding(8.dp)
     ) {
         // Заголовок с кнопками
@@ -43,7 +47,7 @@ fun AliasesPanel(
         ) {
             Text(
                 text = "Алиасы",
-                color = Color.White,
+                color = colorScheme.onBackground,
                 fontSize = 16.sp,
                 fontFamily = FontFamily.Monospace
             )
@@ -64,15 +68,15 @@ fun AliasesPanel(
                                 val aliasIds = aliases.map { it.id }
                                 val json = clientState.exportAliases(aliasIds)
                                 fileChooser.selectedFile.writeText(json)
-                                println("[AliasesPanel] Aliases exported to ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Aliases exported to ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[AliasesPanel] Export error: ${e.message}")
+                                logger.error { "Export error: ${e.message}" }
                                 e.printStackTrace()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF2196F3)
+                        backgroundColor = colorScheme.primary
                     )
                 ) {
                     Text("Экспорт", color = Color.White)
@@ -88,15 +92,15 @@ fun AliasesPanel(
                             try {
                                 val json = fileChooser.selectedFile.readText()
                                 val count = clientState.importAliases(json, merge = true)
-                                println("[AliasesPanel] Imported $count aliases from ${fileChooser.selectedFile.absolutePath}")
+                                logger.info { "Imported $count aliases from ${fileChooser.selectedFile.absolutePath}" }
                             } catch (e: Exception) {
-                                println("[AliasesPanel] Import error: ${e.message}")
+                                logger.error { "Import error: ${e.message}" }
                                 e.printStackTrace()
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFFFF9800)
+                        backgroundColor = colorScheme.warning
                     )
                 ) {
                     Text("Импорт", color = Color.White)
@@ -108,7 +112,7 @@ fun AliasesPanel(
                         showDialog = true
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF4CAF50)
+                        backgroundColor = colorScheme.success
                     )
                 ) {
                     Text("+ Добавить", color = Color.White)
@@ -116,11 +120,13 @@ fun AliasesPanel(
             }
         }
 
-        Divider(color = Color.Gray, thickness = 1.dp)
+        Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Список алиасов
         LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             items(aliases) { alias ->
@@ -151,7 +157,7 @@ fun AliasesPanel(
             ) {
                 Text(
                     text = "Нет алиасов",
-                    color = Color.Gray,
+                    color = colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -187,12 +193,13 @@ private fun AliasItem(
     onDelete: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val colorScheme = LocalAppColorScheme.current
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = Color(0xFF2D2D2D),
+        backgroundColor = colorScheme.surface,
         elevation = 2.dp
     ) {
         Column(
@@ -208,13 +215,13 @@ private fun AliasItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = alias.name,
-                        color = if (alias.enabled) Color.White else Color.Gray,
+                        color = if (alias.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "ID: ${alias.id}",
-                        color = Color.Gray,
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -232,8 +239,8 @@ private fun AliasItem(
                             onToggle(alias.id, enabled)
                         },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF4CAF50),
-                            uncheckedThumbColor = Color.Gray
+                            checkedThumbColor = colorScheme.success,
+                            uncheckedThumbColor = colorScheme.onSurfaceVariant
                         )
                     )
 
@@ -241,14 +248,14 @@ private fun AliasItem(
                     Button(
                         onClick = { onEdit(alias) },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF2196F3)
+                            backgroundColor = colorScheme.primary
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = "✎",
-                            color = Color.White,
+                            color = colorScheme.onSurface,
                             fontSize = 14.sp
                         )
                     }
@@ -257,14 +264,14 @@ private fun AliasItem(
                     Button(
                         onClick = { expanded = !expanded },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFF424242)
+                            backgroundColor = colorScheme.surfaceVariant
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = if (expanded) "▲" else "▼",
-                            color = Color.White,
+                            color = colorScheme.onSurface,
                             fontSize = 10.sp
                         )
                     }
@@ -273,7 +280,7 @@ private fun AliasItem(
                     Button(
                         onClick = { onDelete(alias.id) },
                         colors = ButtonDefaults.buttonColors(
-                            backgroundColor = Color(0xFFD32F2F)
+                            backgroundColor = colorScheme.error
                         ),
                         modifier = Modifier.size(32.dp),
                         contentPadding = PaddingValues(0.dp)
@@ -290,7 +297,7 @@ private fun AliasItem(
             // Развернутая информация
             if (expanded) {
                 Divider(
-                    color = Color.Gray,
+                    color = colorScheme.divider,
                     thickness = 1.dp,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
@@ -317,20 +324,22 @@ private fun AliasItem(
 
 @Composable
 private fun InfoRow(label: String, value: String) {
+    val colorScheme = LocalAppColorScheme.current
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
             text = label,
-            color = Color(0xFF888888),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.width(80.dp)
         )
         Text(
             text = value,
-            color = Color.White,
+            color = colorScheme.onSurface,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.weight(1f)

@@ -1,5 +1,6 @@
 package com.bylins.client.network
 
+import mu.KotlinLogging
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -17,6 +18,7 @@ data class TelnetCommand(
     val data: ByteArray = byteArrayOf()
 )
 
+private val logger = KotlinLogging.logger("TelnetParser")
 class TelnetParser(
     private var encoding: String = "UTF-8"  // Конфигурируемая кодировка
 ) {
@@ -51,7 +53,7 @@ class TelnetParser(
         val charset = try {
             Charset.forName(charsetName)
         } catch (e: Exception) {
-            println("[TelnetParser] Unsupported encoding: $charsetName, falling back to UTF-8")
+            logger.info { "Unsupported encoding: $charsetName, falling back to UTF-8" }
             Charsets.UTF_8
         }
 
@@ -186,13 +188,13 @@ class TelnetParser(
             }
             result.isOverflow -> {
                 // Output buffer переполнен (не должно происходить с нашим размером)
-                println("[TelnetParser] Output buffer overflow - this should not happen")
+                logger.info { "Output buffer overflow - this should not happen" }
             }
             result.isMalformed -> {
-                println("[TelnetParser] Malformed input at position ${inputBuffer.position()}")
+                logger.info { "Malformed input at position ${inputBuffer.position()}" }
             }
             result.isUnmappable -> {
-                println("[TelnetParser] Unmappable character at position ${inputBuffer.position()}")
+                logger.info { "Unmappable character at position ${inputBuffer.position()}" }
             }
         }
 
