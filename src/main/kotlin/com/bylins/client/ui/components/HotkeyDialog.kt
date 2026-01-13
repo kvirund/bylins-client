@@ -59,42 +59,7 @@ fun HotkeyDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier
-                .width(500.dp)
-                .onPreviewKeyEvent { event ->
-                    // Перехватываем клавиши на уровне диалога когда поле активно
-                    if (event.type == KeyEventType.KeyDown && isCapturing) {
-                        val key = event.key
-
-                        // Игнорируем чистые модификаторы
-                        if (key == Key.CtrlLeft || key == Key.CtrlRight ||
-                            key == Key.AltLeft || key == Key.AltRight ||
-                            key == Key.ShiftLeft || key == Key.ShiftRight ||
-                            key == Key.MetaLeft || key == Key.MetaRight
-                        ) {
-                            return@onPreviewKeyEvent false
-                        }
-
-                        val isCtrl = event.isCtrlPressed
-                        val isAlt = event.isAltPressed
-                        val isShift = event.isShiftPressed
-
-                        // Проверяем, подходит ли клавиша
-                        val hasModifier = isCtrl || isAlt
-                        if (Hotkey.isNonPrintable(key, hasModifier)) {
-                            selectedKey = key
-                            ctrl = isCtrl
-                            alt = isAlt
-                            shift = isShift
-                            errorMessage = null
-                        } else {
-                            errorMessage = "Ctrl/Alt + клавиша или F1-F12, стрелки, NumPad"
-                        }
-                        true // Поглощаем событие
-                    } else {
-                        false
-                    }
-                },
+            modifier = Modifier.width(500.dp),
             backgroundColor = colorScheme.surface,
             elevation = 8.dp
         ) {
@@ -135,16 +100,49 @@ fun HotkeyDialog(
                             width = 2.dp,
                             color = if (isCapturing) colorScheme.success else colorScheme.divider
                         )
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { state ->
-                            isCapturing = state.isFocused
-                        }
-                        .focusable()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
                             focusRequester.requestFocus()
+                        }
+                        .focusRequester(focusRequester)
+                        .focusable()
+                        .onFocusChanged { state ->
+                            isCapturing = state.isFocused
+                        }
+                        .onKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown && isCapturing) {
+                                val key = event.key
+
+                                // Игнорируем чистые модификаторы
+                                if (key == Key.CtrlLeft || key == Key.CtrlRight ||
+                                    key == Key.AltLeft || key == Key.AltRight ||
+                                    key == Key.ShiftLeft || key == Key.ShiftRight ||
+                                    key == Key.MetaLeft || key == Key.MetaRight
+                                ) {
+                                    return@onKeyEvent false
+                                }
+
+                                val isCtrl = event.isCtrlPressed
+                                val isAlt = event.isAltPressed
+                                val isShift = event.isShiftPressed
+
+                                // Принимаем любую клавишу с модификатором или непечатную
+                                val hasModifier = isCtrl || isAlt
+                                if (Hotkey.isNonPrintable(key, hasModifier)) {
+                                    selectedKey = key
+                                    ctrl = isCtrl
+                                    alt = isAlt
+                                    shift = isShift
+                                    errorMessage = null
+                                } else {
+                                    errorMessage = "Ctrl/Alt + клавиша или F1-F12, стрелки, NumPad"
+                                }
+                                true // Поглощаем событие
+                            } else {
+                                false
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {
