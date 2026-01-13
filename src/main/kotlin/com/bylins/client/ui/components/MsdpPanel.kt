@@ -9,9 +9,11 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -128,19 +130,22 @@ fun MsdpPanel(
                     ) {
                         Button(
                             onClick = { clientState.sendMsdpList("COMMANDS") },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
+                            modifier = Modifier.focusProperties { canFocus = false }
                         ) {
                             Text("LIST COMMANDS", color = colorScheme.onSurface, fontSize = 11.sp)
                         }
                         Button(
                             onClick = { clientState.sendMsdpList("REPORTABLE_VARIABLES") },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
+                            modifier = Modifier.focusProperties { canFocus = false }
                         ) {
                             Text("LIST REPORTABLE", color = colorScheme.onSurface, fontSize = 11.sp)
                         }
                         Button(
                             onClick = { clientState.sendMsdpList("REPORTED_VARIABLES") },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
+                            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
+                            modifier = Modifier.focusProperties { canFocus = false }
                         ) {
                             Text("LIST REPORTED", color = colorScheme.onSurface, fontSize = 11.sp)
                         }
@@ -176,47 +181,70 @@ fun MsdpPanel(
 
                         Divider(color = colorScheme.divider, thickness = 1.dp)
 
-                        // Показываем переменные в виде чипов
-                        val chunked = reportableVariables.chunked(4)
-                        chunked.forEach { row ->
+                        // Показываем переменные списком с кнопками
+                        reportableVariables.forEach { variable ->
+                            val isReported = variable in reportedVariables
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.padding(vertical = 2.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                row.forEach { variable ->
-                                    val isReported = variable in reportedVariables
-                                    Surface(
-                                        modifier = Modifier.clickable {
+                                // Имя переменной + галочка если reported
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    if (isReported) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = colorScheme.success,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = variable,
+                                        color = if (isReported) colorScheme.success else colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+
+                                // Кнопки управления
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    // Кнопка SEND (одноразовый запрос)
+                                    IconButton(
+                                        onClick = { clientState.sendMsdpSend(variable) },
+                                        modifier = Modifier.size(24.dp).focusProperties { canFocus = false }
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Send,
+                                            contentDescription = "SEND",
+                                            tint = colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+
+                                    // Кнопка REPORT/UNREPORT
+                                    TextButton(
+                                        onClick = {
                                             if (isReported) {
                                                 clientState.sendMsdpUnreport(variable)
                                             } else {
                                                 clientState.sendMsdpReport(variable)
                                             }
                                         },
-                                        color = if (isReported) colorScheme.success.copy(alpha = 0.2f)
-                                               else colorScheme.surface,
-                                        shape = MaterialTheme.shapes.small
+                                        modifier = Modifier.height(24.dp).focusProperties { canFocus = false },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            if (isReported) {
-                                                Icon(
-                                                    Icons.Default.Check,
-                                                    contentDescription = null,
-                                                    tint = colorScheme.success,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                            }
-                                            Text(
-                                                text = variable,
-                                                color = if (isReported) colorScheme.success else colorScheme.onSurfaceVariant,
-                                                fontSize = 10.sp,
-                                                fontFamily = FontFamily.Monospace
-                                            )
-                                        }
+                                        Text(
+                                            text = if (isReported) "UNREPORT" else "REPORT",
+                                            color = if (isReported) colorScheme.error else colorScheme.success,
+                                            fontSize = 9.sp
+                                        )
                                     }
                                 }
                             }
@@ -267,7 +295,7 @@ fun MsdpPanel(
                                     // Обновить все reported переменные
                                     reportedVariables.forEach { clientState.sendMsdpSend(it) }
                                 },
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp).focusProperties { canFocus = false }
                             ) {
                                 Icon(
                                     Icons.Default.Refresh,

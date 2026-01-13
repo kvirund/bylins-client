@@ -212,11 +212,13 @@ class TelnetClient(
     }
 
     private fun sendTelnetCommand(command: ByteArray) {
+        if (!_isConnected.value) return
         try {
             outputStream?.write(command)
             outputStream?.flush()
         } catch (e: IOException) {
-            e.printStackTrace()
+            logger.error { "Error sending telnet command: ${e.message}" }
+            disconnect()
         }
     }
 
