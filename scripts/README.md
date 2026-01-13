@@ -1,17 +1,16 @@
 # Система скриптов Bylins MUD Client
 
-Клиент поддерживает скрипты на **JavaScript**, **Python**, **Lua** и **Perl**.
+Клиент поддерживает скрипты на **JavaScript**, **Python** и **Lua**.
 
 ## Статус поддержки языков
 
-- **JavaScript** (.js) - ✅ Полностью работает (Nashorn встроен в JVM)
-- **Python** (.py) - ✅ Работает через Jython (Python 2.7 синтаксис)
-- **Lua** (.lua) - ✅ Работает через LuaJ (Lua 5.2)
-- **Perl** (.pl) - ✅ Работает через внешний Perl интерпретатор
+- **JavaScript** (.js) - Полностью работает (Nashorn встроен в JVM)
+- **Python** (.py) - Работает через Jython (Python 2.7 синтаксис)
+- **Lua** (.lua) - Работает через LuaJ (Lua 5.2)
 
 ## Быстрый старт
 
-1. Поместите `.js` скрипты в директорию `scripts/`
+1. Поместите скрипты в директорию `scripts/`
 2. Скрипты загружаются автоматически при запуске клиента
 3. Или перезагрузите скрипт через UI панель
 
@@ -25,7 +24,7 @@ send("look");
 
 // Вывести текст в лог клиента
 echo("Hello from script!");
-log("Debug message");
+mud_log("Debug message");
 print("Info message");
 ```
 
@@ -34,12 +33,12 @@ print("Info message");
 ```javascript
 // При загрузке скрипта
 function on_load(api) {
-    log("Script loaded!");
+    mud_log("Script loaded!");
 }
 
 // При выгрузке скрипта
 function on_unload() {
-    log("Script unloaded!");
+    mud_log("Script unloaded!");
 }
 
 // При подключении к серверу
@@ -49,7 +48,7 @@ function on_connect() {
 
 // При отключении
 function on_disconnect() {
-    log("Disconnected");
+    mud_log("Disconnected");
 }
 
 // При получении строки от сервера
@@ -61,18 +60,18 @@ function on_line(line) {
 
 // При отправке команды
 function on_command(command) {
-    log("Sending: " + command);
+    mud_log("Sending: " + command);
 }
 
 // При получении MSDP данных
 function on_msdp(data) {
     var hp = api.getMsdpValue("HEALTH");
-    log("HP: " + hp);
+    mud_log("HP: " + hp);
 }
 
 // При входе в новую комнату
 function on_room_enter(room) {
-    log("Entered: " + room.name);
+    mud_log("Entered: " + room.name);
 }
 ```
 
@@ -103,22 +102,6 @@ function on_load(api) {
 
     // Алиас с параметрами (regex $1, $2...)
     addAlias("^k (.+)$", "kill $1");
-
-    // Speedwalk: #3n = север три раза
-    addAlias("^#(\\d+)([nsewud])$", "");
-}
-
-function on_command(command) {
-    var match = command.match(/^#(\d+)([nsewud])$/);
-    if (match) {
-        var count = parseInt(match[1]);
-        var dir = match[2];
-        for (var i = 0; i < count; i++) {
-            send(dir);
-        }
-        return true; // Блокируем отправку оригинальной команды
-    }
-    return false;
 }
 ```
 
@@ -153,11 +136,6 @@ function on_load(api) {
 
     // Использовать в командах
     send("kill " + target);
-
-    // Триггер сохраняет цель
-    addTrigger("^Вы атакуете (.+)!$", function(line, groups) {
-        setVar("current_target", groups[1]);
-    });
 }
 ```
 
@@ -175,129 +153,159 @@ function on_msdp(data) {
 }
 ```
 
-### Автомаппер
+## Python API
 
-```javascript
-function on_room_enter(room) {
-    var roomData = api.getCurrentRoom();
+Python скрипты используют глобальные функции и объекты-хелперы.
 
-    log("Вошли в комнату: " + roomData.name + " [" + roomData.id + "]");
+### Базовые функции
 
-    // Установить заметку
-    api.setRoomNote(roomData.id, "Здесь водятся гоблины");
+```python
+# -*- coding: utf-8 -*-
 
-    // Покрасить комнату
-    api.setRoomColor(roomData.id, "#FF0000");
-}
+# Отправить команду на сервер
+send("look")
+
+# Вывести текст
+echo("Hello from script!")
+mud_log("Debug message")
+
+# Переменные
+set_var("target", "goblin")
+target = get_var("target")
+
+# Триггеры
+def my_trigger(line, groups):
+    echo("Match: " + groups[1])
+
+add_trigger(r"^(.+) мертв\.$", my_trigger)
+
+# Таймеры
+def on_timer():
+    send("look")
+
+set_timeout(on_timer, 5000)      # Одноразовый
+set_interval(on_timer, 10000)    # Повторяющийся
 ```
 
-## Примеры скриптов
+### Объекты-хелперы
 
-### Пример 1: Автохил
+```python
+# MSDP
+msdp.get("HEALTH")
+msdp.report("STATE")
+msdp.is_enabled()
 
-```javascript
-// scripts/auto_heal.js
-function on_load(api) {
-    log("Auto-heal script loaded");
-}
+# Статус-панель
+status.add_bar("hp", {"label": "HP", "value": 100, "max": 100, "color": "green"})
+status.add_text("level", {"label": "Уровень", "value": "50"})
+status.update("hp", {"value": 80})
 
-function on_msdp(data) {
-    var hp = api.getMsdpValue("HEALTH");
-    var maxHp = api.getMsdpValue("HEALTH_MAX");
-    var mana = api.getMsdpValue("MANA");
-
-    if (hp && maxHp && mana) {
-        var hpPercent = (hp / maxHp) * 100;
-        if (hpPercent < 30 && mana > 50) {
-            send("cast 'cure serious'");
-        }
-    }
-}
+# Маппер
+mapper.set_enabled(True)
+mapper.handle_room({"vnum": "5001", "name": "Таверна", "exits": {"north": "5002"}})
+room = mapper.get_current_room()
 ```
 
-### Пример 2: Автолут
+### События
 
-```javascript
-// scripts/auto_loot.js
-function on_load(api) {
-    addTrigger("^(.+) мертв\\.$", function(line, groups) {
-        var mob = groups[1];
-        send("взять все труп");
-        echo("Собираем лут с: " + mob);
-    });
-}
+```python
+def on_load(api):
+    mud_log("Script loaded")
+
+def on_connect():
+    send("look")
+
+def on_msdp(data):
+    hp = data.get("HEALTH")
+    if hp:
+        status.update("hp", {"value": int(hp)})
+
+def on_line(line):
+    if "мертв" in line:
+        send("взять все труп")
 ```
 
-### Пример 3: Статистика боя
+## Lua API
 
-```javascript
-// scripts/combat_stats.js
-var damageDealt = 0;
-var damageReceived = 0;
-var killsCount = 0;
+Lua скрипты используют глобальные функции и объекты-хелперы.
 
-function on_load(api) {
-    // Урон нанесенный
-    addTrigger("^Вы попали по .+ на (\\d+) урона\\.$", function(line, groups) {
-        damageDealt += parseInt(groups[1]);
-    });
+### Базовые функции
 
-    // Урон полученный
-    addTrigger("^.+ попал по вам на (\\d+) урона\\.$", function(line, groups) {
-        damageReceived += parseInt(groups[1]);
-    });
+```lua
+-- Отправить команду на сервер
+send("look")
 
-    // Убийства
-    addTrigger("^(.+) мертв\\.$", function(line, groups) {
-        killsCount++;
-    });
+-- Вывести текст
+echo("Hello from script!")
+mud_log("Debug message")
 
-    // Показать статистику
-    addAlias("^stats$", "");
-}
+-- Переменные
+set_var("target", "goblin")
+local target = get_var("target")
 
-function on_command(command) {
-    if (command === "stats") {
-        echo("=== Статистика боя ===");
-        echo("Убито мобов: " + killsCount);
-        echo("Нанесено урона: " + damageDealt);
-        echo("Получено урона: " + damageReceived);
-        return true;
-    }
-    return false;
-}
+-- Триггеры
+add_trigger("^(.+) мертв%.$", function(line, groups)
+    echo("Match: " .. groups[1])
+end)
+
+-- Таймеры
+set_timeout(function()
+    send("look")
+end, 5000)
+
+set_interval(function()
+    send("score")
+end, 10000)
 ```
 
-### Пример 4: Speedwalk
+### Объекты-хелперы
 
-```javascript
-// scripts/speedwalk.js
-function on_load(api) {
-    addAlias("^#(\\d+)([nsewud]+)$", "");
-}
+```lua
+-- MSDP
+msdp:get("HEALTH")
+msdp:report("STATE")
+msdp:is_enabled()
 
-function on_command(command) {
-    var match = command.match(/^#(\d+)([nsewud]+)$/);
-    if (match) {
-        var count = parseInt(match[1]);
-        var dirs = match[2];
+-- Статус-панель
+status:add_bar("hp", {label = "HP", value = 100, max = 100, color = "green"})
+status:add_text("level", {label = "Уровень", value = "50"})
+status:update("hp", {value = 80})
 
-        for (var i = 0; i < count; i++) {
-            for (var j = 0; j < dirs.length; j++) {
-                send(dirs[j]);
-            }
-        }
-        return true;
-    }
-    return false;
-}
+-- Маппер
+mapper:set_enabled(true)
+mapper:handle_room({vnum = "5001", name = "Таверна", exits = {north = "5002"}})
+local room = mapper:get_current_room()
+```
 
-// Использование: #5n2e = 5 раз север, 2 раза восток
+### События
+
+```lua
+function on_load(api)
+    mud_log("Script loaded")
+end
+
+function on_connect()
+    send("look")
+end
+
+function on_msdp(data)
+    local hp = data:get("HEALTH")
+    if hp then
+        status:update("hp", {value = tonumber(hp)})
+    end
+end
+
+function on_line(line)
+    if line:find("мертв") then
+        send("взять все труп")
+    end
+end
 ```
 
 ## Отладка
 
-- Используйте `log(message)` для вывода отладочной информации
+- Используйте `mud_log(message)` для вывода отладочной информации
+- Также доступен объектный вызов `api.log(message)` во всех языках
 - Ошибки в скриптах выводятся в консоль клиента
 - Перезагружайте скрипты после изменений
 
@@ -307,6 +315,5 @@ function on_command(command) {
 - JavaScript работает из коробки (Nashorn встроен в JVM)
 - Python работает через Jython (включён в зависимости)
 - Lua работает через LuaJ (включён в зависимости)
-- Perl требует установленный Perl в системе (JSON::PP модуль)
 - Скрипты загружаются автоматически при запуске клиента
 - Hot reload поддерживается

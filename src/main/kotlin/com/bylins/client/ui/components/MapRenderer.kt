@@ -344,7 +344,7 @@ fun RoomTooltip(
             }
 
             // Зона
-            if (room.zone.isNotEmpty()) {
+            if (!room.zone.isNullOrEmpty()) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = "Зона: ${room.zone}",

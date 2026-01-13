@@ -1,14 +1,14 @@
 // Тестовый скрипт для проверки работы системы скриптов
 
 function on_load(api) {
-    log("✅ Тестовый скрипт загружен!");
+    mud_log("✅ Тестовый скрипт загружен!");
     echo("═══════════════════════════════════════");
     echo("  Система скриптов работает!");
     echo("═══════════════════════════════════════");
 }
 
 function on_unload() {
-    log("❌ Тестовый скрипт выгружен");
+    mud_log("❌ Тестовый скрипт выгружен");
 }
 
 function on_connect() {
@@ -23,12 +23,12 @@ function on_disconnect() {
 function on_line(line) {
     // Логируем каждую 10-ую строку для демонстрации
     if (Math.random() < 0.1) {
-        log("📝 Получена строка: " + line.substring(0, 50) + "...");
+        mud_log("📝 Получена строка: " + line.substring(0, 50) + "...");
     }
 }
 
 function on_command(command) {
-    log("⌨️  Команда отправлена: " + command);
+    mud_log("⌨️  Команда отправлена: " + command);
 }
 
 function on_msdp(data) {
@@ -38,18 +38,18 @@ function on_msdp(data) {
     var maxMana = api.getMsdpValue("MANA_MAX");
 
     if (hp && maxHp && mana && maxMana) {
-        log("💊 HP: " + hp + "/" + maxHp + " | Mana: " + mana + "/" + maxMana);
+        mud_log("💊 HP: " + hp + "/" + maxHp + " | Mana: " + mana + "/" + maxMana);
     }
 }
 
 function on_trigger(trigger, line, groups) {
-    log("🎯 Триггер сработал: " + trigger.name + " на строке: " + line);
+    mud_log("🎯 Триггер сработал: " + trigger.name + " на строке: " + line);
 }
 
 function on_alias(alias, command, groups) {
-    log("⚡ Алиас сработал: " + alias.name + " для команды: " + command);
+    mud_log("⚡ Алиас сработал: " + alias.name + " для команды: " + command);
 }
 
 function on_room_enter(room) {
-    log("🚪 Вошли в комнату: " + room.name + " [" + room.x + "," + room.y + "," + room.z + "]");
+    mud_log("🚪 Вошли в комнату: " + room.name + " [" + room.x + "," + room.y + "," + room.z + "]");
 }

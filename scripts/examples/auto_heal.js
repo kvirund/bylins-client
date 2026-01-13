@@ -6,7 +6,7 @@ var MANA_REQUIRED = 50;   // Минимум маны для каста
 var HEAL_SPELL = "cast 'cure serious'";
 
 function on_load(api) {
-    log("🏥 Автохил загружен");
+    mud_log("🏥 Автохил загружен");
     echo("═══════════════════════════════════════");
     echo("  Автохил активен!");
     echo("  Порог лечения: " + HEAL_THRESHOLD + "%");
@@ -15,7 +15,7 @@ function on_load(api) {
 }
 
 function on_unload() {
-    log("🏥 Автохил выгружен");
+    mud_log("🏥 Автохил выгружен");
 }
 
 function on_msdp(data) {

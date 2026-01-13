@@ -101,7 +101,6 @@
   - **JavaScript** - Nashorn standalone 15.4 (полная поддержка для JDK 15+)
   - **Python** - Jython 2.7 (полная поддержка)
   - **Lua** - LuaJ 5.2 (полная поддержка)
-  - **Perl** - внешний процесс (обнаружение доступно, полная интеграция в разработке)
   - События: on_load, on_connect, on_disconnect, on_line, on_command, on_msdp, on_gmcp, on_trigger, on_alias, on_room_enter
   - API: send(), echo(), addTrigger(), addAlias(), setTimeout(), setInterval(), getVariable(), setVariable()
   - MSDP API: getMsdpValue(), getAllMsdpData()
@@ -207,7 +206,7 @@ dependencies {
 
 ### Создание скриптов
 
-Клиент поддерживает скрипты на **JavaScript, Python, Lua и Perl**!
+Клиент поддерживает скрипты на **JavaScript, Python и Lua**!
 
 Положите свои скрипты в директорию `scripts/`:
 

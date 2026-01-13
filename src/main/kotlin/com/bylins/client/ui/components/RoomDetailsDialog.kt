@@ -38,7 +38,7 @@ fun RoomDetailsDialog(
     var selectedColor by remember { mutableStateOf(room.color) }
     var tags by remember { mutableStateOf(room.tags) }
     var newTag by remember { mutableStateOf("") }
-    var zone by remember { mutableStateOf(room.zone) }
+    var zone by remember { mutableStateOf(room.zone ?: "") }
 
     val availableColors = listOf(
         null to "Без цвета",

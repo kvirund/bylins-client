@@ -55,7 +55,7 @@ class TelnetClient(
             _isConnected.value = true
 
             // Уведомляем пользователя об успешном подключении
-            appendToBuffer("\u001B[1;32m[Подключено к $host:$port]\u001B[0m\n\n")
+            appendToBuffer("\u001B[1;32m[Connected to $host:$port]\u001B[0m\n\n")
 
             // Отправляем поддерживаемые опции Telnet
             sendTelnetNegotiation()
@@ -89,7 +89,7 @@ class TelnetClient(
 
             // Уведомляем пользователя о разрыве соединения (только если были подключены)
             if (wasConnected) {
-                appendToBuffer("\u001B[1;31m[Соединение разорвано]\u001B[0m\n")
+                appendToBuffer("\u001B[1;31m[Disconnected]\u001B[0m\n")
             }
         }
     }
@@ -188,7 +188,7 @@ class TelnetClient(
                 currentValue.substring(cutPosition.coerceAtLeast(0))
             }
 
-            _receivedData.value = "\u001B[1;33m[Буфер очищен]\u001B[0m\n" + truncatedValue + text
+            _receivedData.value = "\u001B[1;33m[Buffer cleared]\u001B[0m\n" + truncatedValue + text
         } else {
             _receivedData.value = currentValue + text
         }

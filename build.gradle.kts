@@ -74,6 +74,16 @@ compose.desktop {
     application {
         mainClass = "com.bylins.client.MainKt"
 
+        // Принудительно UTF-8 для всего JVM
+        jvmArgs += listOf(
+            "-Dfile.encoding=UTF-8",
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
+            "-Dsun.stdout.encoding=UTF-8",
+            "-Dsun.stderr.encoding=UTF-8",
+            "-DCONSOLE_CHARSET=UTF-8"
+        )
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Bylins Client"

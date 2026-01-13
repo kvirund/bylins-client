@@ -161,8 +161,8 @@ class ZoneDetector {
      */
     fun getZoneStatistics(rooms: Map<String, Room>): Map<String, Int> {
         return rooms.values
-            .filter { it.zone.isNotEmpty() }
-            .groupBy { it.zone }
+            .filter { !it.zone.isNullOrEmpty() }
+            .groupBy { it.zone!! }
             .mapValues { it.value.size }
             .toSortedMap()
     }

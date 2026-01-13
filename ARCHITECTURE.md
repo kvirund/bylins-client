@@ -120,7 +120,7 @@ class Mapper {
 
 ### 6. TODO: Scripting System (`scripting/`)
 
-Система скриптов с поддержкой Python, Lua, JavaScript, Perl:
+Система скриптов с поддержкой Python, Lua, JavaScript:
 
 #### Архитектура движков
 ```kotlin
@@ -135,8 +135,7 @@ class ScriptEngineManager {
     private val engines = mapOf(
         "py" to PythonScriptEngine(),     // GraalVM Python / Jython
         "lua" to LuaScriptEngine(),       // LuaJ
-        "js" to JavaScriptEngine(),       // GraalVM JS / Nashorn
-        "pl" to PerlScriptEngine()        // Внешний процесс
+        "js" to JavaScriptEngine()        // GraalVM JS / Nashorn
     )
 
     fun loadScript(path: String): Script {
@@ -203,22 +202,6 @@ function speedwalk(api, match) {
     for (let i = 0; i < count; i++) {
         api.send(direction);
     }
-}
-```
-
-**Perl** (`scripts/logger.pl`):
-```perl
-sub on_load {
-    my ($api) = @_;
-    $api->echo("Logger script loaded!", "green");
-    $api->add_trigger(".*", \&log_everything);
-}
-
-sub log_everything {
-    my ($api, $text) = @_;
-    open(my $fh, '>>', 'mud.log');
-    print $fh "[" . localtime() . "] $text\n";
-    close($fh);
 }
 ```
 

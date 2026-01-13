@@ -45,7 +45,7 @@
 - [ ] Highlight (подсветка)
 - [ ] Play sound
 - [ ] Выполнение команд
-- [ ] Скрипты в триггерах (Python/Lua/JavaScript/Perl)
+- [ ] Скрипты в триггерах (Python/Lua/JavaScript)
 
 ### Aliases
 - [ ] Простые алиасы
@@ -151,9 +151,6 @@
   - [ ] GraalVM JavaScript
   - [ ] или Nashorn (deprecated но работает)
   - [ ] Автозагрузка .js файлов
-- [ ] Perl скрипты:
-  - [ ] Внешний процесс (perl interpreter)
-  - [ ] Автозагрузка .pl файлов
 - [ ] API для скриптов:
   - [ ] send(command) - отправка команд
   - [ ] echo(text) - вывод текста
@@ -175,7 +172,6 @@
   - [ ] Python (.py) плагины + requirements.txt
   - [ ] Lua (.lua) плагины
   - [ ] JavaScript (.js) плагины + package.json/node_modules?
-  - [ ] Perl (.pl) плагины + cpanfile?
   - [ ] Виртуальное окружение для каждого плагина
 - [ ] Plugin загрузчик (plugins/ директория)
 - [ ] Sandbox для плагинов

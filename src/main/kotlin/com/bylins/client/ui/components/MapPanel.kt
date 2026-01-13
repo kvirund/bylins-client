@@ -394,7 +394,7 @@ fun MapPanel(
                             color = Color(0xFFBBBBBB),
                             style = MaterialTheme.typography.bodySmall
                         )
-                        if (currentRoom.zone.isNotEmpty()) {
+                        if (!currentRoom.zone.isNullOrEmpty()) {
                             Text(
                                 text = "Зона: ${currentRoom.zone}",
                                 color = Color(0xFF00BFFF),

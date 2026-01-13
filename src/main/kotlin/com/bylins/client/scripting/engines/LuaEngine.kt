@@ -2,6 +2,7 @@ package com.bylins.client.scripting.engines
 
 import com.bylins.client.scripting.Script
 import com.bylins.client.scripting.ScriptAPI
+import com.bylins.client.scripting.ScriptAPIImpl
 import com.bylins.client.scripting.ScriptEngine
 import mu.KotlinLogging
 import org.luaj.vm2.Globals
@@ -307,6 +308,9 @@ class LuaEngine : ScriptEngine {
         }
 
         return try {
+            // Устанавливаем имя скрипта для логирования в API
+            (api as? ScriptAPIImpl)?.currentScriptName = file.name
+
             // Загружаем скрипт как InputStream - LuaJ напрямую получит UTF-8 байты
             // Это важно для правильной обработки кириллицы в строковых литералах
             file.inputStream().use { stream ->

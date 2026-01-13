@@ -5,12 +5,12 @@ package com.bylins.client.scripting
  */
 interface ScriptEngine {
     /**
-     * Название движка (python, lua, javascript, perl)
+     * Название движка (python, lua, javascript)
      */
     val name: String
 
     /**
-     * Расширения файлов (.py, .lua, .js, .pl)
+     * Расширения файлов (.py, .lua, .js)
      */
     val fileExtensions: List<String>
 

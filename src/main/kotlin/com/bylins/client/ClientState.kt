@@ -150,18 +150,21 @@ class ClientState {
     private var lastLowHpSoundTime = 0L
     private val mapManager = com.bylins.client.mapper.MapManager(
         onRoomEnter = { room ->
-            // Уведомляем скрипты о входе в комнату
-            if (::scriptManager.isInitialized) {
-                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ROOM_ENTER, room)
-            }
+            // Запускаем уведомления асинхронно чтобы избежать deadlock при вызове из API
+            scope.launch {
+                // Уведомляем скрипты о входе в комнату
+                if (::scriptManager.isInitialized) {
+                    scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ROOM_ENTER, room)
+                }
 
-            // Уведомляем плагины о входе в комнату
-            if (::pluginManager.isInitialized) {
-                pluginEventBus.post(com.bylins.client.plugins.events.RoomEnterEvent(
-                    roomId = room.id,
-                    roomName = room.name,
-                    fromDirection = null // TODO: передать направление откуда пришли
-                ))
+                // Уведомляем плагины о входе в комнату
+                if (::pluginManager.isInitialized) {
+                    pluginEventBus.post(com.bylins.client.plugins.events.RoomEnterEvent(
+                        roomId = room.id,
+                        roomName = room.name,
+                        fromDirection = null // TODO: передать направление откуда пришли
+                    ))
+                }
             }
         }
     )
@@ -1052,7 +1055,7 @@ class ClientState {
         val wasEnabled = _msdpEnabled.value
         _msdpEnabled.value = enabled
         if (enabled && !wasEnabled) {
-            logger.info { "MSDP протокол включён" }
+            logger.info { "MSDP protocol enabled" }
             // Уведомляем скрипты о включении MSDP
             if (::scriptManager.isInitialized) {
                 scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_MSDP_ENABLED)
@@ -1066,10 +1069,10 @@ class ClientState {
      */
     fun sendMsdpList(listType: String) {
         if (!_msdpEnabled.value) {
-            logger.warn { "MSDP не включён, команда LIST проигнорирована" }
+            logger.warn { "MSDP not enabled, LIST command ignored" }
             return
         }
-        logger.info { "MSDP LIST $listType отправляется..." }
+        logger.info { "MSDP LIST $listType sending..." }
         telnetClient.sendMsdpCommand("LIST", listType)
     }
 
@@ -1078,12 +1081,12 @@ class ClientState {
      */
     fun sendMsdpReport(variableName: String) {
         if (!_msdpEnabled.value) {
-            logger.warn { "MSDP не включён, команда REPORT проигнорирована" }
+            logger.warn { "MSDP not enabled, REPORT command ignored" }
             return
         }
         telnetClient.sendMsdpCommand("REPORT", variableName)
         _msdpReportedVariables.value = _msdpReportedVariables.value + variableName
-        logger.debug { "MSDP REPORT $variableName отправлен" }
+        logger.debug { "MSDP REPORT $variableName sent" }
     }
 
     /**
@@ -1091,12 +1094,12 @@ class ClientState {
      */
     fun sendMsdpUnreport(variableName: String) {
         if (!_msdpEnabled.value) {
-            logger.warn { "MSDP не включён, команда UNREPORT проигнорирована" }
+            logger.warn { "MSDP not enabled, UNREPORT command ignored" }
             return
         }
         telnetClient.sendMsdpCommand("UNREPORT", variableName)
         _msdpReportedVariables.value = _msdpReportedVariables.value - variableName
-        logger.debug { "MSDP UNREPORT $variableName отправлен" }
+        logger.debug { "MSDP UNREPORT $variableName sent" }
     }
 
     /**
@@ -1104,11 +1107,11 @@ class ClientState {
      */
     fun sendMsdpSend(variableName: String) {
         if (!_msdpEnabled.value) {
-            logger.warn { "MSDP не включён, команда SEND проигнорирована" }
+            logger.warn { "MSDP not enabled, SEND command ignored" }
             return
         }
         telnetClient.sendMsdpCommand("SEND", variableName)
-        logger.debug { "MSDP SEND $variableName отправлен" }
+        logger.debug { "MSDP SEND $variableName sent" }
     }
 
     fun updateMsdpData(data: Map<String, Any>) {
@@ -1118,7 +1121,7 @@ class ClientState {
         data["REPORTABLE_VARIABLES"]?.let { value ->
             if (value is List<*>) {
                 _msdpReportableVariables.value = value.filterIsInstance<String>()
-                logger.info { "Получен список REPORTABLE_VARIABLES: ${_msdpReportableVariables.value.size} переменных" }
+                logger.info { "Received REPORTABLE_VARIABLES list: ${_msdpReportableVariables.value.size} variables" }
             }
         }
 
@@ -1911,7 +1914,6 @@ class ClientState {
             scriptManager.registerEngine(com.bylins.client.scripting.engines.JavaScriptEngine())
             scriptManager.registerEngine(com.bylins.client.scripting.engines.PythonEngine())
             scriptManager.registerEngine(com.bylins.client.scripting.engines.LuaEngine())
-            scriptManager.registerEngine(com.bylins.client.scripting.engines.PerlEngine())
 
             // Автозагрузка скриптов
             scriptManager.autoLoadScripts()

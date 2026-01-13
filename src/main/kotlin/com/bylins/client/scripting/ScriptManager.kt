@@ -248,14 +248,46 @@ class ScriptManager(
     }
 
     /**
-     * Перезагружает скрипт
+     * Перезагружает скрипт (сохраняя позицию в списке)
      */
     fun reloadScript(scriptId: String) {
-        val script = _scripts.value.find { it.id == scriptId } ?: return
+        val currentList = _scripts.value
+        val scriptIndex = currentList.indexOfFirst { it.id == scriptId }
+        if (scriptIndex == -1) return
+
+        val script = currentList[scriptIndex]
         val file = File(script.path)
 
-        unloadScript(scriptId)
-        loadScript(file)
+        // Вызываем on_unload если функция существует
+        try {
+            script.call("on_unload")
+        } catch (e: Exception) {
+            // Игнорируем ошибки
+        }
+
+        // Перезагружаем через движок
+        val engine = engines.find { it.name == script.engine.name } ?: return
+        val newScript = engine.loadScript(file.absolutePath)
+
+        if (newScript != null) {
+            // Заменяем в списке на том же месте
+            _scripts.value = currentList.toMutableList().apply {
+                set(scriptIndex, newScript)
+            }
+
+            // Вызываем on_load если функция существует
+            try {
+                newScript.call("on_load", api)
+            } catch (e: Exception) {
+                // Игнорируем ошибки если функция не существует
+            }
+
+            logger.info { "Reloaded ${script.engine.name} script: ${script.name}" }
+        } else {
+            // Если не удалось загрузить - удаляем из списка
+            _scripts.value = currentList.filter { it.id != scriptId }
+            logger.warn { "Failed to reload script: ${script.name}" }
+        }
     }
 
     /**
@@ -277,7 +309,8 @@ class ScriptManager(
             ScriptEvent.ON_ROOM_ENTER -> "on_room_enter"
         }
 
-        _scripts.value.filter { it.enabled }.forEach { script ->
+        val enabledScripts = _scripts.value.filter { it.enabled }
+        enabledScripts.forEach { script ->
             try {
                 script.call(functionName, *args)
             } catch (e: Exception) {

@@ -2,12 +2,14 @@
 <configuration>
     <property name="LOG_DIR" value="${user.home}/.bylins-client/logs"/>
     <property name="LOG_PATTERN" value="%d{HH:mm:ss.SSS} [%level] [%logger{20}] %msg%n"/>
+    <!-- Кодировка для вывода в консоль. Можно переопределить через -DCONSOLE_CHARSET=windows-1251 -->
+    <property name="CONSOLE_CHARSET" value="${CONSOLE_CHARSET:-UTF-8}"/>
 
     <!-- Console appender -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} %highlight([%level]) [%logger{20}] %msg%n</pattern>
-            <charset>UTF-8</charset>
+            <charset>${CONSOLE_CHARSET}</charset>
         </encoder>
     </appender>
 

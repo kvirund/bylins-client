@@ -3,7 +3,9 @@
 // Глобальные функции для удобства
 function send(command) { api.send(command); }
 function echo(text) { api.echo(text); }
-function log(message) { api.log(message); }
+function mud_log(message) {
+    api.log(message);
+}
 function print(message) { api.print(message); }
 
 // Переменные
@@ -47,7 +49,7 @@ var msdp = {
     unreport: function(variableName) { api.msdpUnreport(variableName); },
     send: function(variableName) { api.msdpSend(variableName); },
     list: function(listType) {
-        log("[JS] msdp.list called with: " + listType);
+        api.log("msdp.list called with: " + listType);
         api.msdpList(listType);
     },
 
@@ -142,9 +144,9 @@ var mapper = {
     },
     // Высокоуровневая функция для обработки MSDP room данных
     handleRoom: function(params) {
-        log("[JS] mapper.handleRoom called with: " + JSON.stringify(params));
+        api.log("mapper.handleRoom called with: " + JSON.stringify(params));
         var result = api.handleRoom(params);
-        log("[JS] mapper.handleRoom result: " + result);
+        api.log("mapper.handleRoom result: " + result);
         return result;
     },
     setEnabled: function(enabled) { api.setMapEnabled(enabled); },

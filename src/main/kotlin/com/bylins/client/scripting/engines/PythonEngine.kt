@@ -2,6 +2,7 @@ package com.bylins.client.scripting.engines
 
 import com.bylins.client.scripting.Script
 import com.bylins.client.scripting.ScriptAPI
+import com.bylins.client.scripting.ScriptAPIImpl
 import com.bylins.client.scripting.ScriptEngine
 import mu.KotlinLogging
 import org.python.core.Py
@@ -61,8 +62,9 @@ class PythonEngine : ScriptEngine {
             interpreter?.set("_trigger_helper", TriggerHelper())
             interpreter?.set("_timer_helper", TimerHelper())
 
-            // Устанавливаем UTF-8 кодировку в интерпретаторе
+            // Устанавливаем UTF-8 кодировку и unicode_literals глобально
             interpreter?.exec("""
+from __future__ import unicode_literals
 import sys
 reload(sys)
 sys.setdefaultencoding('UTF-8')
@@ -183,8 +185,25 @@ sys.setdefaultencoding('UTF-8')
         }
 
         return try {
-            // Используем execfile для правильной обработки encoding declaration
-            interpreter?.execfile(scriptPath)
+            // Устанавливаем имя скрипта для логирования в API
+            (api as? ScriptAPIImpl)?.currentScriptName = file.name
+
+            // Читаем скрипт как UTF-8 и добавляем unicode_literals
+            val scriptContent = file.readText(Charsets.UTF_8)
+
+            // Создаём код с unicode_literals в начале
+            // Для Python 2: from __future__ должен быть первым statement (после docstrings/comments)
+            val wrappedCode = buildString {
+                appendLine("# -*- coding: utf-8 -*-")
+                appendLine("from __future__ import unicode_literals")
+                append(scriptContent.lines().dropWhile {
+                    it.trim().isEmpty() ||
+                    it.trim().startsWith("#") ||
+                    it.trim().startsWith("from __future__")
+                }.joinToString("\n"))
+            }
+
+            interpreter?.exec(wrappedCode)
 
             // Вызываем on_load если есть
             callFunction("on_load", api)
@@ -216,15 +235,21 @@ sys.setdefaultencoding('UTF-8')
         return try {
             val func = interpreter?.get(functionName)
             if (func is PyFunction) {
-                // Конвертируем аргументы в Python объекты
-                val pyArgs = args.map { interpreter?.eval(it?.toString() ?: "None") as org.python.core.PyObject }.toTypedArray()
+                // Конвертируем аргументы в Python объекты через Py.java2py
+                // Это корректно обрабатывает Java Maps, Lists и другие объекты
+                val pyArgs = args.map { arg ->
+                    when (arg) {
+                        null -> Py.None
+                        else -> Py.java2py(arg)
+                    }
+                }.toTypedArray()
                 // __call__ принимает Array<PyObject>, а не vararg
                 func.__call__(pyArgs)
             } else {
                 null
             }
         } catch (e: Exception) {
-            // Функция не найдена или ошибка вызова - это нормально
+            logger.debug { "Error calling function $functionName: ${e.message}" }
             null
         }
     }

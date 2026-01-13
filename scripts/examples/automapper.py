@@ -43,7 +43,7 @@ def debug(msg):
 def try_create_room():
     global pending_room_id, pending_room_name, pending_exits, last_direction
 
-    api.log("[PY] try_create_room: room_id=" + str(pending_room_id) +
+    mud_log("[PY] try_create_room: room_id=" + str(pending_room_id) +
             " room_name=" + str(pending_room_name) +
             " exits=" + str(len(pending_exits) if pending_exits else "nil") +
             " direction=" + str(last_direction))
@@ -71,7 +71,7 @@ def try_create_room():
 
     if direction:
         # Движение - создаём связь
-        api.log("[PY] handle_movement: dir=" + direction + " exits=" + ",".join(pending_exits) + " roomId=" + room_id)
+        mud_log("[PY] handle_movement: dir=" + direction + " exits=" + ",".join(pending_exits) + " roomId=" + room_id)
         room_info = api.handleMovement(direction, room_name, pending_exits, room_id)
         if room_info:
             api.setRoomZone(room_id, "zone_" + str(zone_id))
@@ -80,7 +80,7 @@ def try_create_room():
             debug("handleMovement returned None")
     else:
         # Начальная комната
-        api.log("[PY] Initial room case")
+        mud_log("[PY] Initial room case")
         current = api.getCurrentRoom()
         current_id = None
         if current:
@@ -89,32 +89,32 @@ def try_create_room():
             except:
                 current_id = None
 
-        api.log("[PY] current_id=" + str(current_id) + " room_id=" + str(room_id))
+        mud_log("[PY] current_id=" + str(current_id) + " room_id=" + str(room_id))
 
         if current_id != room_id:
             rooms = api.searchRooms(room_id)
             rooms_count = len(rooms) if rooms else 0
-            api.log("[PY] search_rooms(" + room_id + ") found " + str(rooms_count))
+            mud_log("[PY] search_rooms(" + room_id + ") found " + str(rooms_count))
 
             if rooms_count == 0:
-                api.log("[PY] Creating new room: " + room_id)
+                mud_log("[PY] Creating new room: " + room_id)
                 if api.createRoom(room_id, room_name, 0, 0, 0):
                     api.setRoomZone(room_id, "zone_" + str(zone_id))
                     api.setCurrentRoom(room_id)
                     if pending_exits and len(pending_exits) > 0:
                         api.addUnexploredExits(room_id, pending_exits)
-                        api.log("[PY] Added exits: " + ",".join(pending_exits))
+                        mud_log("[PY] Added exits: " + ",".join(pending_exits))
                     api.echo("[Mapper] New: " + room_name + " [" + room_id + "]")
                 else:
-                    api.log("[PY] create_room returned false")
+                    mud_log("[PY] create_room returned false")
             else:
-                api.log("[PY] Room exists, setting current")
+                mud_log("[PY] Room exists, setting current")
                 api.setCurrentRoom(room_id)
                 if pending_exits and len(pending_exits) > 0:
                     api.addUnexploredExits(room_id, pending_exits)
-                    api.log("[PY] Updated exits: " + ",".join(pending_exits))
+                    mud_log("[PY] Updated exits: " + ",".join(pending_exits))
         else:
-            api.log("[PY] current_id == room_id, skipping")
+            mud_log("[PY] current_id == room_id, skipping")
 
     # Сброс
     pending_room_id = None
@@ -127,7 +127,7 @@ def try_create_room():
 def on_room_trigger(line, groups):
     global pending_room_id, pending_room_name
 
-    api.log("[PY] room callback, groups[1]=" + str(groups.get(1)) + " groups[2]=" + str(groups.get(2)))
+    mud_log("[PY] room callback, groups[1]=" + str(groups.get(1)) + " groups[2]=" + str(groups.get(2)))
 
     name = groups.get(1)
     room_id = groups.get(2)
@@ -155,7 +155,7 @@ def on_exits_trigger(line, groups):
     global pending_exits
 
     exits_str = groups.get(1)
-    api.log("[PY] exits callback, groups[1]=" + repr(exits_str))
+    mud_log("[PY] exits callback, groups[1]=" + repr(exits_str))
 
     if not exits_str:
         return
@@ -186,7 +186,7 @@ def on_movement_trigger(line, groups):
     global last_direction, pending_room_name, pending_room_id, pending_exits
 
     dir_text = groups.get(1)
-    api.log("[PY] movement callback, dir=" + str(dir_text))
+    mud_log("[PY] movement callback, dir=" + str(dir_text))
 
     if dir_text:
         direction = directions.get(dir_text.lower())

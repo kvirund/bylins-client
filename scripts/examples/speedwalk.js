@@ -6,7 +6,7 @@
 var WALK_DELAY = 200; // Задержка между шагами (мс)
 
 function on_load(api) {
-    log("🚶 Speedwalk загружен");
+    mud_log("🚶 Speedwalk загружен");
     echo("═══════════════════════════════════════");
     echo("  Speedwalk активен!");
     echo("  Использование: #5n, #3n2e, #10sw");
@@ -19,7 +19,7 @@ function on_load(api) {
 }
 
 function on_unload() {
-    log("🚶 Speedwalk выгружен");
+    mud_log("🚶 Speedwalk выгружен");
 }
 
 function on_command(command) {

@@ -2,6 +2,7 @@ package com.bylins.client.scripting.engines
 
 import com.bylins.client.scripting.Script
 import com.bylins.client.scripting.ScriptAPI
+import com.bylins.client.scripting.ScriptAPIImpl
 import com.bylins.client.scripting.ScriptEngine
 import mu.KotlinLogging
 import java.io.File
@@ -148,6 +149,9 @@ class JavaScriptEngine : ScriptEngine {
         }
 
         return try {
+            // Устанавливаем имя скрипта для логирования в API
+            (api as? ScriptAPIImpl)?.currentScriptName = file.name
+
             // Явно читаем скрипт в UTF-8
             val scriptCode = file.readText(Charsets.UTF_8)
             engine?.eval(scriptCode)

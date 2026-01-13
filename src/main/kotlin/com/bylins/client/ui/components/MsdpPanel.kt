@@ -360,25 +360,23 @@ fun MsdpPanel(
                             )
 
                             variables.forEach { (key, value) ->
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 1.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .padding(vertical = 2.dp)
                                 ) {
                                     Text(
                                         text = key,
                                         color = colorScheme.primary,
                                         fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.weight(1f)
+                                        fontFamily = FontFamily.Monospace
                                     )
                                     Text(
                                         text = formatMsdpValue(value),
                                         color = colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.padding(start = 16.dp)
                                     )
                                 }
                             }
@@ -421,17 +419,17 @@ private fun groupMsdpByCategory(data: Map<String, Any>): Map<String, List<Pair<S
 }
 
 /**
- * Форматирует значение MSDP для отображения
+ * Форматирует значение MSDP для отображения (без обрезания)
  */
 private fun formatMsdpValue(value: Any): String {
     return when (value) {
         is Map<*, *> -> {
-            val entries = value.entries.take(5).joinToString(", ") { "${it.key}=${it.value}" }
-            if (value.size > 5) "{$entries, ...}" else "{$entries}"
+            val entries = value.entries.joinToString(", ") { "${it.key}=${formatMsdpValue(it.value ?: "null")}" }
+            "{$entries}"
         }
         is List<*> -> {
-            val items = value.take(5).joinToString(", ")
-            if (value.size > 5) "[$items, ...] (${value.size})" else "[$items]"
+            val items = value.joinToString(", ") { formatMsdpValue(it ?: "null") }
+            "[$items]"
         }
         else -> value.toString()
     }

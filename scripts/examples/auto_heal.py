@@ -6,7 +6,7 @@ MANA_REQUIRED = 50   # Минимум маны для каста
 HEAL_SPELL = "cast 'cure serious'"
 
 def on_load(api):
-    log("🏥 Автохил загружен (Python)")
+    mud_log("🏥 Автохил загружен (Python)")
     echo("═══════════════════════════════════════")
     echo("  Автохил активен! (Python/Jython)")
     echo("  Порог лечения: %d%%" % HEAL_THRESHOLD)
@@ -14,7 +14,7 @@ def on_load(api):
     echo("═══════════════════════════════════════")
 
 def on_unload():
-    log("🏥 Автохил выгружен")
+    mud_log("🏥 Автохил выгружен")
 
 def on_msdp(data):
     hp = api.getMsdpValue("HEALTH")

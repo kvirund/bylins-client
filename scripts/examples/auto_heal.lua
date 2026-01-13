@@ -6,7 +6,7 @@ local MANA_REQUIRED = 50   -- Минимум маны для каста
 local HEAL_SPELL = "cast 'cure serious'"
 
 function on_load(api)
-    log("🏥 Автохил загружен (Lua)")
+    mud_log("🏥 Автохил загружен (Lua)")
     echo("═══════════════════════════════════════")
     echo("  Автохил активен! (Lua/LuaJ)")
     echo("  Порог лечения: " .. HEAL_THRESHOLD .. "%")
@@ -15,7 +15,7 @@ function on_load(api)
 end
 
 function on_unload()
-    log("🏥 Автохил выгружен")
+    mud_log("🏥 Автохил выгружен")
 end
 
 function on_msdp(data)
