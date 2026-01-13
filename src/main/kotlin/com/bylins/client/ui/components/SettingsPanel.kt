@@ -7,9 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -237,8 +234,6 @@ fun SettingsPanel(
                                 onClick = {
                                     clientState.setTheme(themeId)
                                     themeExpanded = false
-                                    statusMessage = "Тема изменена. Перезапустите приложение."
-                                    statusColor = colorScheme.warning
                                 },
                                 modifier = Modifier.background(colorScheme.surface)
                             ) {
@@ -342,7 +337,10 @@ fun SettingsPanel(
                     }
                 }
 
-                // Размер шрифта (спиннер)
+                // Размер шрифта
+                var fontSizeExpanded by remember { mutableStateOf(false) }
+                val fontSizes = (10..24).toList()
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -355,62 +353,42 @@ fun SettingsPanel(
                         modifier = Modifier.width(80.dp)
                     )
 
-                    var sizeInput by remember(currentFontSize) { mutableStateOf(currentFontSize.toString()) }
+                    ExposedDropdownMenuBox(
+                        expanded = fontSizeExpanded,
+                        onExpandedChange = { fontSizeExpanded = !fontSizeExpanded },
+                        modifier = Modifier.width(120.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = "$currentFontSize sp",
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fontSizeExpanded) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = colorScheme.onSurface,
+                                focusedBorderColor = colorScheme.success,
+                                unfocusedBorderColor = colorScheme.border
+                            )
+                        )
 
-                    OutlinedTextField(
-                        value = sizeInput,
-                        onValueChange = { newValue ->
-                            sizeInput = newValue.filter { it.isDigit() }
-                            sizeInput.toIntOrNull()?.let { size ->
-                                if (size in 10..24) {
-                                    clientState.setFontSize(size)
+                        ExposedDropdownMenu(
+                            expanded = fontSizeExpanded,
+                            onDismissRequest = { fontSizeExpanded = false },
+                            modifier = Modifier.background(colorScheme.surface)
+                        ) {
+                            fontSizes.forEach { size ->
+                                DropdownMenuItem(
+                                    onClick = {
+                                        clientState.setFontSize(size)
+                                        fontSizeExpanded = false
+                                    },
+                                    modifier = Modifier.background(colorScheme.surface)
+                                ) {
+                                    Text("$size sp", color = colorScheme.onSurface)
                                 }
                             }
-                        },
-                        modifier = Modifier.width(80.dp),
-                        singleLine = true,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            textColor = colorScheme.onSurface,
-                            focusedBorderColor = colorScheme.success,
-                            unfocusedBorderColor = colorScheme.border
-                        )
-                    )
-
-                    Column {
-                        IconButton(
-                            onClick = {
-                                val newSize = (currentFontSize + 1).coerceAtMost(24)
-                                clientState.setFontSize(newSize)
-                            },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.KeyboardArrowUp,
-                                contentDescription = "Увеличить",
-                                tint = colorScheme.onSurface
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                val newSize = (currentFontSize - 1).coerceAtLeast(10)
-                                clientState.setFontSize(newSize)
-                            },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Уменьшить",
-                                tint = colorScheme.onSurface
-                            )
                         }
                     }
-
-                    Text(
-                        text = "sp",
-                        color = colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
 
                     Spacer(modifier = Modifier.weight(1f))
 
@@ -439,9 +417,9 @@ fun SettingsPanel(
         var encodingExpanded by remember { mutableStateOf(false) }
 
         val encodings = listOf(
-            "Windows-1251" to "Windows-1251 (Bylins)",
-            "UTF-8" to "UTF-8 (Универсальная)",
-            "KOI8-R" to "KOI8-R (старая)",
+            "Windows-1251" to "Windows-1251 (Windows)",
+            "UTF-8" to "UTF-8",
+            "KOI8-R" to "KOI8-R",
             "CP866" to "CP866 (DOS)"
         )
 
