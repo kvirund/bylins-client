@@ -139,8 +139,8 @@ fun AliasesPanel(
                             clientState.disableAlias(id)
                         }
                     },
-                    onEdit = { alias ->
-                        editingAlias = alias
+                    onEdit = { aliasToEdit ->
+                        editingAlias = aliasToEdit
                         showDialog = true
                     },
                     onDelete = { id ->

@@ -152,13 +152,7 @@ private fun GraphCard(
                 )
             }
 
-            // Рисуем линии процентов
-            val labelColor = Color.White.copy(alpha = 0.3f)
-            for (i in 0..4) {
-                val percentage = 100 - i * 25
-                val y = padding + (height - 2 * padding) * i / 4
-                // Можно добавить текстовые метки, но это требует TextMeasurer
-            }
+            // Линии процентов (метки требуют TextMeasurer, пропускаем)
 
             // Рисуем график
             if (dataPoints.size < 2) return@Canvas

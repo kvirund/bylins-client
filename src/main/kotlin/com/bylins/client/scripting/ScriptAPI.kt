@@ -291,11 +291,20 @@ interface ScriptAPI {
     fun clearMap()
     fun setCurrentRoom(roomId: String)
 
+    // Маппер - контекстное меню
+    fun registerMapCommand(name: String, callback: Any)
+    fun unregisterMapCommand(name: String)
+
+    // Маппер - подсветка пути
+    fun setPathHighlight(roomIds: List<String>, targetRoomId: String?)
+    fun clearPathHighlight()
+
     // Статус-панель
     fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String = "green", showText: Boolean = true, order: Int = -1)
     fun statusAddText(id: String, label: String, value: String, order: Int = -1)
     fun statusAddFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int = -1)
     fun statusAddMiniMap(id: String, currentRoomId: String? = null, visible: Boolean = true, order: Int = -1)
+    fun statusAddPathPanel(id: String, targetName: String, stepsCount: Int, directions: List<String>, onClear: Any? = null, onFollow: Any? = null, order: Int = -1)
     fun statusUpdate(id: String, updates: Map<String, Any>)
     fun statusRemove(id: String)
     fun statusClear()
@@ -305,6 +314,9 @@ interface ScriptAPI {
     // Утилиты
     fun log(message: String)
     fun print(message: String)
+
+    // Фокус
+    fun requestInputFocus()
 }
 
 /**
@@ -314,6 +326,7 @@ class ScriptAPIImpl(
     private val sendCommand: (String) -> Unit,
     private val echoText: (String) -> Unit,
     private val logMessage: (String) -> Unit,
+    private val requestFocus: () -> Unit,
     private val triggerActions: TriggerActions,
     private val aliasActions: AliasActions,
     private val timerActions: TimerActions,
@@ -422,6 +435,15 @@ class ScriptAPIImpl(
     override fun clearMap() = mapperActions.clearMap()
     override fun setCurrentRoom(roomId: String) = mapperActions.setCurrentRoom(roomId)
 
+    override fun registerMapCommand(name: String, callback: Any) = mapperActions.registerMapCommand(name, callback)
+    override fun unregisterMapCommand(name: String) = mapperActions.unregisterMapCommand(name)
+
+    override fun setPathHighlight(roomIds: List<String>, targetRoomId: String?) {
+        val convertedRoomIds: List<String> = ScriptObjectConverter.toList(roomIds)
+        mapperActions.setPathHighlight(convertedRoomIds, targetRoomId)
+    }
+    override fun clearPathHighlight() = mapperActions.clearPathHighlight()
+
     override fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int) =
         statusActions.addBar(id, label, value, max, color, showText, order)
     override fun statusAddText(id: String, label: String, value: String, order: Int) =
@@ -434,6 +456,17 @@ class ScriptAPIImpl(
     }
     override fun statusAddMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int) =
         statusActions.addMiniMap(id, currentRoomId, visible, order)
+    override fun statusAddPathPanel(id: String, targetName: String, stepsCount: Int, directions: List<String>, onClear: Any?, onFollow: Any?, order: Int) {
+        val convertedDirections: List<String> = ScriptObjectConverter.toList(directions)
+        // Convert JS callbacks to Kotlin lambdas
+        val clearCallback: (() -> Unit)? = if (onClear != null) {
+            { statusActions.invokeJsCallback(onClear) }
+        } else null
+        val followCallback: (() -> Unit)? = if (onFollow != null) {
+            { statusActions.invokeJsCallback(onFollow) }
+        } else null
+        statusActions.addPathPanel(id, targetName, stepsCount, convertedDirections, clearCallback, followCallback, order)
+    }
     override fun statusUpdate(id: String, updates: Map<String, Any>) {
         // Автоматическая конвертация из скриптовых типов (PyDictionary, LuaTable, etc.)
         val convertedUpdates = ScriptObjectConverter.toMap(updates)
@@ -449,6 +482,7 @@ class ScriptAPIImpl(
         logMessage("[$prefix] $message")
     }
     override fun print(message: String) = echoText(message)
+    override fun requestInputFocus() = requestFocus()
 }
 
 // Интерфейсы для действий
@@ -522,6 +556,14 @@ interface MapperActions {
     fun isMapEnabled(): Boolean
     fun clearMap()
     fun setCurrentRoom(roomId: String)
+
+    // Контекстное меню
+    fun registerMapCommand(name: String, callback: Any)
+    fun unregisterMapCommand(name: String)
+
+    // Подсветка пути
+    fun setPathHighlight(roomIds: List<String>, targetRoomId: String?)
+    fun clearPathHighlight()
 }
 
 interface StatusActions {
@@ -529,9 +571,11 @@ interface StatusActions {
     fun addText(id: String, label: String, value: String, order: Int)
     fun addFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int)
     fun addMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int)
+    fun addPathPanel(id: String, targetName: String, stepsCount: Int, directions: List<String>, onClear: (() -> Unit)?, onFollow: (() -> Unit)?, order: Int)
     fun update(id: String, updates: Map<String, Any>)
     fun remove(id: String)
     fun clear()
     fun get(id: String): Map<String, Any>?
     fun exists(id: String): Boolean
+    fun invokeJsCallback(callback: Any)
 }

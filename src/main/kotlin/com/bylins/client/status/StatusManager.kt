@@ -17,6 +17,9 @@ class StatusManager(
     private val _elements = MutableStateFlow<Map<String, StatusElement>>(emptyMap())
     val elements: StateFlow<Map<String, StatusElement>> = _elements
 
+    // PathPanel button callbacks stored by "elementId:buttonType"
+    private val pathPanelCallbacks = mutableMapOf<String, () -> Unit>()
+
     /**
      * Получает отсортированный список элементов
      */
@@ -27,6 +30,7 @@ class StatusManager(
                 is StatusElement.Text -> element.order
                 is StatusElement.Flags -> element.order
                 is StatusElement.MiniMap -> element.order
+                is StatusElement.PathPanel -> element.order
             }
         }
     }
@@ -91,6 +95,50 @@ class StatusManager(
     }
 
     /**
+     * Добавляет или обновляет панель пути
+     */
+    fun addPathPanel(
+        id: String,
+        targetName: String,
+        stepsCount: Int,
+        directions: List<String>,
+        onClear: (() -> Unit)? = null,
+        onFollow: (() -> Unit)? = null,
+        order: Int = _elements.value.size
+    ) {
+        // Store callbacks
+        if (onClear != null) {
+            pathPanelCallbacks["$id:clear"] = onClear
+        } else {
+            pathPanelCallbacks.remove("$id:clear")
+        }
+        if (onFollow != null) {
+            pathPanelCallbacks["$id:follow"] = onFollow
+        } else {
+            pathPanelCallbacks.remove("$id:follow")
+        }
+
+        val pathPanel = StatusElement.PathPanel(
+            id = id,
+            targetName = targetName,
+            stepsCount = stepsCount,
+            directions = directions,
+            hasClearCallback = onClear != null,
+            hasFollowCallback = onFollow != null,
+            order = order
+        )
+        _elements.value = _elements.value + (id to pathPanel)
+        updateStatusVariable(id, pathPanel)
+    }
+
+    /**
+     * Вызывает callback кнопки панели пути
+     */
+    fun invokePathPanelCallback(id: String, buttonType: String) {
+        pathPanelCallbacks["$id:$buttonType"]?.invoke()
+    }
+
+    /**
      * Обновляет существующий элемент
      * @param updates Map с полями для обновления
      */
@@ -125,6 +173,16 @@ class StatusManager(
                 visible = updates["visible"] as? Boolean ?: existing.visible,
                 order = (updates["order"] as? Number)?.toInt() ?: existing.order
             )
+            is StatusElement.PathPanel -> {
+                @Suppress("UNCHECKED_CAST")
+                val newDirections = updates["directions"] as? List<String>
+                existing.copy(
+                    targetName = updates["targetName"] as? String ?: existing.targetName,
+                    stepsCount = (updates["stepsCount"] as? Number)?.toInt() ?: existing.stepsCount,
+                    directions = newDirections ?: existing.directions,
+                    order = (updates["order"] as? Number)?.toInt() ?: existing.order
+                )
+            }
         }
 
         _elements.value = _elements.value + (id to updated)
@@ -137,6 +195,9 @@ class StatusManager(
     fun remove(id: String) {
         _elements.value = _elements.value - id
         variableManager.removeVariableBySource("_status_$id", VariableSource.STATUS)
+        // Clean up any callbacks
+        pathPanelCallbacks.remove("$id:clear")
+        pathPanelCallbacks.remove("$id:follow")
     }
 
     /**
@@ -145,6 +206,7 @@ class StatusManager(
     fun clear() {
         val ids = _elements.value.keys.toList()
         _elements.value = emptyMap()
+        pathPanelCallbacks.clear()
         ids.forEach { id ->
             variableManager.removeVariableBySource("_status_$id", VariableSource.STATUS)
         }
@@ -194,6 +256,12 @@ class StatusManager(
                 "type" to "minimap",
                 "currentRoomId" to (element.currentRoomId ?: ""),
                 "visible" to element.visible
+            )
+            is StatusElement.PathPanel -> mapOf(
+                "type" to "pathpanel",
+                "targetName" to element.targetName,
+                "stepsCount" to element.stepsCount,
+                "directions" to element.directions
             )
         }
 

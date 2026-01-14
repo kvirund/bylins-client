@@ -181,6 +181,10 @@ class ClientState {
     private val _miniMapWidth = MutableStateFlow(250)
     val miniMapWidth: StateFlow<Int> = _miniMapWidth
 
+    // Высота миникарты в статус-панели
+    private val _miniMapHeight = MutableStateFlow(300)
+    val miniMapHeight: StateFlow<Int> = _miniMapHeight
+
     // Тема оформления (DARK, LIGHT, DARK_BLUE, SOLARIZED_DARK, MONOKAI)
     private val _currentTheme = MutableStateFlow("DARK")
     val currentTheme: StateFlow<String> = _currentTheme
@@ -214,6 +218,20 @@ class ClientState {
     private val _msdpData = MutableStateFlow<Map<String, Any>>(emptyMap())
     val msdpData: StateFlow<Map<String, Any>> = _msdpData
 
+    // Флаг: фокус на вторичном текстовом поле (заметки зоны и т.д.)
+    private val _secondaryTextFieldFocused = MutableStateFlow(false)
+    val secondaryTextFieldFocused: StateFlow<Boolean> = _secondaryTextFieldFocused
+    fun setSecondaryTextFieldFocused(focused: Boolean) {
+        _secondaryTextFieldFocused.value = focused
+    }
+
+    // Событие для запроса фокуса на поле ввода (инкрементируется для trigger)
+    private val _requestInputFocus = MutableStateFlow(0)
+    val requestInputFocus: StateFlow<Int> = _requestInputFocus
+    fun requestInputFocus() {
+        _requestInputFocus.value++
+    }
+
     // MSDP статус (включён ли протокол)
     private val _msdpEnabled = MutableStateFlow(false)
     val msdpEnabled: StateFlow<Boolean> = _msdpEnabled
@@ -229,6 +247,9 @@ class ClientState {
     // GMCP данные (Generic MUD Communication Protocol)
     private val _gmcpData = MutableStateFlow<Map<String, kotlinx.serialization.json.JsonElement>>(emptyMap())
     val gmcpData: StateFlow<Map<String, kotlinx.serialization.json.JsonElement>> = _gmcpData
+
+    // Map context menu commands (registered by scripts)
+    private val mapContextCommands = mutableMapOf<String, (com.bylins.client.mapper.Room) -> Unit>()
 
     // Профили подключений
     private val _connectionProfiles = MutableStateFlow<List<com.bylins.client.connection.ConnectionProfile>>(
@@ -269,6 +290,14 @@ class ClientState {
     val mapRooms = mapManager.rooms
     val currentRoomId = mapManager.currentRoomId
     val mapEnabled = mapManager.mapEnabled
+    val activePath = mapManager.activePath
+    val pathTargetRoomId = mapManager.targetRoomId
+    val pathHighlightRoomIds = mapManager.pathHighlightRoomIds
+    val pathHighlightTargetId = mapManager.pathHighlightTargetId
+    val zoneNotes = mapManager.zoneNotes
+
+    fun getZoneNotes(zoneName: String): String = mapManager.getZoneNotes(zoneName)
+    fun setZoneNotes(zoneName: String, notes: String) = mapManager.setZoneNotes(zoneName, notes)
 
     init {
         // Регистрируем shutdown hook для корректного завершения
@@ -290,8 +319,9 @@ class ClientState {
         _encoding = configData.encoding
         telnetClient.setEncoding(_encoding)
 
-        // Загружаем ширину миникарты из конфига
+        // Загружаем размеры миникарты из конфига
         _miniMapWidth.value = configData.miniMapWidth
+        _miniMapHeight.value = configData.miniMapHeight
 
         // Загружаем тему из конфига
         _currentTheme.value = configData.theme
@@ -904,6 +934,100 @@ class ClientState {
                 return true
             }
 
+            command.startsWith("#script") -> {
+                val args = command.substring(7).trim()
+                val parts = args.split(" ", limit = 2)
+                val action = parts.getOrNull(0) ?: ""
+                val scriptName = parts.getOrNull(1)?.trim() ?: ""
+
+                when {
+                    // #script list - список скриптов
+                    action == "list" || args.isEmpty() -> {
+                        if (!::scriptManager.isInitialized) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] ScriptManager не инициализирован\u001B[0m")
+                            return true
+                        }
+                        val scripts = scriptManager.scripts.value
+                        if (scripts.isEmpty()) {
+                            telnetClient.addLocalOutput("\u001B[1;33m[#script] Скрипты не загружены\u001B[0m")
+                        } else {
+                            val sb = StringBuilder()
+                            sb.append("\u001B[1;32m[#script] Загруженные скрипты (${scripts.size}):\u001B[0m\n")
+                            scripts.forEach { script ->
+                                val status = if (script.enabled) "\u001B[1;32m✓\u001B[0m" else "\u001B[1;31m✗\u001B[0m"
+                                sb.append("  $status ${script.name} (${script.engine})\n")
+                            }
+                            telnetClient.addLocalOutput(sb.toString())
+                        }
+                    }
+
+                    // #script reload <name> - перезагрузить скрипт
+                    action == "reload" -> {
+                        if (scriptName.isEmpty()) {
+                            telnetClient.addLocalOutput("\u001B[1;33m[#script] Использование: #script reload <имя>\u001B[0m")
+                            return true
+                        }
+                        if (!::scriptManager.isInitialized) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] ScriptManager не инициализирован\u001B[0m")
+                            return true
+                        }
+                        // Ищем скрипт по имени (без расширения или с расширением)
+                        val scripts = scriptManager.scripts.value
+                        val script = scripts.find {
+                            it.name.equals(scriptName, ignoreCase = true) ||
+                            it.name.substringBeforeLast(".").equals(scriptName, ignoreCase = true)
+                        }
+                        if (script == null) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] Скрипт '$scriptName' не найден\u001B[0m")
+                            return true
+                        }
+                        try {
+                            scriptManager.reloadScript(script.id)
+                            telnetClient.addLocalOutput("\u001B[1;32m[#script] Скрипт '${script.name}' перезагружен\u001B[0m")
+                        } catch (e: Exception) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] Ошибка перезагрузки: ${e.message}\u001B[0m")
+                        }
+                    }
+
+                    // #script unload <name> - выгрузить скрипт
+                    action == "unload" -> {
+                        if (scriptName.isEmpty()) {
+                            telnetClient.addLocalOutput("\u001B[1;33m[#script] Использование: #script unload <имя>\u001B[0m")
+                            return true
+                        }
+                        if (!::scriptManager.isInitialized) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] ScriptManager не инициализирован\u001B[0m")
+                            return true
+                        }
+                        val scripts = scriptManager.scripts.value
+                        val script = scripts.find {
+                            it.name.equals(scriptName, ignoreCase = true) ||
+                            it.name.substringBeforeLast(".").equals(scriptName, ignoreCase = true)
+                        }
+                        if (script == null) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] Скрипт '$scriptName' не найден\u001B[0m")
+                            return true
+                        }
+                        try {
+                            scriptManager.unloadScript(script.id)
+                            telnetClient.addLocalOutput("\u001B[1;32m[#script] Скрипт '${script.name}' выгружен\u001B[0m")
+                        } catch (e: Exception) {
+                            telnetClient.addLocalOutput("\u001B[1;31m[#script] Ошибка выгрузки: ${e.message}\u001B[0m")
+                        }
+                    }
+
+                    else -> {
+                        val sb = StringBuilder()
+                        sb.append("\u001B[1;33m[#script] Использование:\u001B[0m\n")
+                        sb.append("  #script list - список загруженных скриптов\n")
+                        sb.append("  #script reload <имя> - перезагрузить скрипт\n")
+                        sb.append("  #script unload <имя> - выгрузить скрипт")
+                        telnetClient.addLocalOutput(sb.toString())
+                    }
+                }
+                return true
+            }
+
             // Speedwalk: распознаём паттерн типа 5n2e3w
             command.matches(Regex("^[0-9]*[nsewud]{1,2}([0-9]+[nsewud]{1,2})*$", RegexOption.IGNORE_CASE)) -> {
                 val directions = parseSpeedwalk(command)
@@ -991,7 +1115,7 @@ class ClientState {
             |  #goto <room_id>        - Переход к указанной комнате
             |  #run                   - Переход к ближайшей непосещенной комнате
             |  #find <название>       - Поиск комнат по названию
-            |  #zone                  - Информация о зонах
+            |  #zone                  - Информация о текущей зоне
             |  #zone list             - Список всех зон на карте
             |  #zone detect           - Автоматическая детекция зон
             |  #zone clear            - Очистить все зоны
@@ -999,18 +1123,14 @@ class ClientState {
             |
             |💾 ПЕРЕМЕННЫЕ:
             |  #var <имя> <значение>  - Установить переменную
+            |  #var <имя>             - Показать значение переменной
             |  #unvar <имя>           - Удалить переменную
             |  #vars                  - Показать все переменные
             |  Использование: @имя или ${'$'}{имя}
             |
-            |📝 ЛОГИРОВАНИЕ:
-            |  #log start             - Начать логирование
-            |  #log stop              - Остановить логирование
-            |  #log clear             - Очистить старые логи
-            |
-            |📊 СТАТИСТИКА:
-            |  #stats                 - Показать статистику сессии
-            |  #stats reset           - Сбросить статистику
+            |🔊 ЗВУКИ:
+            |  #sound <тип>           - Воспроизвести звук
+            |  Типы: tell, whisper, lowhp, levelup, death, combat, alert, beep
             |
             |🗂️ ВКЛАДКИ:
             |  UI в правой панели для управления вкладками
@@ -1023,9 +1143,11 @@ class ClientState {
             |  UI в правой панели для управления
             |
             |🎨 СКРИПТЫ:
+            |  #script               - Список загруженных скриптов
+            |  #script reload <имя>  - Перезагрузить скрипт
+            |  #script unload <имя>  - Выгрузить скрипт
             |  Поддержка JavaScript, Python (Jython), Lua (LuaJ)
             |  Размещайте скрипты в директории: scripts/
-            |  UI в правой панели для управления
             |
             |═══════════════════════════════════════════════════════════════
         """.trimMargin()
@@ -1567,6 +1689,7 @@ class ClientState {
             tabManager.getTabsForSave(),
             _encoding,
             _miniMapWidth.value,
+            _miniMapHeight.value,
             _currentTheme.value,
             _fontFamily.value,
             _fontSize.value,
@@ -1589,8 +1712,17 @@ class ClientState {
      * Устанавливает ширину боковой панели с миникартой
      */
     fun setMiniMapWidth(width: Int) {
-        val clampedWidth = width.coerceIn(150, 500)
+        val clampedWidth = width.coerceAtLeast(150)
         _miniMapWidth.value = clampedWidth
+        saveConfig()
+    }
+
+    /**
+     * Устанавливает высоту миникарты в статус-панели
+     */
+    fun setMiniMapHeight(height: Int) {
+        val clampedHeight = height.coerceIn(100, 800)
+        _miniMapHeight.value = clampedHeight
         saveConfig()
     }
 
@@ -1682,6 +1814,7 @@ class ClientState {
             tabManager.getTabsForSave(),
             _encoding,
             _miniMapWidth.value,
+            _miniMapHeight.value,
             _currentTheme.value,
             _fontFamily.value,
             _fontSize.value
@@ -1709,8 +1842,9 @@ class ClientState {
         _encoding = configData.encoding
         telnetClient.setEncoding(_encoding)
 
-        // Загружаем ширину миникарты
+        // Загружаем размеры миникарты
         _miniMapWidth.value = configData.miniMapWidth
+        _miniMapHeight.value = configData.miniMapHeight
 
         // Загружаем тему
         _currentTheme.value = configData.theme
@@ -1825,8 +1959,28 @@ class ClientState {
         mapManager.setRoomColor(roomId, color)
     }
 
+    fun setRoomTerrain(roomId: String, terrain: String?) {
+        mapManager.setRoomTerrain(roomId, terrain)
+    }
+
     fun setRoomTags(roomId: String, tags: Set<String>) {
         mapManager.setRoomTags(roomId, tags)
+    }
+
+    /**
+     * Полное обновление комнаты - название, заметки, terrain, теги, зона, выходы, visited
+     */
+    fun updateRoom(
+        roomId: String,
+        name: String,
+        note: String,
+        terrain: String?,
+        tags: Set<String>,
+        zone: String,
+        exits: Map<com.bylins.client.mapper.Direction, com.bylins.client.mapper.Exit>,
+        visited: Boolean
+    ) {
+        mapManager.updateRoom(roomId, name, note, terrain, tags, zone, exits, visited)
     }
 
     fun exportMap(): Map<String, com.bylins.client.mapper.Room> {
@@ -1870,6 +2024,63 @@ class ClientState {
         mapManager.clearAllZones()
     }
 
+    // Map context menu commands
+    fun getMapContextCommands(): Map<String, (com.bylins.client.mapper.Room) -> Unit> {
+        return mapContextCommands.toMap()
+    }
+
+    fun registerMapCommand(name: String, callback: (com.bylins.client.mapper.Room) -> Unit) {
+        mapContextCommands[name] = callback
+    }
+
+    fun unregisterMapCommand(name: String) {
+        mapContextCommands.remove(name)
+    }
+
+    fun executeMapCommand(name: String, room: com.bylins.client.mapper.Room) {
+        mapContextCommands[name]?.invoke(room)
+    }
+
+    fun findPathTo(roomId: String) {
+        if (mapManager.setPathTo(roomId)) {
+            val path = mapManager.activePath.value
+            val targetRoom = mapManager.getRoom(roomId)
+            val targetName = targetRoom?.name ?: roomId
+            // Используем addLocalOutput чтобы сообщение появилось ПЕРЕД промптом
+            val preview = if (path.isNotEmpty()) {
+                path.take(10).joinToString(" ") { it.shortName } + if (path.size > 10) " ..." else ""
+            } else ""
+            telnetClient.addLocalOutput("[Путь к '$targetName': ${path.size} шагов]" + if (preview.isNotEmpty()) "\n[Направления: $preview]" else "")
+        } else {
+            telnetClient.addLocalOutput("[Путь к комнате $roomId не найден]")
+        }
+    }
+
+    fun clearPath() {
+        mapManager.clearPath()
+        telnetClient.addLocalOutput("[Путь очищен]")
+    }
+
+    fun setPathHighlight(roomIds: Set<String>, targetRoomId: String?) {
+        mapManager.setPathHighlight(roomIds, targetRoomId)
+    }
+
+    fun clearPathHighlight() {
+        mapManager.clearPathHighlight()
+    }
+
+    fun findPathDirections(targetRoomId: String): List<com.bylins.client.mapper.Direction>? {
+        return mapManager.findPathFromCurrent(targetRoomId)
+    }
+
+    fun getNextPathDirection(): com.bylins.client.mapper.Direction? {
+        return mapManager.getNextPathDirection()
+    }
+
+    fun getPathPreview(steps: Int = 5): List<com.bylins.client.mapper.Direction> {
+        return mapManager.getPathPreview(steps)
+    }
+
     // Работа с базой данных карт
     fun saveMapToDatabase(name: String, description: String = ""): Boolean {
         return mapManager.saveMapToDatabase(name, description)
@@ -1896,7 +2107,8 @@ class ClientState {
             val scriptAPI = com.bylins.client.scripting.ScriptAPIImpl(
                 sendCommand = { command -> send(command) },
                 echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
-                logMessage = { message -> logger.info { message } },
+                logMessage = { message -> telnetClient.addLocalOutput("\u001B[1;36m$message\u001B[0m") },
+                requestFocus = { requestInputFocus() },
                 triggerActions = createTriggerActions(),
                 aliasActions = createAliasActions(),
                 timerActions = createTimerActions(),
@@ -2371,6 +2583,105 @@ class ClientState {
         override fun setCurrentRoom(roomId: String) {
             mapManager.setCurrentRoom(roomId)
         }
+
+        @Suppress("UNCHECKED_CAST")
+        override fun registerMapCommand(name: String, callback: Any) {
+            // Check if callback is already a Kotlin function (from MapperHelper wrapper)
+            val kotlinCallback: (com.bylins.client.mapper.Room) -> Unit = when (callback) {
+                is Function1<*, *> -> { room ->
+                    try {
+                        (callback as Function1<Map<String, Any>, Unit>).invoke(room.toMap())
+                    } catch (e: Exception) {
+                        logger.error { "Error executing map command callback: ${e.message}" }
+                    }
+                }
+                else -> { room ->
+                    // Fallback for raw JS callbacks (shouldn't happen with MapperHelper)
+                    try {
+                        invokeJsCallback(callback, room.toMap())
+                    } catch (e: Exception) {
+                        logger.error { "Error executing map command callback: ${e.message}" }
+                    }
+                }
+            }
+            this@ClientState.registerMapCommand(name, kotlinCallback)
+        }
+
+        override fun unregisterMapCommand(name: String) {
+            this@ClientState.unregisterMapCommand(name)
+        }
+
+        override fun setPathHighlight(roomIds: List<String>, targetRoomId: String?) {
+            mapManager.setPathHighlight(roomIds.toSet(), targetRoomId)
+        }
+
+        override fun clearPathHighlight() {
+            mapManager.clearPathHighlight()
+        }
+
+        /**
+         * Invokes JavaScript callback using reflection (works with Nashorn and GraalVM)
+         */
+        private fun invokeJsCallback(callback: Any, vararg args: Any?) {
+            try {
+                // Try to find call(Object, Object...) method
+                val callMethod = callback.javaClass.getMethod("call", Object::class.java, Array<Any>::class.java)
+                callMethod.invoke(callback, null, args)
+            } catch (e: NoSuchMethodException) {
+                try {
+                    // Alternative - find any call method
+                    val methods = callback.javaClass.methods.filter { it.name == "call" }
+                    for (method in methods) {
+                        try {
+                            if (method.parameterCount == 2) {
+                                method.invoke(callback, null, args)
+                                return
+                            } else if (method.isVarArgs) {
+                                method.invoke(callback, null, *args)
+                                return
+                            }
+                        } catch (_: Exception) { }
+                    }
+                    logger.warn { "Could not find suitable call method for callback" }
+                } catch (ex: Exception) {
+                    logger.error { "Error invoking callback: ${ex.message}" }
+                }
+            } catch (e: Exception) {
+                logger.error { "Error in callback: ${e.message}" }
+            }
+        }
+    }
+
+    /**
+     * Invokes JavaScript callback using reflection (works with Nashorn and GraalVM)
+     */
+    private fun invokeJsCallback(callback: Any, vararg args: Any?) {
+        try {
+            // Try to find call(Object, Object...) method
+            val callMethod = callback.javaClass.getMethod("call", Object::class.java, Array<Any>::class.java)
+            callMethod.invoke(callback, null, args)
+        } catch (e: NoSuchMethodException) {
+            try {
+                // Alternative - find any call method
+                val methods = callback.javaClass.methods.filter { it.name == "call" }
+                for (method in methods) {
+                    try {
+                        if (method.parameterCount == 2) {
+                            method.invoke(callback, null, args)
+                            return
+                        } else if (method.isVarArgs) {
+                            method.invoke(callback, null, *args)
+                            return
+                        }
+                    } catch (_: Exception) { }
+                }
+                logger.warn { "Could not find suitable call method for callback" }
+            } catch (ex: Exception) {
+                logger.error { "Error invoking callback: ${ex.message}" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error in callback: ${e.message}" }
+        }
     }
 
     private fun createStatusActions() = object : com.bylins.client.scripting.StatusActions {
@@ -2402,12 +2713,30 @@ class ClientState {
             statusManager.addMiniMap(id, currentRoomId, visible, actualOrder)
         }
 
+        override fun addPathPanel(id: String, targetName: String, stepsCount: Int, directions: List<String>, onClear: (() -> Unit)?, onFollow: (() -> Unit)?, order: Int) {
+            val actualOrder = if (order < 0) statusManager.elements.value.size else order
+            statusManager.addPathPanel(id, targetName, stepsCount, directions, onClear, onFollow, actualOrder)
+        }
+
+        override fun invokeJsCallback(callback: Any) {
+            this@ClientState.invokeJsCallback(callback)
+        }
+
         override fun update(id: String, updates: Map<String, Any>) {
             statusManager.update(id, updates)
         }
 
         override fun remove(id: String) {
+            // Проверяем, удаляется ли path panel - если да, вернём фокус на командную строку
+            val element = statusManager.get(id)
+            val isPathPanel = element is com.bylins.client.status.StatusElement.PathPanel
+
             statusManager.remove(id)
+
+            // Возвращаем фокус после удаления path panel
+            if (isPathPanel) {
+                requestInputFocus()
+            }
         }
 
         override fun clear() {
@@ -2453,6 +2782,14 @@ class ClientState {
                     "id" to element.id,
                     "currentRoomId" to (element.currentRoomId ?: ""),
                     "visible" to element.visible,
+                    "order" to element.order
+                )
+                is com.bylins.client.status.StatusElement.PathPanel -> mapOf(
+                    "type" to "pathpanel",
+                    "id" to element.id,
+                    "targetName" to element.targetName,
+                    "stepsCount" to element.stepsCount,
+                    "directions" to element.directions,
                     "order" to element.order
                 )
             }

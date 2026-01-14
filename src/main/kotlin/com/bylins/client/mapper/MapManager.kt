@@ -26,6 +26,24 @@ class MapManager(
     private val _mapEnabled = MutableStateFlow(false)
     val mapEnabled: StateFlow<Boolean> = _mapEnabled
 
+    // Active path tracking (Direction-based, for automatic path following)
+    private val _activePath = MutableStateFlow<List<Direction>>(emptyList())
+    val activePath: StateFlow<List<Direction>> = _activePath
+
+    private val _targetRoomId = MutableStateFlow<String?>(null)
+    val targetRoomId: StateFlow<String?> = _targetRoomId
+
+    // Path highlighting (room ID-based, for scripts)
+    private val _pathHighlightRoomIds = MutableStateFlow<Set<String>>(emptySet())
+    val pathHighlightRoomIds: StateFlow<Set<String>> = _pathHighlightRoomIds
+
+    private val _pathHighlightTargetId = MutableStateFlow<String?>(null)
+    val pathHighlightTargetId: StateFlow<String?> = _pathHighlightTargetId
+
+    // Zone notes
+    private val _zoneNotes = MutableStateFlow<Map<String, String>>(emptyMap())
+    val zoneNotes: StateFlow<Map<String, String>> = _zoneNotes
+
     private val pathfinder = Pathfinder()
     private val database = MapDatabase()
 
@@ -77,6 +95,7 @@ class MapManager(
      */
     fun setCurrentRoom(roomId: String) {
         if (_rooms.value.containsKey(roomId)) {
+            val previousRoomId = _currentRoomId.value
             _currentRoomId.value = roomId
 
             // Помечаем комнату как посещенную
@@ -91,6 +110,67 @@ class MapManager(
                 // Уведомляем о входе в комнату даже если уже посещали
                 onRoomEnter?.invoke(room)
             }
+
+            // Update active path
+            updateActivePath(previousRoomId, roomId)
+        }
+    }
+
+    /**
+     * Updates the active path when player moves
+     */
+    private fun updateActivePath(fromRoomId: String?, toRoomId: String) {
+        val currentPath = _activePath.value
+        val targetId = _targetRoomId.value
+
+        if (currentPath.isEmpty() || targetId == null) {
+            return // No active path
+        }
+
+        // Check if we reached the target
+        if (toRoomId == targetId) {
+            logger.info { "Reached target room, clearing path" }
+            clearPath()
+            return
+        }
+
+        // Check if the move matches the expected direction
+        if (fromRoomId != null && currentPath.isNotEmpty()) {
+            val expectedDir = currentPath.first()
+            val fromRoom = _rooms.value[fromRoomId]
+            val expectedTargetId = fromRoom?.exits?.get(expectedDir)?.targetRoomId
+
+            if (expectedTargetId == toRoomId) {
+                // Move matches expected direction, remove first step
+                _activePath.value = currentPath.drop(1)
+                logger.info { "Path updated: ${_activePath.value.size} steps remaining" }
+            } else {
+                // Player went off-path, recalculate
+                logger.info { "Player went off-path, recalculating..." }
+                recalculatePath()
+            }
+        }
+    }
+
+    /**
+     * Recalculates path from current room to target
+     */
+    private fun recalculatePath() {
+        val currentId = _currentRoomId.value
+        val targetId = _targetRoomId.value
+
+        if (currentId == null || targetId == null) {
+            clearPath()
+            return
+        }
+
+        val newPath = pathfinder.findPath(_rooms.value, currentId, targetId)
+        if (newPath != null) {
+            _activePath.value = newPath
+            logger.info { "Path recalculated: ${newPath.size} steps" }
+        } else {
+            logger.warn { "Could not find path to $targetId, clearing" }
+            clearPath()
         }
     }
 
@@ -302,6 +382,15 @@ class MapManager(
     }
 
     /**
+     * Устанавливает тип поверхности (terrain) для комнаты
+     */
+    fun setRoomTerrain(roomId: String, terrain: String?) {
+        val room = _rooms.value[roomId] ?: return
+        val updated = room.copy(terrain = terrain)
+        addRoom(updated)
+    }
+
+    /**
      * Добавляет тег к комнате
      */
     fun addRoomTag(roomId: String, tag: String) {
@@ -328,6 +417,33 @@ class MapManager(
         val room = _rooms.value[roomId] ?: return
         val updated = room.copy(tags = tags)
         addRoom(updated)
+    }
+
+    /**
+     * Полное обновление комнаты - название, заметки, terrain, теги, зона, выходы, visited
+     */
+    fun updateRoom(
+        roomId: String,
+        name: String,
+        note: String,
+        terrain: String?,
+        tags: Set<String>,
+        zone: String,
+        exits: Map<Direction, Exit>,
+        visited: Boolean
+    ) {
+        val room = _rooms.value[roomId] ?: return
+        val updated = room.copy(
+            name = name,
+            notes = note,
+            terrain = terrain,
+            tags = tags,
+            zone = zone.ifBlank { null },
+            exits = exits.toMutableMap(),
+            visited = visited
+        )
+        addRoom(updated)
+        logger.info { "Updated room $roomId: name='$name', terrain=$terrain, visited=$visited, exits=${exits.keys}" }
     }
 
     /**
@@ -446,6 +562,60 @@ class MapManager(
     fun findPathFromCurrent(endRoomId: String): List<Direction>? {
         val currentId = _currentRoomId.value ?: return null
         return findPathAStar(currentId, endRoomId)
+    }
+
+    /**
+     * Sets an active path to the target room
+     * The path will be tracked and updated as the player moves
+     */
+    fun setPathTo(targetRoomId: String): Boolean {
+        val path = findPathFromCurrent(targetRoomId)
+        if (path != null) {
+            _activePath.value = path
+            _targetRoomId.value = targetRoomId
+            logger.info { "Path set: ${path.size} steps to $targetRoomId" }
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Clears the active path
+     */
+    fun clearPath() {
+        _activePath.value = emptyList()
+        _targetRoomId.value = null
+    }
+
+    /**
+     * Sets path highlighting (for scripts)
+     * This is separate from the Direction-based activePath
+     */
+    fun setPathHighlight(roomIds: Set<String>, targetRoomId: String?) {
+        _pathHighlightRoomIds.value = roomIds
+        _pathHighlightTargetId.value = targetRoomId
+    }
+
+    /**
+     * Clears path highlighting
+     */
+    fun clearPathHighlight() {
+        _pathHighlightRoomIds.value = emptySet()
+        _pathHighlightTargetId.value = null
+    }
+
+    /**
+     * Gets the next direction in the active path (or null if no path)
+     */
+    fun getNextPathDirection(): Direction? {
+        return _activePath.value.firstOrNull()
+    }
+
+    /**
+     * Gets preview of upcoming directions (up to N steps)
+     */
+    fun getPathPreview(steps: Int = 5): List<Direction> {
+        return _activePath.value.take(steps)
     }
 
     /**
@@ -595,6 +765,30 @@ class MapManager(
         if (savedRooms != null && savedRooms.isNotEmpty()) {
             _rooms.value = savedRooms
             logger.info { "Loaded ${savedRooms.size} rooms from autosave" }
+        }
+        // Load zone notes
+        val savedZoneNotes = database.loadAllZoneNotes()
+        if (savedZoneNotes.isNotEmpty()) {
+            _zoneNotes.value = savedZoneNotes
+            logger.info { "Loaded ${savedZoneNotes.size} zone notes from database" }
+        }
+    }
+
+    /**
+     * Получает заметки для зоны
+     */
+    fun getZoneNotes(zoneName: String): String {
+        return _zoneNotes.value[zoneName] ?: ""
+    }
+
+    /**
+     * Устанавливает заметки для зоны
+     */
+    fun setZoneNotes(zoneName: String, notes: String) {
+        if (zoneName.isBlank()) return
+        _zoneNotes.value = _zoneNotes.value + (zoneName to notes)
+        scope.launch {
+            database.saveZoneNotes(zoneName, notes)
         }
     }
 

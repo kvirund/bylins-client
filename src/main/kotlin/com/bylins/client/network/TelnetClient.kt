@@ -125,10 +125,20 @@ class TelnetClient(
     /**
      * Добавляет текст в output БЕЗ обработки триггерами
      * Используется для echo из скриптов чтобы избежать рекурсии
+     * Вставляет перед незавершённой строкой (промптом/картой)
      */
     fun addToOutputRaw(text: String) {
-        val textWithNewline = text + "\n"
-        appendToBuffer(textWithNewline)
+        val currentValue = _receivedData.value
+        val lastNewlineIndex = currentValue.lastIndexOf('\n')
+        val incompleteLine = if (lastNewlineIndex == -1) currentValue else currentValue.substring(lastNewlineIndex + 1)
+
+        if (incompleteLine.isNotEmpty()) {
+            // Вставляем перед незавершённой строкой
+            val bufferComplete = if (lastNewlineIndex == -1) "" else currentValue.substring(0, lastNewlineIndex + 1)
+            _receivedData.value = bufferComplete + text + "\n" + incompleteLine
+        } else {
+            appendToBuffer(text + "\n")
+        }
     }
 
     /**
@@ -355,7 +365,6 @@ class TelnetClient(
                 variableBytes +
                 byteArrayOf(IAC, SE)
 
-            logger.info { "MSDP command bytes: ${message.joinToString(" ") { "%02X".format(it) }}" }
             sendTelnetCommand(message)
         }
     }

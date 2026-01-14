@@ -8,7 +8,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -29,6 +28,7 @@ fun MainWindow() {
     val inputFocusRequester = remember { FocusRequester() }
     val isConnected by clientState.isConnected.collectAsState()
     val msdpEnabled by clientState.msdpEnabled.collectAsState()
+    val secondaryTextFieldFocused by clientState.secondaryTextFieldFocused.collectAsState()
 
     // Отслеживаем последний обработанный KeyDown для поглощения KeyUp
     var lastHandledKey by remember { mutableStateOf<androidx.compose.ui.input.key.Key?>(null) }
@@ -36,6 +36,14 @@ fun MainWindow() {
     // Фокусируем input после подключения
     LaunchedEffect(isConnected) {
         if (isConnected) {
+            inputFocusRequester.requestFocus()
+        }
+    }
+
+    // Фокусируем input по запросу (например, после завершения следования)
+    val requestInputFocusTrigger by clientState.requestInputFocus.collectAsState()
+    LaunchedEffect(requestInputFocusTrigger) {
+        if (requestInputFocusTrigger > 0) {
             inputFocusRequester.requestFocus()
         }
     }
@@ -70,8 +78,9 @@ fun MainWindow() {
                             if (handled) {
                                 // Запоминаем клавишу чтобы поглотить KeyUp
                                 lastHandledKey = event.key
-                            } else if (!event.isCtrlPressed && !event.isAltPressed) {
-                                // Если hotkey не обработан, фокусируем input для обычного ввода
+                            } else if (!event.isCtrlPressed && !event.isAltPressed && !secondaryTextFieldFocused) {
+                                // Если hotkey не обработан и не редактируется вторичное поле,
+                                // фокусируем input для обычного ввода
                                 inputFocusRequester.requestFocus()
                             }
 
@@ -165,7 +174,7 @@ fun MainWindow() {
                                     modifier = Modifier
                                         .size(8.dp)
                                         .background(
-                                            color = if (msdpEnabled) Color(0xFF4CAF50) else Color(0xFFFF5555),
+                                            color = if (msdpEnabled) appColorScheme.success else appColorScheme.error,
                                             shape = androidx.compose.foundation.shape.CircleShape
                                         )
                                 )
@@ -213,7 +222,7 @@ fun MainWindow() {
                                     modifier = Modifier
                                         .width(4.dp)
                                         .fillMaxHeight()
-                                        .background(Color(0xFF555555))
+                                        .background(appColorScheme.border)
                                         .pointerHoverIcon(PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)))
                                         .pointerInput(Unit) {
                                             detectDragGestures { change, dragAmount ->

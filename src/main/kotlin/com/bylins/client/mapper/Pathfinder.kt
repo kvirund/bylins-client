@@ -70,7 +70,7 @@ class Pathfinder {
         rooms: Map<String, Room>,
         startRoomId: String
     ): List<Direction>? {
-        val startRoom = rooms[startRoomId] ?: return null
+        rooms[startRoomId] ?: return null
 
         // BFS для поиска ближайшей непосещённой комнаты
         val queue: Queue<PathNode> = LinkedList()
@@ -114,7 +114,7 @@ class Pathfinder {
         startRoomId: String,
         maxSteps: Int
     ): Map<String, Int> {
-        val startRoom = rooms[startRoomId] ?: return emptyMap()
+        rooms[startRoomId] ?: return emptyMap()
 
         val distances = mutableMapOf<String, Int>()
         val queue: Queue<Pair<String, Int>> = LinkedList()
@@ -166,7 +166,8 @@ class Pathfinder {
 
         // Эвристика: без координат возвращаем 0 (превращает A* в Dijkstra)
         // Координаты теперь вычисляются динамически при рендеринге
-        fun heuristic(@Suppress("UNUSED_PARAMETER") room: Room): Int {
+        @Suppress("UNUSED_PARAMETER")
+        fun heuristic(room: Room): Int {
             return 0
         }
 

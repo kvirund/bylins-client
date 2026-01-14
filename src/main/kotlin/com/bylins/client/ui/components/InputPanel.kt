@@ -76,7 +76,7 @@ fun InputPanel(
                 .focusRequester(focusRequester)
                 .onPreviewKeyEvent { event ->
                     when {
-                        event.key == Key.Enter && event.type == KeyEventType.KeyDown -> {
+                        (event.key == Key.Enter || event.key == Key.NumPadEnter) && event.type == KeyEventType.KeyDown -> {
                             sendCommand()
                             true
                         }

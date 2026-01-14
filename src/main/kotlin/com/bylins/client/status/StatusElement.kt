@@ -48,6 +48,19 @@ sealed class StatusElement {
         val visible: Boolean = true,
         val order: Int = 0
     ) : StatusElement()
+
+    /**
+     * Панель пути (маршрут к цели)
+     */
+    data class PathPanel(
+        override val id: String,
+        val targetName: String,           // Название цели
+        val stepsCount: Int,              // Количество шагов
+        val directions: List<String>,     // Список направлений
+        val hasClearCallback: Boolean = false,   // Показывать кнопку "Очистить"
+        val hasFollowCallback: Boolean = false,  // Показывать кнопку "Следовать"
+        val order: Int = 0
+    ) : StatusElement()
 }
 
 /**

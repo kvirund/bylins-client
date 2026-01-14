@@ -431,10 +431,84 @@ class MapDatabase {
             // Индексы
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_autosave_exits_room ON autosave_exits(room_id)")
 
+            // Таблица заметок по зонам
+            statement?.execute("""
+                CREATE TABLE IF NOT EXISTS zone_notes (
+                    zone_name TEXT PRIMARY KEY,
+                    notes TEXT NOT NULL DEFAULT '',
+                    updated_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
             statement?.close()
         } catch (e: Exception) {
             logger.error { "Error creating autosave tables: ${e.message}" }
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Сохраняет заметки для зоны
+     */
+    fun saveZoneNotes(zoneName: String, notes: String) {
+        if (zoneName.isBlank()) return
+        try {
+            val stmt = connection?.prepareStatement("""
+                INSERT OR REPLACE INTO zone_notes (zone_name, notes, updated_at)
+                VALUES (?, ?, ?)
+            """.trimIndent())
+            stmt?.setString(1, zoneName)
+            stmt?.setString(2, notes)
+            stmt?.setLong(3, Instant.now().epochSecond)
+            stmt?.executeUpdate()
+            stmt?.close()
+        } catch (e: Exception) {
+            logger.error { "Error saving zone notes: ${e.message}" }
+        }
+    }
+
+    /**
+     * Загружает заметки для зоны
+     */
+    fun loadZoneNotes(zoneName: String): String {
+        if (zoneName.isBlank()) return ""
+        return try {
+            val stmt = connection?.prepareStatement(
+                "SELECT notes FROM zone_notes WHERE zone_name = ?"
+            )
+            stmt?.setString(1, zoneName)
+            val rs = stmt?.executeQuery()
+            val notes = if (rs?.next() == true) rs.getString("notes") ?: "" else ""
+            rs?.close()
+            stmt?.close()
+            notes
+        } catch (e: Exception) {
+            logger.error { "Error loading zone notes: ${e.message}" }
+            ""
+        }
+    }
+
+    /**
+     * Загружает все заметки зон
+     */
+    fun loadAllZoneNotes(): Map<String, String> {
+        return try {
+            val result = mutableMapOf<String, String>()
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("SELECT zone_name, notes FROM zone_notes")
+            while (rs?.next() == true) {
+                val zoneName = rs.getString("zone_name")
+                val notes = rs.getString("notes") ?: ""
+                if (zoneName.isNotBlank()) {
+                    result[zoneName] = notes
+                }
+            }
+            rs?.close()
+            stmt?.close()
+            result
+        } catch (e: Exception) {
+            logger.error { "Error loading all zone notes: ${e.message}" }
+            emptyMap()
         }
     }
 

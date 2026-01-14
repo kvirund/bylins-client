@@ -40,3 +40,4 @@ scripts/**/venv/
 scripts/**/.venv/
 tmpclaude-*
 bin/
+world/

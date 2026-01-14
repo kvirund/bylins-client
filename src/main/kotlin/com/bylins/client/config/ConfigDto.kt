@@ -201,6 +201,7 @@ data class ClientConfig(
     val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
     val encoding: String = "UTF-8",  // Кодировка для telnet (UTF-8, windows-1251, и т.д.)
     val miniMapWidth: Int = 250,  // Ширина боковой панели с миникартой в dp
+    val miniMapHeight: Int = 300,  // Высота миникарты в статус-панели в dp
     val theme: String = "DARK",  // Название темы оформления
     val fontFamily: String = "MONOSPACE",  // Семейство шрифтов для вывода игры
     val fontSize: Int = 14,  // Размер шрифта в sp

@@ -1,12 +1,32 @@
 // JavaScript helper functions for Bylins MUD Client
 
+// Helper to convert Java Map to JS object
+function _javaMapToJs(javaMap) {
+    if (javaMap == null) return null;
+    var result = {};
+    var keys = javaMap.keySet().toArray();
+    for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        var value = javaMap.get(key);
+        // Recursively convert nested maps
+        if (value != null && typeof value.keySet === 'function') {
+            result[key] = _javaMapToJs(value);
+        } else if (value != null && typeof value.toArray === 'function') {
+            // Convert Java List/Set to JS array
+            result[key] = Java.from(value);
+        } else {
+            result[key] = value;
+        }
+    }
+    return result;
+}
+
 // Глобальные функции для удобства
 function send(command) { api.send(command); }
 function echo(text) { api.echo(text); }
-function mud_log(message) {
-    api.log(message);
-}
+function log(message) { api.log(message); }
 function print(message) { api.print(message); }
+function requestInputFocus() { api.requestInputFocus(); }
 
 // Переменные
 function getVar(name) { return api.getVariable(name); }
@@ -15,6 +35,10 @@ function setVar(name, value) { api.setVariable(name, value); }
 // Триггеры - через хелпер
 function addTrigger(pattern, callback) {
     return _triggerHelper.register(pattern, callback);
+}
+
+function removeTrigger(id) {
+    api.removeTrigger(id);
 }
 
 // Алиасы
@@ -108,6 +132,16 @@ var status = {
         var order = options.order || -1;
         api.statusAddMiniMap(id, currentRoomId, visible, order);
     },
+    addPath: function(id, options) {
+        options = options || {};
+        var targetName = options.targetName || "Unknown";
+        var stepsCount = options.stepsCount || 0;
+        var directions = options.directions || [];
+        var onClear = options.onClear || null;
+        var onFollow = options.onFollow || null;
+        var order = options.order || -1;
+        api.statusAddPathPanel(id, targetName, stepsCount, directions, onClear, onFollow, order);
+    },
     update: function(id, updates) {
         api.statusUpdate(id, updates);
     },
@@ -127,10 +161,20 @@ var status = {
 
 // Маппер
 var mapper = {
-    getCurrentRoom: function() { return api.getCurrentRoom(); },
-    getRoom: function(roomId) { return api.getRoom(roomId); },
-    searchRooms: function(query) { return api.searchRooms(query); },
-    findPath: function(targetRoomId) { return api.findPath(targetRoomId); },
+    getCurrentRoom: function() { return _javaMapToJs(api.getCurrentRoom()); },
+    getRoom: function(roomId) { return _javaMapToJs(api.getRoom(roomId)); },
+    searchRooms: function(query) {
+        var results = api.searchRooms(query);
+        var jsResults = [];
+        for (var i = 0; i < results.size(); i++) {
+            jsResults.push(_javaMapToJs(results.get(i)));
+        }
+        return jsResults;
+    },
+    findPath: function(targetRoomId) {
+        var path = api.findPath(targetRoomId);
+        return path ? Java.from(path) : null;
+    },
     setRoomNote: function(roomId, note) { api.setRoomNote(roomId, note); },
     setRoomColor: function(roomId, color) { api.setRoomColor(roomId, color); },
     setRoomZone: function(roomId, zone) { api.setRoomZone(roomId, zone); },
@@ -140,17 +184,30 @@ var mapper = {
     linkRooms: function(fromRoomId, direction, toRoomId) { api.linkRooms(fromRoomId, direction, toRoomId); },
     addUnexploredExits: function(roomId, exits) { api.addUnexploredExits(roomId, exits); },
     handleMovement: function(direction, roomName, exits, roomId) {
-        return api.handleMovement(direction, roomName, exits, roomId || null);
+        var result = api.handleMovement(direction, roomName, exits, roomId || null);
+        return _javaMapToJs(result);
     },
     // Высокоуровневая функция для обработки MSDP room данных
     handleRoom: function(params) {
-        api.log("mapper.handleRoom called with: " + JSON.stringify(params));
         var result = api.handleRoom(params);
-        api.log("mapper.handleRoom result: " + result);
-        return result;
+        return _javaMapToJs(result);
     },
     setEnabled: function(enabled) { api.setMapEnabled(enabled); },
     isEnabled: function() { return api.isMapEnabled(); },
     clear: function() { api.clearMap(); },
-    setCurrentRoom: function(roomId) { api.setCurrentRoom(roomId); }
+    setCurrentRoom: function(roomId) { api.setCurrentRoom(roomId); },
+    // Контекстное меню карты - через хелпер для правильной обработки callback'ов
+    registerContextCommand: function(name, callback) {
+        _mapperHelper.registerContextCommand(name, callback);
+    },
+    unregisterContextCommand: function(name) {
+        _mapperHelper.unregisterContextCommand(name);
+    },
+    // Подсветка пути
+    setPathHighlight: function(roomIds, targetRoomId) {
+        api.setPathHighlight(roomIds, targetRoomId || null);
+    },
+    clearPathHighlight: function() {
+        api.clearPathHighlight();
+    }
 };

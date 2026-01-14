@@ -114,6 +114,7 @@ class ZoneDetector {
     /**
      * Определяет название зоны на основе комнат в кластере
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun determineZoneName(
         clusterRooms: List<Room>,
         wordGroups: Map<Set<String>, List<Room>>,

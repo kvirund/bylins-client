@@ -185,11 +185,11 @@ fun TabContent(
     // Определяем текст для отображения
     val displayText = if (tab.id == "main") receivedData else tabContent
 
-    // КРИТИЧНО: Ограничиваем отображаемый текст последними 2000 строками
+    // КРИТИЧНО: Ограничиваем отображаемый текст последними 1000 строками
     // для избежания O(n²) сложности при парсинге ANSI кодов
     val limitedText = remember(displayText) {
         if (displayText.length > 100_000) { // Только если текст большой
-            getLastLines(displayText, 2000)
+            getLastLines(displayText, 1000)
         } else {
             displayText
         }

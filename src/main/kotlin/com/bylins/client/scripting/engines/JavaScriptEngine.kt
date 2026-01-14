@@ -56,6 +56,7 @@ class JavaScriptEngine : ScriptEngine {
         // Добавляем хелперы для callback'ов
         engine?.put("_triggerHelper", TriggerHelper())
         engine?.put("_timerHelper", TimerHelper())
+        engine?.put("_mapperHelper", MapperHelper())
 
         // Загружаем вспомогательные функции из ресурсов
         val helperCode = javaClass.getResourceAsStream("/javascript_helper.js")
@@ -69,6 +70,7 @@ class JavaScriptEngine : ScriptEngine {
      * Вызывает JavaScript callback через рефлексию (универсально для разных JS движков)
      */
     private fun invokeJsCallback(callback: Any, vararg args: Any?) {
+        logger.debug { "invokeJsCallback: callback=${callback.javaClass}, args=${args.map { it?.javaClass?.simpleName ?: "null" }}" }
         try {
             // Пробуем найти метод call(Object, Object...)
             val callMethod = callback.javaClass.getMethod("call", Object::class.java, Array<Any>::class.java)
@@ -86,14 +88,21 @@ class JavaScriptEngine : ScriptEngine {
                             method.invoke(callback, null, *args)
                             return
                         }
-                    } catch (_: Exception) { }
+                    } catch (innerEx: Exception) {
+                        val cause = if (innerEx is java.lang.reflect.InvocationTargetException) innerEx.cause else innerEx
+                        logger.error { "Error in callback method: ${cause?.message}" }
+                        cause?.printStackTrace()
+                    }
                 }
-                logger.warn { "Could not find suitable call method" }
+                logger.warn { "Could not find suitable call method for ${callback.javaClass}" }
             } catch (ex: Exception) {
                 logger.error { "Error invoking callback: ${ex.message}" }
+                ex.printStackTrace()
             }
         } catch (e: Exception) {
-            logger.error { "Error in callback: ${e.message}" }
+            val cause = if (e is java.lang.reflect.InvocationTargetException) e.cause else e
+            logger.error { "Error in callback: ${cause?.message}" }
+            cause?.printStackTrace()
         }
     }
 
@@ -107,7 +116,11 @@ class JavaScriptEngine : ScriptEngine {
             logger.debug { "TriggerHelper.register pattern='$pattern' bytes=[$patternBytes]" }
 
             val kotlinCallback: (String, Map<Int, String>) -> Unit = { line, groups ->
-                invokeJsCallback(callback, line, groups)
+                // Конвертируем Map<Int, String> в массив для JavaScript
+                // groups[0] = full match, groups[1] = group 1, etc.
+                val maxIndex = groups.keys.maxOrNull() ?: -1
+                val groupsArray = Array(maxIndex + 1) { index -> groups[index] ?: "" }
+                invokeJsCallback(callback, groupsArray)
             }
 
             val triggerId = api.addTrigger(pattern, kotlinCallback)
@@ -138,6 +151,72 @@ class JavaScriptEngine : ScriptEngine {
             val timerId = api.setInterval(interval, kotlinCallback)
             timerCallbacks[timerId] = callback
             return timerId
+        }
+    }
+
+    /**
+     * Converts a Kotlin Map to a JavaScript object via JSON
+     */
+    private fun mapToJsObject(map: Map<String, Any>): Any? {
+        val json = kotlinMapToJson(map)
+        return engine?.eval("($json)")
+    }
+
+    private fun kotlinMapToJson(map: Map<*, *>): String {
+        val sb = StringBuilder("{")
+        var first = true
+        for ((key, value) in map) {
+            if (!first) sb.append(",")
+            first = false
+            sb.append("\"").append(key).append("\":")
+            sb.append(valueToJson(value))
+        }
+        sb.append("}")
+        return sb.toString()
+    }
+
+    private fun valueToJson(value: Any?): String {
+        return when (value) {
+            null -> "null"
+            is String -> "\"${value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")}\""
+            is Number -> value.toString()
+            is Boolean -> value.toString()
+            is Map<*, *> -> kotlinMapToJson(value)
+            is List<*> -> "[${value.joinToString(",") { valueToJson(it) }}]"
+            is Set<*> -> "[${value.joinToString(",") { valueToJson(it) }}]"
+            else -> "\"${value.toString().replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        }
+    }
+
+    /**
+     * Хелпер для регистрации команд контекстного меню карты
+     */
+    inner class MapperHelper {
+        private val mapCallbacks = ConcurrentHashMap<String, Any>()
+
+        fun registerContextCommand(name: String, callback: Any) {
+            mapCallbacks[name] = callback
+            // Регистрируем обёртку, которая будет вызывать JS callback через движок
+            val wrapperCallback: Any = object : Function1<Map<String, Any>, Unit> {
+                override fun invoke(roomData: Map<String, Any>) {
+                    val jsCallback = mapCallbacks[name]
+                    if (jsCallback != null) {
+                        // Convert Kotlin Map to JavaScript object
+                        val jsObject = mapToJsObject(roomData)
+                        if (jsObject != null) {
+                            invokeJsCallback(jsCallback, jsObject)
+                        } else {
+                            logger.error { "Failed to convert room data to JS object" }
+                        }
+                    }
+                }
+            }
+            api.registerMapCommand(name, wrapperCallback)
+        }
+
+        fun unregisterContextCommand(name: String) {
+            mapCallbacks.remove(name)
+            api.unregisterMapCommand(name)
         }
     }
 

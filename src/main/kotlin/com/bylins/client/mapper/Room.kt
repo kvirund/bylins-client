@@ -94,11 +94,15 @@ data class Room(
      * Конвертирует комнату в Map для передачи плагинам
      */
     fun toMap(): Map<String, Any> {
+        // Exits as map: {direction_name: targetRoomId}
+        val exitsMap = exits.entries.associate { (dir, exit) ->
+            dir.name.lowercase() to exit.targetRoomId
+        }
         return mapOf(
             "id" to id,
             "name" to name,
             "description" to description,
-            "exits" to getAvailableDirections().map { it.name },
+            "exits" to exitsMap,
             "terrain" to (terrain ?: ""),
             "zone" to (zone ?: ""),
             "area" to (area ?: ""),

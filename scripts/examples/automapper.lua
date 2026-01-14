@@ -271,6 +271,35 @@ add_trigger("Вы \\S+ .*(север|юг|запад|восток|вверх|в�
     end
 end)
 
+-- Тест: ловим любую строку с "H" чтобы проверить работу триггеров
+add_trigger("\\d+H", function(line, groups)
+    mud_log("[TEST] Увидел строку с цифрами и H: " .. tostring(line))
+end)
+
+-- Парсинг HP/Mana из промпта: "317H 176M 65522o Зауч:0 ОЗ:0 17L 222G Вых:З>"
+-- Максимумы берём из MSDP (HEALTH_MAX, MANA_MAX)
+add_trigger("(\\d+)H\\s+(\\d+)M", function(line, groups)
+    mud_log("[HP] Триггер HP/M сработал!")
+
+    local hp = tonumber(groups[1])
+    local mana = tonumber(groups[2])
+
+    mud_log("[HP] hp=" .. tostring(hp) .. " mana=" .. tostring(mana))
+
+    if hp then
+        set_var("hp", tostring(hp))
+        local max_hp = tonumber(api:getMsdpValue("HEALTH_MAX")) or 1
+        mud_log("[HP] max_hp=" .. tostring(max_hp))
+        status:update("hp_bar", {value = hp, max = max_hp})
+    end
+
+    if mana then
+        set_var("mana", tostring(mana))
+        local max_mana = tonumber(api:getMsdpValue("MANA_MAX")) or 1
+        status:update("mana_bar", {value = mana, max = max_mana})
+    end
+end)
+
 -- При загрузке
 function on_load()
     -- Устанавливаем DEBUG по умолчанию
@@ -279,6 +308,11 @@ function on_load()
     end
 
     api:setMapEnabled(true)
+
+    -- Создаём статус-бары для HP и Mana
+    status:add_bar("hp_bar", {label = "HP", value = 100, max = 100, color = "#e74c3c"})
+    status:add_bar("mana_bar", {label = "Mana", value = 100, max = 100, color = "#3498db"})
+
     echo("[Automapper] Скрипт загружен")
     echo("[Automapper] Отладка: #vars automapper_debug=true/false")
 end

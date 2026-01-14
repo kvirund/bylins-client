@@ -139,8 +139,8 @@ fun TriggersPanel(
                             clientState.disableTrigger(id)
                         }
                     },
-                    onEdit = { trigger ->
-                        editingTrigger = trigger
+                    onEdit = { triggerToEdit ->
+                        editingTrigger = triggerToEdit
                         showDialog = true
                     },
                     onDelete = { id ->

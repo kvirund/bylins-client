@@ -89,19 +89,264 @@ compose.desktop {
             packageName = "Bylins Client"
             packageVersion = "1.0.0"
 
-            windows {
-                iconFile.set(project.file("src/main/resources/icon.ico"))
-            }
-            linux {
-                iconFile.set(project.file("src/main/resources/icon.png"))
-            }
-            macOS {
-                iconFile.set(project.file("src/main/resources/icon.icns"))
-            }
+            // Icons (optional - uncomment when files exist)
+            // windows { iconFile.set(project.file("src/main/resources/icon.ico")) }
+            // linux { iconFile.set(project.file("src/main/resources/icon.png")) }
+            // macOS { iconFile.set(project.file("src/main/resources/icon.icns")) }
         }
     }
 }
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// === Packaging Tasks ===
+
+val userHome: String = System.getProperty("user.home")
+val userDataDir = file("$userHome/.bylins-client")
+val scriptsDir = file("scripts")
+val packageDir = layout.buildDirectory.dir("package")
+
+// Task to create install script for Windows
+val createInstallScript by tasks.registering {
+    val outputFile = packageDir.map { it.file("install-userdata.bat") }
+    outputs.file(outputFile)
+
+    doLast {
+        outputFile.get().asFile.parentFile.mkdirs()
+        outputFile.get().asFile.writeText("""
+            @echo off
+            chcp 65001 >nul
+            echo === Bylins Client Installer ===
+            echo.
+
+            set "TARGET=%USERPROFILE%\.bylins-client"
+
+            if exist "userdata\config.json" (
+                echo Installing config...
+                if not exist "%TARGET%" mkdir "%TARGET%"
+                copy /Y "userdata\config.json" "%TARGET%\" >nul
+            )
+
+            if exist "userdata\maps\maps.db" (
+                echo Installing maps...
+                if not exist "%TARGET%\maps" mkdir "%TARGET%\maps"
+                copy /Y "userdata\maps\maps.db" "%TARGET%\maps\" >nul
+            )
+
+            echo.
+            echo Done! User data installed to: %TARGET%
+            echo.
+            echo Now run "Bylins Client.exe" to start the client.
+            pause
+        """.trimIndent())
+    }
+}
+
+// Task to create README
+val createReadme by tasks.registering {
+    val outputFile = packageDir.map { it.file("README.txt") }
+    outputs.file(outputFile)
+
+    doLast {
+        outputFile.get().asFile.parentFile.mkdirs()
+        outputFile.get().asFile.writeText("""
+            ===============================================
+                        BYLINS MUD CLIENT
+            ===============================================
+
+            БЫСТРЫЙ СТАРТ
+            -------------
+            1. Запусти install-userdata.bat (установит настройки и карту)
+            2. Запусти "Bylins Client.exe"
+            3. Готово!
+
+
+            СОДЕРЖИМОЕ АРХИВА
+            -----------------
+            Bylins Client.exe    - Главный исполняемый файл
+            app/                 - Файлы приложения (не трогать)
+            runtime/             - Java Runtime (не трогать)
+            scripts/             - Скрипты автоматизации
+            userdata/            - Настройки и карта для установки
+            install-userdata.bat - Установщик данных пользователя
+            README.txt           - Этот файл
+
+
+            РУЧНАЯ УСТАНОВКА
+            ----------------
+            Если install-userdata.bat не работает, скопируй вручную:
+
+            ИЗ АРХИВА                      КУДА КОПИРОВАТЬ
+            ─────────────────────────────────────────────────────────────
+            userdata/config.json      ->   %USERPROFILE%\.bylins-client\config.json
+            userdata/maps/maps.db     ->   %USERPROFILE%\.bylins-client\maps\maps.db
+
+            Где %USERPROFILE% - это твоя домашняя папка, например:
+            C:\Users\Vasya\.bylins-client\
+
+
+            СТРУКТУРА ПАПОК
+            ---------------
+            После установки должно получиться:
+
+            C:\Users\<ИМЯ>\.bylins-client\
+            ├── config.json              <- Настройки, триггеры, алиасы, хоткеи
+            └── maps\
+                └── maps.db              <- База данных карты
+
+            <ПАПКА С КЛИЕНТОМ>\
+            ├── Bylins Client.exe        <- Запускай это
+            └── scripts\
+                └── bylins_msdp.js       <- Скрипт для MSDP/статус-панели
+
+
+            ЧТО ВКЛЮЧЕНО В НАСТРОЙКИ
+            ------------------------
+            - Триггеры
+            - Алиасы
+            - Горячие клавиши
+            - Профили подключения
+            - Тема оформления
+            - Настройки шрифтов
+
+
+            ГОРЯЧИЕ КЛАВИШИ ПО УМОЛЧАНИЮ
+            ----------------------------
+            Numpad 8/2/4/6  - Движение (север/юг/запад/восток)
+            Numpad 7/9/1/3  - Движение (сз/св/юз/юв)
+            Numpad +/-      - Вверх/вниз
+            Ctrl+L          - Очистить экран
+            Tab             - Автодополнение команд
+
+
+            ПРОБЛЕМЫ?
+            ---------
+            - Клиент не запускается: проверь что установлена Java 17+
+            - Карта не загрузилась: проверь что maps.db в правильной папке
+            - Скрипты не работают: проверь что папка scripts рядом с .exe
+
+        """.trimIndent(), Charsets.UTF_8)
+    }
+}
+
+// Main packaging task
+val packageWithUserData by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Creates a distributable ZIP with app, scripts, and user data"
+
+    dependsOn("createDistributable", createInstallScript, createReadme)
+
+    archiveFileName.set("bylins-client-${version}.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+
+    // App files
+    from(layout.buildDirectory.dir("compose/binaries/main/app/Bylins Client")) {
+        into("")
+    }
+
+    // Scripts (exclude .disabled files)
+    from(scriptsDir) {
+        into("scripts")
+        exclude("*.disabled")
+    }
+
+    // User config
+    from(file("$userDataDir/config.json")) {
+        into("userdata")
+    }
+
+    // Maps database
+    from(file("$userDataDir/maps/maps.db")) {
+        into("userdata/maps")
+    }
+
+    // Install script and readme
+    from(packageDir) {
+        include("install-userdata.bat", "README.txt")
+    }
+
+    doLast {
+        println("\n=== Package Complete ===")
+        println("Output: ${archiveFile.get().asFile.absolutePath}")
+        println("Size: ${archiveFile.get().asFile.length() / 1024 / 1024} MB")
+    }
+}
+
+// Quick package without user data (just app + scripts)
+val packageApp by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Creates a distributable ZIP with app and scripts only (no user data)"
+
+    dependsOn("createDistributable")
+
+    archiveFileName.set("bylins-client-${version}-app.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+
+    from(layout.buildDirectory.dir("compose/binaries/main/app/Bylins Client")) {
+        into("")
+    }
+
+    from(scriptsDir) {
+        into("scripts")
+        exclude("*.disabled")
+    }
+}
+
+// JAR package (smaller, cross-platform, requires Java)
+val packageJar by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Creates a lightweight ZIP with JAR (requires Java 17+)"
+
+    dependsOn("packageUberJarForCurrentOS", createInstallScript, createReadme)
+
+    archiveFileName.set("bylins-client-${version}-jar.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+
+    // JAR file
+    from(layout.buildDirectory.dir("compose/jars")) {
+        include("*.jar")
+    }
+
+    // Scripts
+    from(scriptsDir) {
+        into("scripts")
+        exclude("*.disabled")
+    }
+
+    // User data
+    from(file("$userDataDir/config.json")) {
+        into("userdata")
+    }
+    from(file("$userDataDir/maps/maps.db")) {
+        into("userdata/maps")
+    }
+
+    // Install script and readme
+    from(packageDir) {
+        include("install-userdata.bat", "README.txt")
+    }
+
+    // Run script for Windows
+    doFirst {
+        val runScript = packageDir.get().file("run.bat").asFile
+        runScript.parentFile.mkdirs()
+        runScript.writeText("""
+            @echo off
+            java -jar bylins-client-windows-x64-${version}.jar
+            pause
+        """.trimIndent())
+    }
+
+    from(packageDir) {
+        include("run.bat")
+    }
+
+    doLast {
+        println("\n=== JAR Package Complete ===")
+        println("Output: ${archiveFile.get().asFile.absolutePath}")
+        println("Size: ${archiveFile.get().asFile.length() / 1024 / 1024} MB")
+        println("Note: Requires Java 17+ installed")
+    }
 }

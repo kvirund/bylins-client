@@ -40,6 +40,7 @@ class ConfigManager {
         tabs: List<Tab>,
         encoding: String = "UTF-8",
         miniMapWidth: Int = 250,
+        miniMapHeight: Int = 300,
         theme: String = "DARK",
         fontFamily: String = "MONOSPACE",
         fontSize: Int = 14,
@@ -56,6 +57,7 @@ class ConfigManager {
                 tabs = tabs.map { TabDto.fromTab(it) },
                 encoding = encoding,
                 miniMapWidth = miniMapWidth,
+                miniMapHeight = miniMapHeight,
                 theme = theme,
                 fontFamily = fontFamily,
                 fontSize = fontSize,
@@ -83,7 +85,7 @@ class ConfigManager {
                 logger.info { "Config file not found: $configFile" }
                 return ConfigData(
                     emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
-                    "UTF-8", 250, "DARK", "MONOSPACE", 14,
+                    "UTF-8", 250, 300, "DARK", "MONOSPACE", 14,
                     com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
                     null, false
                 )
@@ -99,6 +101,7 @@ class ConfigManager {
             val tabs = config.tabs.map { it.toTab() }
             val encoding = config.encoding
             val miniMapWidth = config.miniMapWidth
+            val miniMapHeight = config.miniMapHeight
             val theme = config.theme
             val fontFamily = config.fontFamily
             val fontSize = config.fontSize
@@ -108,14 +111,14 @@ class ConfigManager {
             val currentProfileId = config.currentProfileId
             val ignoreNumLock = config.ignoreNumLock
 
-            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock)" }
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme, fontFamily, fontSize, connectionProfiles, currentProfileId, ignoreNumLock)
+            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock)" }
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, miniMapHeight, theme, fontFamily, fontSize, connectionProfiles, currentProfileId, ignoreNumLock)
         } catch (e: Exception) {
             logger.error { "Failed to load config: ${e.message}" }
             e.printStackTrace()
             return ConfigData(
                 emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
-                "UTF-8", 250, "DARK", "MONOSPACE", 14,
+                "UTF-8", 250, 300, "DARK", "MONOSPACE", 14,
                 com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
                 null, false
             )
@@ -125,7 +128,7 @@ class ConfigManager {
     /**
      * Экспортирует конфигурацию в указанный файл
      */
-    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250, theme: String = "DARK", fontFamily: String = "MONOSPACE", fontSize: Int = 14) {
+    fun exportConfig(file: File, triggers: List<Trigger>, aliases: List<Alias>, hotkeys: List<Hotkey>, variables: Map<String, String>, tabs: List<Tab>, encoding: String = "UTF-8", miniMapWidth: Int = 250, miniMapHeight: Int = 300, theme: String = "DARK", fontFamily: String = "MONOSPACE", fontSize: Int = 14) {
         try {
             val config = ClientConfig(
                 triggers = triggers.map { TriggerDto.fromTrigger(it) },
@@ -135,6 +138,7 @@ class ConfigManager {
                 tabs = tabs.map { TabDto.fromTab(it) },
                 encoding = encoding,
                 miniMapWidth = miniMapWidth,
+                miniMapHeight = miniMapHeight,
                 theme = theme,
                 fontFamily = fontFamily,
                 fontSize = fontSize
@@ -166,12 +170,13 @@ class ConfigManager {
             val tabs = config.tabs.map { it.toTab() }
             val encoding = config.encoding
             val miniMapWidth = config.miniMapWidth
+            val miniMapHeight = config.miniMapHeight
             val theme = config.theme
             val fontFamily = config.fontFamily
             val fontSize = config.fontSize
 
-            logger.info { "Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize)" }
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, theme, fontFamily, fontSize)
+            logger.info { "Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize)" }
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, miniMapHeight, theme, fontFamily, fontSize)
         } catch (e: Exception) {
             logger.error { "Failed to import config: ${e.message}" }
             e.printStackTrace()
@@ -201,6 +206,7 @@ data class ConfigData(
     val tabs: List<Tab>,
     val encoding: String = "UTF-8",
     val miniMapWidth: Int = 250,
+    val miniMapHeight: Int = 300,
     val theme: String = "DARK",
     val fontFamily: String = "MONOSPACE",
     val fontSize: Int = 14,

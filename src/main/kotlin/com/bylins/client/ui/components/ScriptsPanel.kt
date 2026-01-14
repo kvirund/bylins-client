@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.scripting.Script
+import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
@@ -25,6 +26,7 @@ fun ScriptsPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
+    val colorScheme = LocalAppColorScheme.current
     val scripts by clientState.getScripts().collectAsState()
     val availableEngines = clientState.getAvailableScriptEngines()
     val scriptsDirectory = clientState.getScriptsDirectory()
@@ -32,7 +34,7 @@ fun ScriptsPanel(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
+            .background(colorScheme.background)
             .padding(8.dp)
     ) {
         // Заголовок с кнопками
@@ -45,7 +47,7 @@ fun ScriptsPanel(
         ) {
             Text(
                 text = "Скрипты",
-                color = Color.White,
+                color = colorScheme.onSurface,
                 fontSize = 16.sp,
                 fontFamily = FontFamily.Monospace
             )
@@ -67,10 +69,10 @@ fun ScriptsPanel(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF4CAF50)
+                        backgroundColor = colorScheme.success
                     )
                 ) {
-                    Text("+ Загрузить", color = Color.White)
+                    Text("+ Загрузить", color = colorScheme.onSurface)
                 }
 
                 Button(
@@ -84,10 +86,10 @@ fun ScriptsPanel(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF2196F3)
+                        backgroundColor = colorScheme.primary
                     )
                 ) {
-                    Text("📁 Открыть папку", color = Color.White)
+                    Text("📁 Открыть папку", color = colorScheme.onSurface)
                 }
             }
         }
@@ -96,14 +98,14 @@ fun ScriptsPanel(
         if (availableEngines.isNotEmpty()) {
             Text(
                 text = "Доступные движки: ${availableEngines.joinToString(", ")}",
-                color = Color.Gray,
+                color = colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
 
-        Divider(color = Color.Gray, thickness = 1.dp)
+        Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Список скриптов
         LazyColumn(
@@ -141,12 +143,12 @@ fun ScriptsPanel(
                 ) {
                     Text(
                         text = "Нет загруженных скриптов",
-                        color = Color.Gray,
+                        color = colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "Скрипты из директории '$scriptsDirectory' загружаются автоматически",
-                        color = Color.Gray,
+                        color = colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -163,11 +165,12 @@ private fun ScriptItem(
     onReload: (String) -> Unit,
     onUnload: (String) -> Unit
 ) {
+    val colorScheme = LocalAppColorScheme.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = Color(0xFF2D2D2D),
+        backgroundColor = colorScheme.surface,
         elevation = 2.dp
     ) {
         Row(
@@ -183,13 +186,13 @@ private fun ScriptItem(
             ) {
                 Text(
                     text = script.name,
-                    color = if (script.enabled) Color.White else Color.Gray,
+                    color = if (script.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
                     text = "${script.engine.name} | ${script.path}",
-                    color = Color.Gray,
+                    color = colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -207,10 +210,10 @@ private fun ScriptItem(
                         onToggle(script.id, enabled)
                     },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFF4CAF50),
-                        checkedTrackColor = Color(0xFF81C784),
-                        uncheckedThumbColor = Color.Gray,
-                        uncheckedTrackColor = Color.DarkGray
+                        checkedThumbColor = colorScheme.success,
+                        checkedTrackColor = colorScheme.success.copy(alpha = 0.5f),
+                        uncheckedThumbColor = colorScheme.onSurfaceVariant,
+                        uncheckedTrackColor = colorScheme.border
                     )
                 )
 
@@ -218,7 +221,7 @@ private fun ScriptItem(
                 Button(
                     onClick = { onReload(script.id) },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFF2196F3)
+                        backgroundColor = colorScheme.primary
                     ),
                     modifier = Modifier.height(32.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp)
@@ -230,12 +233,12 @@ private fun ScriptItem(
                 Button(
                     onClick = { onUnload(script.id) },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = Color(0xFFF44336)
+                        backgroundColor = colorScheme.error
                     ),
                     modifier = Modifier.height(32.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
-                    Text("✕", color = Color.White, fontSize = 14.sp)
+                    Text("✕", color = colorScheme.onSurface, fontSize = 14.sp)
                 }
             }
         }
