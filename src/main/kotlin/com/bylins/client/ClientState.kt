@@ -209,6 +209,10 @@ class ClientState {
     private lateinit var pluginManager: com.bylins.client.plugins.PluginManager
     private val pluginEventBus = com.bylins.client.plugins.events.EventBus()
 
+    // Профили персонажей - инициализируется после скриптинга
+    lateinit var profileManager: com.bylins.client.profiles.ProfileManager
+        private set
+
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
     val receivedData: StateFlow<String> = telnetClient.receivedData
 
@@ -311,6 +315,9 @@ class ClientState {
         // Инициализируем плагины
         initializePlugins()
 
+        // Инициализируем профили персонажей
+        initializeProfiles()
+
         // Продолжаем стандартную инициализацию
         // Пытаемся загрузить сохранённую конфигурацию
         val configData = configManager.loadConfig()
@@ -348,6 +355,11 @@ class ClientState {
             configData.hotkeys.forEach { addHotkey(it) }
             variableManager.loadVariables(configData.variables)
             tabManager.loadTabs(configData.tabs)
+        }
+
+        // Восстанавливаем стек профилей персонажей
+        if (::profileManager.isInitialized && configData.activeProfileStack.isNotEmpty()) {
+            profileManager.restoreStack(configData.activeProfileStack)
         }
 
         // Завершаем инициализацию и сохраняем конфиг один раз
@@ -676,8 +688,23 @@ class ClientState {
         // Подставляем переменные в команду
         val commandWithVars = variableManager.substituteVariables(command)
 
-        // Проверяем алиасы
-        val handled = aliasManager.processCommand(commandWithVars)
+        // Проверяем алиасы из профилей (наложение - последний профиль приоритетнее)
+        var handled = false
+        if (::profileManager.isInitialized) {
+            // Проверяем профили в обратном порядке (последний в стеке - приоритетнее)
+            for (profile in profileManager.getActiveProfiles().reversed()) {
+                if (aliasManager.processCommandWithAliases(commandWithVars, profile.aliases)) {
+                    handled = true
+                    break
+                }
+            }
+        }
+
+        // Если профильные алиасы не сработали - проверяем базовые
+        if (!handled) {
+            handled = aliasManager.processCommand(commandWithVars)
+        }
+
         if (handled) {
             // Алиас сработал
             sessionStats.incrementAliasesExecuted()
@@ -1387,12 +1414,23 @@ class ClientState {
 
             val matches = triggerManager.processLine(cleanLine)
 
+            // Обрабатываем триггеры из профилей
+            val profileMatches = mutableListOf<com.bylins.client.triggers.TriggerMatch>()
+            if (::profileManager.isInitialized) {
+                for (profile in profileManager.getActiveProfiles()) {
+                    val profileTriggerMatches = triggerManager.processLineWithTriggers(cleanLine, profile.triggers)
+                    profileMatches.addAll(profileTriggerMatches)
+                }
+            }
+
+            val allMatches = matches + profileMatches
+
             // Увеличиваем счетчик на количество сработавших триггеров
-            if (matches.isNotEmpty()) {
+            if (allMatches.isNotEmpty()) {
                 sessionStats.incrementTriggersActivated()
 
                 // Применяем colorize от первого сработавшего триггера с colorize
-                val triggerWithColor = matches.firstOrNull { it.trigger.colorize != null }
+                val triggerWithColor = allMatches.firstOrNull { it.trigger.colorize != null }
                 if (triggerWithColor != null) {
                     val colorize = triggerWithColor.trigger.colorize!!
                     val colorizedLine = applyColorize(cleanLine, colorize)
@@ -1596,7 +1634,26 @@ class ClientState {
         isAltPressed: Boolean,
         isShiftPressed: Boolean
     ): Boolean {
-        val handled = hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed, _ignoreNumLock.value)
+        // Проверяем хоткеи из профилей (наложение - последний профиль приоритетнее)
+        var handled = false
+        if (::profileManager.isInitialized) {
+            // Проверяем профили в обратном порядке (последний в стеке - приоритетнее)
+            for (profile in profileManager.getActiveProfiles().reversed()) {
+                if (hotkeyManager.processKeyPressWithHotkeys(
+                        key, isCtrlPressed, isAltPressed, isShiftPressed,
+                        _ignoreNumLock.value, profile.hotkeys
+                    )) {
+                    handled = true
+                    break
+                }
+            }
+        }
+
+        // Если профильные хоткеи не сработали - проверяем базовые
+        if (!handled) {
+            handled = hotkeyManager.processKeyPress(key, isCtrlPressed, isAltPressed, isShiftPressed, _ignoreNumLock.value)
+        }
+
         if (handled) {
             sessionStats.incrementHotkeysUsed()
             // Записываем время для блокировки дублирования текстового ввода
@@ -1695,7 +1752,8 @@ class ClientState {
             _fontSize.value,
             _connectionProfiles.value,
             _currentProfileId.value,
-            _ignoreNumLock.value
+            _ignoreNumLock.value,
+            if (::profileManager.isInitialized) profileManager.activeStack.value else emptyList()
         )
     }
 
@@ -2152,6 +2210,219 @@ class ClientState {
 
         // Автозагрузка плагинов
         pluginManager.autoLoadPlugins()
+    }
+
+    /**
+     * Инициализация системы профилей персонажей
+     */
+    private fun initializeProfiles() {
+        try {
+            logger.info { "Initializing profile system..." }
+
+            val configDir = java.nio.file.Paths.get(configManager.getConfigDir())
+            profileManager = com.bylins.client.profiles.ProfileManager(configDir, scriptManager)
+
+            // Загружаем все доступные профили
+            profileManager.loadProfiles()
+
+            logger.info { "Profile system initialized successfully, ${profileManager.profiles.value.size} profiles found" }
+        } catch (e: Exception) {
+            logger.error { "Failed to initialize profiles: ${e.message}" }
+            e.printStackTrace()
+        }
+    }
+
+    // === Эффективные настройки (с учётом активных профилей) ===
+
+    /**
+     * Все триггеры в порядке выполнения (база + профили)
+     * Возвращает пары (триггер, ID профиля или null для базы)
+     */
+    fun getAllTriggersWithSource(): List<Pair<com.bylins.client.triggers.Trigger, String?>> {
+        val result = mutableListOf<Pair<com.bylins.client.triggers.Trigger, String?>>()
+
+        // Сначала базовые триггеры
+        triggers.value.forEach { trigger ->
+            result.add(trigger to null)
+        }
+
+        // Затем триггеры из каждого профиля в порядке стека
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                profile.triggers.forEach { trigger ->
+                    result.add(trigger to profile.id)
+                }
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Эффективные алиасы (с наложением по паттерну)
+     */
+    fun getEffectiveAliases(): List<com.bylins.client.aliases.Alias> {
+        val result = aliases.value
+            .associateBy { it.pattern.pattern }
+            .toMutableMap()
+
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                for (alias in profile.aliases) {
+                    result[alias.pattern.pattern] = alias
+                }
+            }
+        }
+
+        return result.values.toList()
+    }
+
+    /**
+     * Все алиасы с источниками (для UI)
+     * Возвращает пары (алиас, ID профиля или null для базы)
+     */
+    fun getAllAliasesWithSource(): List<Pair<com.bylins.client.aliases.Alias, String?>> {
+        val result = mutableListOf<Pair<com.bylins.client.aliases.Alias, String?>>()
+
+        // Сначала базовые алиасы
+        aliases.value.forEach { alias ->
+            result.add(alias to null)
+        }
+
+        // Затем алиасы из каждого профиля в порядке стека
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                profile.aliases.forEach { alias ->
+                    result.add(alias to profile.id)
+                }
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Эффективные хоткеи (с наложением по комбинации клавиш)
+     */
+    fun getEffectiveHotkeys(): List<com.bylins.client.hotkeys.Hotkey> {
+        val result = hotkeys.value
+            .associateBy { getHotkeySignature(it) }
+            .toMutableMap()
+
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                for (hotkey in profile.hotkeys) {
+                    result[getHotkeySignature(hotkey)] = hotkey
+                }
+            }
+        }
+
+        return result.values.toList()
+    }
+
+    /**
+     * Все хоткеи с источниками (для UI)
+     * Возвращает пары (хоткей, ID профиля или null для базы)
+     */
+    fun getAllHotkeysWithSource(): List<Pair<com.bylins.client.hotkeys.Hotkey, String?>> {
+        val result = mutableListOf<Pair<com.bylins.client.hotkeys.Hotkey, String?>>()
+
+        // Сначала базовые хоткеи
+        hotkeys.value.forEach { hotkey ->
+            result.add(hotkey to null)
+        }
+
+        // Затем хоткеи из каждого профиля в порядке стека
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                profile.hotkeys.forEach { hotkey ->
+                    result.add(hotkey to profile.id)
+                }
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Эффективные переменные (с наложением по имени)
+     */
+    fun getEffectiveVariables(): Map<String, String> {
+        val result = variableManager.getAllVariables().toMutableMap()
+
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                result.putAll(profile.variables)
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Сигнатура хоткея для сравнения
+     */
+    private fun getHotkeySignature(hotkey: com.bylins.client.hotkeys.Hotkey): String {
+        return "${hotkey.key.keyCode}_${hotkey.ctrl}_${hotkey.alt}_${hotkey.shift}"
+    }
+
+    /**
+     * Находит источник триггера (ID профиля или null для базы)
+     */
+    fun findTriggerSource(triggerId: String): String? {
+        // Проверяем базовые
+        if (triggers.value.any { it.id == triggerId }) {
+            return null
+        }
+
+        // Проверяем профили
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.profiles.value) {
+                if (profile.triggers.any { it.id == triggerId }) {
+                    return profile.id
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Находит источник алиаса (ID профиля или null для базы)
+     */
+    fun findAliasSource(aliasId: String): String? {
+        if (aliases.value.any { it.id == aliasId }) {
+            return null
+        }
+
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.profiles.value) {
+                if (profile.aliases.any { it.id == aliasId }) {
+                    return profile.id
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Находит источник хоткея (ID профиля или null для базы)
+     */
+    fun findHotkeySource(hotkeyId: String): String? {
+        if (hotkeys.value.any { it.id == hotkeyId }) {
+            return null
+        }
+
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.profiles.value) {
+                if (profile.hotkeys.any { it.id == hotkeyId }) {
+                    return profile.id
+                }
+            }
+        }
+
+        return null
     }
 
     /**

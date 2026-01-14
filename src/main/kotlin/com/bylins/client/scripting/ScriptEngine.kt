@@ -53,7 +53,8 @@ data class Script(
     val name: String,
     val path: String,
     val engine: ScriptEngine,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val profileId: String? = null  // ID профиля, к которому принадлежит скрипт (null = базовый скрипт)
 ) {
     /**
      * Вызывает функцию в скрипте

@@ -67,21 +67,22 @@ fun TriggerDialog(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // ID
-                    FormField(
-                        label = "ID",
-                        value = id,
-                        onValueChange = { id = it },
-                        enabled = isNewTrigger,
-                        placeholder = "unique-id"
-                    )
+                    // ID - только для редактирования (показываем readonly)
+                    if (!isNewTrigger) {
+                        Text(
+                            text = "ID: $id",
+                            color = Color(0xFF888888),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
 
-                    // Name
+                    // Name (опционально)
                     FormField(
-                        label = "Название",
+                        label = "Название (опционально)",
                         value = name,
                         onValueChange = { name = it },
-                        placeholder = "Описательное название"
+                        placeholder = "По умолчанию: паттерн"
                     )
 
                     // Pattern
@@ -320,8 +321,6 @@ fun TriggerDialog(
                         onClick = {
                             // Валидация
                             when {
-                                id.isBlank() -> errorMessage = "ID не может быть пустым"
-                                name.isBlank() -> errorMessage = "Название не может быть пустым"
                                 pattern.isBlank() -> errorMessage = "Pattern не может быть пустым"
                                 else -> {
                                     try {
@@ -345,10 +344,20 @@ fun TriggerDialog(
                                             )
                                         } else null
 
+                                        // ID: для нового - генерируем UUID, для существующего - сохраняем
+                                        val triggerId = if (isNewTrigger) {
+                                            "tr-${java.util.UUID.randomUUID().toString().take(8)}"
+                                        } else {
+                                            id
+                                        }
+
+                                        // Name: если пустое - используем pattern
+                                        val triggerName = name.ifBlank { pattern }
+
                                         // Создаём триггер
                                         val newTrigger = Trigger(
-                                            id = id,
-                                            name = name,
+                                            id = triggerId,
+                                            name = triggerName,
                                             pattern = regex,
                                             commands = commandsList,
                                             enabled = enabled,

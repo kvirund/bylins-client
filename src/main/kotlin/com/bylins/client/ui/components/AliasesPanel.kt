@@ -26,9 +26,21 @@ fun AliasesPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
+    // Получаем все алиасы с источниками
+    val aliasesWithSource = remember { mutableStateOf(clientState.getAllAliasesWithSource()) }
     val aliases by clientState.aliases.collectAsState()
+    val activeStack by clientState.profileManager.activeStack.collectAsState()
+    val profiles by clientState.profileManager.profiles.collectAsState()
+
+    // Обновляем при изменении алиасов или стека
+    LaunchedEffect(aliases, activeStack) {
+        aliasesWithSource.value = clientState.getAllAliasesWithSource()
+    }
+
     var showDialog by remember { mutableStateOf(false) }
     var editingAlias by remember { mutableStateOf<Alias?>(null) }
+    var editingAliasSource by remember { mutableStateOf<String?>(null) }
+    var targetProfileId by remember { mutableStateOf<String?>(null) }  // null = база
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -109,6 +121,7 @@ fun AliasesPanel(
                 Button(
                     onClick = {
                         editingAlias = null
+                        editingAliasSource = null
                         showDialog = true
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -120,37 +133,130 @@ fun AliasesPanel(
             }
         }
 
+        // Селектор цели добавления
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Добавлять в:",
+                color = colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            var targetExpanded by remember { mutableStateOf(false) }
+            Box {
+                Button(
+                    onClick = { targetExpanded = true },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
+                }
+
+                DropdownMenu(
+                    expanded = targetExpanded,
+                    onDismissRequest = { targetExpanded = false }
+                ) {
+                    DropdownMenuItem(onClick = {
+                        targetProfileId = null
+                        targetExpanded = false
+                    }) {
+                        Text("База", fontFamily = FontFamily.Monospace)
+                    }
+                    activeStack.forEach { profileId ->
+                        val profile = profiles.find { it.id == profileId }
+                        if (profile != null) {
+                            DropdownMenuItem(onClick = {
+                                targetProfileId = profileId
+                                targetExpanded = false
+                            }) {
+                                Text(profile.name, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Divider(color = colorScheme.divider, thickness = 1.dp)
 
-        // Список алиасов
+        // Список алиасов (все из базы + профилей)
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(aliases) { alias ->
+            items(aliasesWithSource.value) { (alias, source) ->
+                // Формируем список доступных целей для перемещения (исключая текущий источник)
+                val availableTargets = mutableListOf<Pair<String?, String>>()
+                if (source != null) {
+                    availableTargets.add(null to "База")
+                }
+                activeStack.forEach { profileId ->
+                    if (profileId != source) {
+                        profiles.find { it.id == profileId }?.let { profile ->
+                            availableTargets.add(profileId to profile.name)
+                        }
+                    }
+                }
+
                 AliasItem(
                     alias = alias,
+                    source = source,
+                    sourceName = source?.let { srcId -> profiles.find { it.id == srcId }?.name } ?: "База",
+                    availableTargets = availableTargets,
                     onToggle = { id, enabled ->
-                        if (enabled) {
-                            clientState.enableAlias(id)
-                        } else {
-                            clientState.disableAlias(id)
+                        if (source == null) {
+                            // Базовый алиас
+                            if (enabled) {
+                                clientState.enableAlias(id)
+                            } else {
+                                clientState.disableAlias(id)
+                            }
                         }
+                        // TODO: для профильных алиасов пока не поддерживается toggle
                     },
                     onEdit = { aliasToEdit ->
                         editingAlias = aliasToEdit
+                        editingAliasSource = source
                         showDialog = true
                     },
                     onDelete = { id ->
-                        clientState.removeAlias(id)
+                        if (source == null) {
+                            clientState.removeAlias(id)
+                        } else {
+                            clientState.profileManager.removeAliasFromProfile(source, id)
+                        }
+                    },
+                    onMove = { targetProfileId ->
+                        // Удаляем из источника
+                        if (source == null) {
+                            clientState.removeAlias(alias.id)
+                        } else {
+                            clientState.profileManager.removeAliasFromProfile(source, alias.id)
+                        }
+                        // Добавляем в цель
+                        if (targetProfileId == null) {
+                            clientState.addAlias(alias)
+                        } else {
+                            clientState.profileManager.addAliasToProfile(targetProfileId, alias)
+                        }
                     }
                 )
             }
         }
 
-        if (aliases.isEmpty()) {
+        if (aliasesWithSource.value.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -171,15 +277,27 @@ fun AliasesPanel(
             onDismiss = {
                 showDialog = false
                 editingAlias = null
+                editingAliasSource = null
             },
             onSave = { alias ->
                 if (editingAlias == null) {
-                    clientState.addAlias(alias)
+                    // Новый алиас - добавляем в выбранную цель
+                    if (targetProfileId == null) {
+                        clientState.addAlias(alias)
+                    } else {
+                        clientState.profileManager.addAliasToProfile(targetProfileId!!, alias)
+                    }
                 } else {
-                    clientState.updateAlias(alias)
+                    // Редактирование - обновляем в исходном месте
+                    if (editingAliasSource == null) {
+                        clientState.updateAlias(alias)
+                    } else {
+                        clientState.profileManager.updateAliasInProfile(editingAliasSource!!, alias)
+                    }
                 }
                 showDialog = false
                 editingAlias = null
+                editingAliasSource = null
             }
         )
     }
@@ -188,9 +306,13 @@ fun AliasesPanel(
 @Composable
 private fun AliasItem(
     alias: Alias,
+    source: String?,        // null = база, иначе ID профиля
+    sourceName: String,     // Отображаемое имя источника
+    availableTargets: List<Pair<String?, String>>,  // (id или null для базы, имя)
     onToggle: (String, Boolean) -> Unit,
     onEdit: (Alias) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onMove: (targetProfileId: String?) -> Unit  // null = переместить в базу
 ) {
     var expanded by remember { mutableStateOf(false) }
     val colorScheme = LocalAppColorScheme.current
@@ -211,14 +333,32 @@ private fun AliasItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Название и ID
+                // Название, ID и источник
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = alias.name,
-                        color = if (alias.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = alias.name,
+                            color = if (alias.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        // Бейдж источника
+                        Card(
+                            backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
+                            elevation = 0.dp
+                        ) {
+                            Text(
+                                text = sourceName,
+                                color = colorScheme.onSurface,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Text(
                         text = "ID: ${alias.id}",
                         color = colorScheme.onSurfaceVariant,
@@ -316,6 +456,45 @@ private fun AliasItem(
 
                     // Priority
                     InfoRow("Priority:", alias.priority.toString())
+
+                    // Переместить в другой профиль
+                    if (availableTargets.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        var showMoveMenu by remember { mutableStateOf(false) }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Переместить в:",
+                                color = colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Box {
+                                Button(
+                                    onClick = { showMoveMenu = true },
+                                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Выбрать...", color = Color.White, fontSize = 11.sp)
+                                }
+                                DropdownMenu(
+                                    expanded = showMoveMenu,
+                                    onDismissRequest = { showMoveMenu = false }
+                                ) {
+                                    availableTargets.forEach { (targetId, targetName) ->
+                                        DropdownMenuItem(onClick = {
+                                            onMove(targetId)
+                                            showMoveMenu = false
+                                        }) {
+                                            Text(targetName, fontFamily = FontFamily.Monospace)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -192,6 +192,11 @@ fun MainWindow() {
                         onClick = { selectedTab = 11 },
                         text = { Text("Настройки") }
                     )
+                    Tab(
+                        selected = selectedTab == 12,
+                        onClick = { selectedTab = 12 },
+                        text = { Text("Профили") }
+                    )
                 }
 
                 Divider()
@@ -327,6 +332,13 @@ fun MainWindow() {
                         11 -> {
                             // Панель настроек
                             SettingsPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        12 -> {
+                            // Панель профилей персонажей
+                            ProfilesPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )

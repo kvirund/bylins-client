@@ -30,10 +30,22 @@ fun HotkeysPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
+    // Получаем все хоткеи с источниками
+    val hotkeysWithSource = remember { mutableStateOf(clientState.getAllHotkeysWithSource()) }
     val hotkeys by clientState.hotkeys.collectAsState()
+    val activeStack by clientState.profileManager.activeStack.collectAsState()
+    val profiles by clientState.profileManager.profiles.collectAsState()
+
+    // Обновляем при изменении хоткеев или стека
+    LaunchedEffect(hotkeys, activeStack) {
+        hotkeysWithSource.value = clientState.getAllHotkeysWithSource()
+    }
+
     val ignoreNumLock by clientState.ignoreNumLock.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingHotkey by remember { mutableStateOf<Hotkey?>(null) }
+    var editingHotkeySource by remember { mutableStateOf<String?>(null) }
+    var targetProfileId by remember { mutableStateOf<String?>(null) }  // null = база
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -182,12 +194,71 @@ fun HotkeysPanel(
             )
         }
 
+        // Селектор цели добавления
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Добавлять в:",
+                color = colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            var targetExpanded by remember { mutableStateOf(false) }
+            Box {
+                Button(
+                    onClick = { targetExpanded = true },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
+                }
+
+                DropdownMenu(
+                    expanded = targetExpanded,
+                    onDismissRequest = { targetExpanded = false }
+                ) {
+                    DropdownMenuItem(onClick = {
+                        targetProfileId = null
+                        targetExpanded = false
+                    }) {
+                        Text("База", fontFamily = FontFamily.Monospace)
+                    }
+                    activeStack.forEach { profileId ->
+                        val profile = profiles.find { it.id == profileId }
+                        if (profile != null) {
+                            DropdownMenuItem(onClick = {
+                                targetProfileId = profileId
+                                targetExpanded = false
+                            }) {
+                                Text(profile.name, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Диалог добавления хоткея
         if (showAddDialog) {
             HotkeyDialog(
                 onDismiss = { showAddDialog = false },
                 onSave = { hotkey ->
-                    clientState.addHotkey(hotkey)
+                    // Новый хоткей - добавляем в выбранную цель
+                    if (targetProfileId == null) {
+                        clientState.addHotkey(hotkey)
+                    } else {
+                        clientState.profileManager.addHotkeyToProfile(targetProfileId!!, hotkey)
+                    }
                     showAddDialog = false
                 }
             )
@@ -197,10 +268,19 @@ fun HotkeysPanel(
         if (editingHotkey != null) {
             HotkeyDialog(
                 hotkey = editingHotkey,
-                onDismiss = { editingHotkey = null },
-                onSave = { hotkey ->
-                    clientState.updateHotkey(hotkey)
+                onDismiss = {
                     editingHotkey = null
+                    editingHotkeySource = null
+                },
+                onSave = { hotkey ->
+                    // Редактирование - обновляем в исходном месте
+                    if (editingHotkeySource == null) {
+                        clientState.updateHotkey(hotkey)
+                    } else {
+                        clientState.profileManager.updateHotkeyInProfile(editingHotkeySource!!, hotkey)
+                    }
+                    editingHotkey = null
+                    editingHotkeySource = null
                 }
             )
         }
@@ -234,18 +314,18 @@ fun HotkeysPanel(
 
         Divider(color = colorScheme.divider, thickness = 1.dp)
 
-        // Список хоткеев (отсортированный)
-        val sortedHotkeys = remember(hotkeys) {
-            hotkeys.sortedWith(
-                compareBy<Hotkey> { !it.ctrl && !it.alt && !it.shift } // Сначала с модификаторами
-                    .thenBy { it.ctrl }
-                    .thenBy { it.alt }
-                    .thenBy { it.shift }
-                    .thenBy { it.getKeyCombo() }
+        // Список хоткеев с источниками (отсортированный)
+        val sortedHotkeysWithSource = remember(hotkeysWithSource.value) {
+            hotkeysWithSource.value.sortedWith(
+                compareBy<Pair<Hotkey, String?>> { !it.first.ctrl && !it.first.alt && !it.first.shift } // Сначала с модификаторами
+                    .thenBy { it.first.ctrl }
+                    .thenBy { it.first.alt }
+                    .thenBy { it.first.shift }
+                    .thenBy { it.first.getKeyCombo() }
             )
         }
 
-        if (sortedHotkeys.isEmpty()) {
+        if (sortedHotkeysWithSource.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -263,21 +343,60 @@ fun HotkeysPanel(
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                items(sortedHotkeys, key = { it.id }) { hotkey ->
+                items(sortedHotkeysWithSource, key = { it.first.id }) { (hotkey, source) ->
+                    // Формируем список доступных целей для перемещения (исключая текущий источник)
+                    val availableTargets = mutableListOf<Pair<String?, String>>()
+                    if (source != null) {
+                        availableTargets.add(null to "База")
+                    }
+                    activeStack.forEach { profileId ->
+                        if (profileId != source) {
+                            profiles.find { it.id == profileId }?.let { profile ->
+                                availableTargets.add(profileId to profile.name)
+                            }
+                        }
+                    }
+
                     HotkeyRow(
                         hotkey = hotkey,
+                        source = source,
+                        sourceName = source?.let { srcId -> profiles.find { it.id == srcId }?.name } ?: "База",
+                        availableTargets = availableTargets,
                         onToggle = { id, enabled ->
-                            if (enabled) {
-                                clientState.enableHotkey(id)
-                            } else {
-                                clientState.disableHotkey(id)
+                            if (source == null) {
+                                // Базовый хоткей
+                                if (enabled) {
+                                    clientState.enableHotkey(id)
+                                } else {
+                                    clientState.disableHotkey(id)
+                                }
                             }
+                            // TODO: для профильных хоткеев пока не поддерживается toggle
                         },
                         onEdit = { editHotkey ->
                             editingHotkey = editHotkey
+                            editingHotkeySource = source
                         },
                         onDelete = { id ->
-                            clientState.removeHotkey(id)
+                            if (source == null) {
+                                clientState.removeHotkey(id)
+                            } else {
+                                clientState.profileManager.removeHotkeyFromProfile(source, id)
+                            }
+                        },
+                        onMove = { targetProfileId ->
+                            // Удаляем из источника
+                            if (source == null) {
+                                clientState.removeHotkey(hotkey.id)
+                            } else {
+                                clientState.profileManager.removeHotkeyFromProfile(source, hotkey.id)
+                            }
+                            // Добавляем в цель
+                            if (targetProfileId == null) {
+                                clientState.addHotkey(hotkey)
+                            } else {
+                                clientState.profileManager.addHotkeyToProfile(targetProfileId, hotkey)
+                            }
                         }
                     )
                 }
@@ -289,9 +408,13 @@ fun HotkeysPanel(
 @Composable
 private fun HotkeyRow(
     hotkey: Hotkey,
+    source: String?,        // null = база, иначе ID профиля
+    sourceName: String,     // Отображаемое имя источника
+    availableTargets: List<Pair<String?, String>>,  // (id или null для базы, имя)
     onToggle: (String, Boolean) -> Unit,
     onEdit: (Hotkey) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onMove: (targetProfileId: String?) -> Unit  // null = переместить в базу
 ) {
     val colorScheme = LocalAppColorScheme.current
 
@@ -321,6 +444,21 @@ private fun HotkeyRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+
+        // Бейдж источника
+        Card(
+            backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
+            elevation = 0.dp,
+            modifier = Modifier.padding(end = 8.dp)
+        ) {
+            Text(
+                text = sourceName,
+                color = colorScheme.onSurface,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
 
         // Кнопки управления
         Row(
@@ -354,6 +492,40 @@ private fun HotkeyRow(
                     color = Color.White,
                     fontSize = 12.sp
                 )
+            }
+
+            // Кнопка перемещения (если есть куда перемещать)
+            if (availableTargets.isNotEmpty()) {
+                var showMoveMenu by remember { mutableStateOf(false) }
+                Box {
+                    Button(
+                        onClick = { showMoveMenu = true },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = colorScheme.warning
+                        ),
+                        modifier = Modifier.size(28.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(
+                            text = "→",
+                            color = Color.White,
+                            fontSize = 12.sp
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMoveMenu,
+                        onDismissRequest = { showMoveMenu = false }
+                    ) {
+                        availableTargets.forEach { (targetId, targetName) ->
+                            DropdownMenuItem(onClick = {
+                                onMove(targetId)
+                                showMoveMenu = false
+                            }) {
+                                Text(targetName, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
             }
 
             // Кнопка удаления

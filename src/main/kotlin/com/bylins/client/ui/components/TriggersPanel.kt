@@ -26,9 +26,21 @@ fun TriggersPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
+    // Получаем все триггеры с источниками
+    val triggersWithSource = remember { mutableStateOf(clientState.getAllTriggersWithSource()) }
     val triggers by clientState.triggers.collectAsState()
+    val activeStack by clientState.profileManager.activeStack.collectAsState()
+    val profiles by clientState.profileManager.profiles.collectAsState()
+
+    // Обновляем при изменении триггеров или стека
+    LaunchedEffect(triggers, activeStack) {
+        triggersWithSource.value = clientState.getAllTriggersWithSource()
+    }
+
     var showDialog by remember { mutableStateOf(false) }
     var editingTrigger by remember { mutableStateOf<Trigger?>(null) }
+    var editingTriggerSource by remember { mutableStateOf<String?>(null) }
+    var targetProfileId by remember { mutableStateOf<String?>(null) }  // null = база
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -109,6 +121,7 @@ fun TriggersPanel(
                 Button(
                     onClick = {
                         editingTrigger = null
+                        editingTriggerSource = null
                         showDialog = true
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -120,37 +133,130 @@ fun TriggersPanel(
             }
         }
 
+        // Селектор цели добавления
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Добавлять в:",
+                color = colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            var targetExpanded by remember { mutableStateOf(false) }
+            Box {
+                Button(
+                    onClick = { targetExpanded = true },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
+                        color = colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
+                }
+
+                DropdownMenu(
+                    expanded = targetExpanded,
+                    onDismissRequest = { targetExpanded = false }
+                ) {
+                    DropdownMenuItem(onClick = {
+                        targetProfileId = null
+                        targetExpanded = false
+                    }) {
+                        Text("База", fontFamily = FontFamily.Monospace)
+                    }
+                    activeStack.forEach { profileId ->
+                        val profile = profiles.find { it.id == profileId }
+                        if (profile != null) {
+                            DropdownMenuItem(onClick = {
+                                targetProfileId = profileId
+                                targetExpanded = false
+                            }) {
+                                Text(profile.name, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Divider(color = colorScheme.divider, thickness = 1.dp)
 
-        // Список триггеров
+        // Список триггеров (все из базы + профилей)
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            items(triggers) { trigger ->
+            items(triggersWithSource.value) { (trigger, source) ->
+                // Формируем список доступных целей для перемещения (исключая текущий источник)
+                val availableTargets = mutableListOf<Pair<String?, String>>()
+                if (source != null) {
+                    availableTargets.add(null to "База")
+                }
+                activeStack.forEach { profileId ->
+                    if (profileId != source) {
+                        profiles.find { it.id == profileId }?.let { profile ->
+                            availableTargets.add(profileId to profile.name)
+                        }
+                    }
+                }
+
                 TriggerItem(
                     trigger = trigger,
+                    source = source,
+                    sourceName = source?.let { srcId -> profiles.find { it.id == srcId }?.name } ?: "База",
+                    availableTargets = availableTargets,
                     onToggle = { id, enabled ->
-                        if (enabled) {
-                            clientState.enableTrigger(id)
-                        } else {
-                            clientState.disableTrigger(id)
+                        if (source == null) {
+                            // Базовый триггер
+                            if (enabled) {
+                                clientState.enableTrigger(id)
+                            } else {
+                                clientState.disableTrigger(id)
+                            }
                         }
+                        // TODO: для профильных триггеров пока не поддерживается toggle
                     },
                     onEdit = { triggerToEdit ->
                         editingTrigger = triggerToEdit
+                        editingTriggerSource = source
                         showDialog = true
                     },
                     onDelete = { id ->
-                        clientState.removeTrigger(id)
+                        if (source == null) {
+                            clientState.removeTrigger(id)
+                        } else {
+                            clientState.profileManager.removeTriggerFromProfile(source, id)
+                        }
+                    },
+                    onMove = { targetProfileId ->
+                        // Удаляем из источника
+                        if (source == null) {
+                            clientState.removeTrigger(trigger.id)
+                        } else {
+                            clientState.profileManager.removeTriggerFromProfile(source, trigger.id)
+                        }
+                        // Добавляем в цель
+                        if (targetProfileId == null) {
+                            clientState.addTrigger(trigger)
+                        } else {
+                            clientState.profileManager.addTriggerToProfile(targetProfileId, trigger)
+                        }
                     }
                 )
             }
         }
 
-        if (triggers.isEmpty()) {
+        if (triggersWithSource.value.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -171,15 +277,27 @@ fun TriggersPanel(
             onDismiss = {
                 showDialog = false
                 editingTrigger = null
+                editingTriggerSource = null
             },
             onSave = { trigger ->
                 if (editingTrigger == null) {
-                    clientState.addTrigger(trigger)
+                    // Новый триггер - добавляем в выбранную цель
+                    if (targetProfileId == null) {
+                        clientState.addTrigger(trigger)
+                    } else {
+                        clientState.profileManager.addTriggerToProfile(targetProfileId!!, trigger)
+                    }
                 } else {
-                    clientState.updateTrigger(trigger)
+                    // Редактирование - обновляем в исходном месте
+                    if (editingTriggerSource == null) {
+                        clientState.updateTrigger(trigger)
+                    } else {
+                        clientState.profileManager.updateTriggerInProfile(editingTriggerSource!!, trigger)
+                    }
                 }
                 showDialog = false
                 editingTrigger = null
+                editingTriggerSource = null
             }
         )
     }
@@ -188,9 +306,13 @@ fun TriggersPanel(
 @Composable
 private fun TriggerItem(
     trigger: Trigger,
+    source: String?,        // null = база, иначе ID профиля
+    sourceName: String,     // Отображаемое имя источника
+    availableTargets: List<Pair<String?, String>>,  // (id или null для базы, имя)
     onToggle: (String, Boolean) -> Unit,
     onEdit: (Trigger) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onMove: (targetProfileId: String?) -> Unit  // null = переместить в базу
 ) {
     var expanded by remember { mutableStateOf(false) }
     val colorScheme = LocalAppColorScheme.current
@@ -211,14 +333,32 @@ private fun TriggerItem(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Название и ID
+                // Название, ID и источник
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = trigger.name,
-                        color = if (trigger.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = trigger.name,
+                            color = if (trigger.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        // Бейдж источника
+                        Card(
+                            backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
+                            elevation = 0.dp
+                        ) {
+                            Text(
+                                text = sourceName,
+                                color = colorScheme.onSurface,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Text(
                         text = "ID: ${trigger.id}",
                         color = colorScheme.onSurfaceVariant,
@@ -336,6 +476,45 @@ private fun TriggerItem(
                             if (trigger.colorize.bold) append(", BOLD")
                         }
                         InfoRow("Color:", colorInfo)
+                    }
+
+                    // Переместить в другой профиль
+                    if (availableTargets.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        var showMoveMenu by remember { mutableStateOf(false) }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Переместить в:",
+                                color = colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Box {
+                                Button(
+                                    onClick = { showMoveMenu = true },
+                                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Выбрать...", color = Color.White, fontSize = 11.sp)
+                                }
+                                DropdownMenu(
+                                    expanded = showMoveMenu,
+                                    onDismissRequest = { showMoveMenu = false }
+                                ) {
+                                    availableTargets.forEach { (targetId, targetName) ->
+                                        DropdownMenuItem(onClick = {
+                                            onMove(targetId)
+                                            showMoveMenu = false
+                                        }) {
+                                            Text(targetName, fontFamily = FontFamily.Monospace)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

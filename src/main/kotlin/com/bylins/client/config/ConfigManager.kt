@@ -46,7 +46,8 @@ class ConfigManager {
         fontSize: Int = 14,
         connectionProfiles: List<com.bylins.client.connection.ConnectionProfile> = emptyList(),
         currentProfileId: String? = null,
-        ignoreNumLock: Boolean = false
+        ignoreNumLock: Boolean = false,
+        activeProfileStack: List<String> = emptyList()
     ) {
         try {
             val config = ClientConfig(
@@ -63,7 +64,8 @@ class ConfigManager {
                 fontSize = fontSize,
                 connectionProfiles = connectionProfiles.map { ConnectionProfileDto.fromConnectionProfile(it) },
                 currentProfileId = currentProfileId,
-                ignoreNumLock = ignoreNumLock
+                ignoreNumLock = ignoreNumLock,
+                activeProfileStack = activeProfileStack
             )
 
             val jsonString = json.encodeToString(config)
@@ -87,7 +89,7 @@ class ConfigManager {
                     emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
                     "UTF-8", 250, 300, "DARK", "MONOSPACE", 14,
                     com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
-                    null, false
+                    null, false, emptyList()
                 )
             }
 
@@ -110,9 +112,10 @@ class ConfigManager {
             }
             val currentProfileId = config.currentProfileId
             val ignoreNumLock = config.ignoreNumLock
+            val activeProfileStack = config.activeProfileStack
 
-            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock)" }
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, miniMapHeight, theme, fontFamily, fontSize, connectionProfiles, currentProfileId, ignoreNumLock)
+            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock, ${activeProfileStack.size} active profiles)" }
+            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, miniMapHeight, theme, fontFamily, fontSize, connectionProfiles, currentProfileId, ignoreNumLock, activeProfileStack)
         } catch (e: Exception) {
             logger.error { "Failed to load config: ${e.message}" }
             e.printStackTrace()
@@ -120,7 +123,7 @@ class ConfigManager {
                 emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
                 "UTF-8", 250, 300, "DARK", "MONOSPACE", 14,
                 com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
-                null, false
+                null, false, emptyList()
             )
         }
     }
@@ -212,5 +215,6 @@ data class ConfigData(
     val fontSize: Int = 14,
     val connectionProfiles: List<com.bylins.client.connection.ConnectionProfile> = emptyList(),
     val currentProfileId: String? = null,
-    val ignoreNumLock: Boolean = false
+    val ignoreNumLock: Boolean = false,
+    val activeProfileStack: List<String> = emptyList()
 )

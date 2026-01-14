@@ -43,8 +43,9 @@ class ScriptManager(
      * Загружает скрипт из файла
      * @param file файл скрипта
      * @param forceDisabled принудительно создать как отключённый (не выполнять код)
+     * @param profileId ID профиля, к которому принадлежит скрипт (null = базовый)
      */
-    fun loadScript(file: File, forceDisabled: Boolean = false): Script? {
+    fun loadScript(file: File, forceDisabled: Boolean = false, profileId: String? = null): Script? {
         val isDisabled = forceDisabled || file.name.contains(".disabled")
 
         // Определяем расширение (убираем .disabled если есть)
@@ -65,27 +66,32 @@ class ScriptManager(
                     name = cleanName.substringBeforeLast("."),
                     path = file.absolutePath,
                     engine = engine,
-                    enabled = false
+                    enabled = false,
+                    profileId = profileId
                 )
                 _scripts.value = _scripts.value + script
-                logger.info { "Added disabled ${engine.name} script: $cleanName" }
+                logger.info { "Added disabled ${engine.name} script: $cleanName${profileId?.let { " (profile: $it)" } ?: ""}" }
                 script
             } else {
                 // Для включённых - полная загрузка с выполнением кода
                 val script = engine.loadScript(file.absolutePath)
                 if (script != null) {
-                    _scripts.value = _scripts.value + script
+                    // Добавляем profileId к скрипту
+                    val scriptWithProfile = script.copy(profileId = profileId)
+                    _scripts.value = _scripts.value + scriptWithProfile
 
                     // Вызываем on_load если функция существует
                     try {
-                        script.call("on_load", api)
+                        scriptWithProfile.call("on_load", api)
                     } catch (e: Exception) {
                         logger.warn { "Error calling on_load for ${script.name}: ${e.message}" }
                     }
 
-                    logger.info { "Loaded ${engine.name} script: $cleanName" }
+                    logger.info { "Loaded ${engine.name} script: $cleanName${profileId?.let { " (profile: $it)" } ?: ""}" }
+                    scriptWithProfile
+                } else {
+                    null
                 }
-                script
             }
         } catch (e: Exception) {
             logger.error(e) { "Error loading ${engine.name} script $cleanName: ${e.message}" }
@@ -355,5 +361,64 @@ class ScriptManager(
      */
     fun getScriptsDirectory(): String {
         return scriptsDirectory.absolutePath
+    }
+
+    // === Методы для работы со скриптами профилей ===
+
+    /**
+     * Загружает все скрипты из указанной директории
+     * @param directory директория со скриптами
+     * @param profileId ID профиля, к которому принадлежат скрипты
+     */
+    fun loadScriptsFromDirectory(directory: File, profileId: String) {
+        if (!directory.exists() || !directory.isDirectory) {
+            logger.info { "Scripts directory does not exist for profile $profileId: ${directory.absolutePath}" }
+            return
+        }
+
+        val allFiles = directory.listFiles { file ->
+            file.isFile && engines.any { engine ->
+                engine.fileExtensions.any { ext ->
+                    file.name.endsWith(ext) || file.name.contains(ext)
+                }
+            }
+        } ?: emptyArray()
+
+        val (disabledFiles, enabledFiles) = allFiles.partition { file ->
+            file.name.contains(".disabled")
+        }
+
+        logger.info { "Found ${enabledFiles.size} enabled and ${disabledFiles.size} disabled scripts for profile $profileId" }
+
+        // Загружаем включённые скрипты (с выполнением кода)
+        enabledFiles.forEach { file ->
+            loadScript(file, profileId = profileId)
+        }
+
+        // Добавляем отключённые скрипты в список (без выполнения кода)
+        disabledFiles.forEach { file ->
+            loadScript(file, profileId = profileId)
+        }
+    }
+
+    /**
+     * Выгружает все скрипты, принадлежащие указанному профилю
+     * @param profileId ID профиля
+     */
+    fun unloadScriptsByProfileId(profileId: String) {
+        val scriptsToUnload = _scripts.value.filter { it.profileId == profileId }
+
+        scriptsToUnload.forEach { script ->
+            // Вызываем on_unload если функция существует
+            try {
+                script.call("on_unload")
+            } catch (e: Exception) {
+                // Игнорируем ошибки
+            }
+        }
+
+        _scripts.value = _scripts.value.filter { it.profileId != profileId }
+
+        logger.info { "Unloaded ${scriptsToUnload.size} scripts for profile $profileId" }
     }
 }

@@ -53,6 +53,28 @@ class AliasManager(
         return false
     }
 
+    /**
+     * Обрабатывает команду против указанного списка алиасов
+     * Используется для обработки алиасов из профилей
+     * Возвращает true если команда была обработана алиасом
+     */
+    fun processCommandWithAliases(command: String, externalAliases: List<Alias>): Boolean {
+        for (alias in externalAliases) {
+            if (!alias.enabled) continue
+
+            val matchResult = alias.pattern.matchEntire(command)
+            if (matchResult != null) {
+                // Уведомляем о срабатывании алиаса
+                val groups = matchResult.groupValues.mapIndexed { index, value -> index to value }.toMap()
+                onAliasFired?.invoke(alias, command, groups)
+
+                executeAlias(alias, matchResult)
+                return true
+            }
+        }
+        return false
+    }
+
     private fun executeAlias(alias: Alias, match: MatchResult) {
         for (command in alias.commands) {
             // Заменяем переменные $0, $1, $2 и т.д. на группы из regex

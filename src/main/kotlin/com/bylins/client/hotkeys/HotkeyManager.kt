@@ -54,6 +54,30 @@ class HotkeyManager(
         return false
     }
 
+    /**
+     * Обрабатывает нажатие клавиши против указанного списка хоткеев
+     * Используется для обработки хоткеев из профилей
+     * Возвращает true, если хоткей сработал
+     */
+    fun processKeyPressWithHotkeys(
+        key: Key,
+        isCtrlPressed: Boolean,
+        isAltPressed: Boolean,
+        isShiftPressed: Boolean,
+        ignoreNumLock: Boolean = false,
+        externalHotkeys: List<Hotkey>
+    ): Boolean {
+        for (hotkey in externalHotkeys) {
+            if (!hotkey.enabled) continue
+
+            if (hotkey.matches(key, isCtrlPressed, isAltPressed, isShiftPressed, ignoreNumLock)) {
+                executeHotkey(hotkey)
+                return true
+            }
+        }
+        return false
+    }
+
     private fun executeHotkey(hotkey: Hotkey) {
         for (command in hotkey.commands) {
             onCommand(command)

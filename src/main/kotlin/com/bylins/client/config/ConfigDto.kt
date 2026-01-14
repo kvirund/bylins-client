@@ -206,6 +206,7 @@ data class ClientConfig(
     val fontFamily: String = "MONOSPACE",  // Семейство шрифтов для вывода игры
     val fontSize: Int = 14,  // Размер шрифта в sp
     val connectionProfiles: List<ConnectionProfileDto> = emptyList(),  // Список профилей подключений
-    val currentProfileId: String? = null,  // ID текущего выбранного профиля
-    val ignoreNumLock: Boolean = false  // Игнорировать состояние NumLock для хоткеев
+    val currentProfileId: String? = null,  // ID текущего выбранного профиля подключения
+    val ignoreNumLock: Boolean = false,  // Игнорировать состояние NumLock для хоткеев
+    val activeProfileStack: List<String> = emptyList()  // Стек активных профилей персонажей
 )

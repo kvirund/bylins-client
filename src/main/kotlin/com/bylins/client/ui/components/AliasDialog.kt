@@ -58,21 +58,22 @@ fun AliasDialog(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // ID
-                    FormField(
-                        label = "ID",
-                        value = id,
-                        onValueChange = { id = it },
-                        enabled = isNewAlias,
-                        placeholder = "unique-id"
-                    )
+                    // ID - только для редактирования (показываем readonly)
+                    if (!isNewAlias) {
+                        Text(
+                            text = "ID: $id",
+                            color = Color(0xFF888888),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
 
-                    // Name
+                    // Name (опционально)
                     FormField(
-                        label = "Название",
+                        label = "Название (опционально)",
                         value = name,
                         onValueChange = { name = it },
-                        placeholder = "Описательное название"
+                        placeholder = "По умолчанию: паттерн"
                     )
 
                     // Pattern
@@ -186,8 +187,6 @@ fun AliasDialog(
                         onClick = {
                             // Валидация
                             when {
-                                id.isBlank() -> errorMessage = "ID не может быть пустым"
-                                name.isBlank() -> errorMessage = "Название не может быть пустым"
                                 pattern.isBlank() -> errorMessage = "Pattern не может быть пустым"
                                 else -> {
                                     try {
@@ -202,10 +201,20 @@ fun AliasDialog(
                                             .map { it.trim() }
                                             .filter { it.isNotEmpty() }
 
+                                        // ID: для нового - генерируем UUID, для существующего - сохраняем
+                                        val aliasId = if (isNewAlias) {
+                                            "al-${java.util.UUID.randomUUID().toString().take(8)}"
+                                        } else {
+                                            id
+                                        }
+
+                                        // Name: если пустое - используем pattern
+                                        val aliasName = name.ifBlank { pattern }
+
                                         // Создаём алиас
                                         val newAlias = Alias(
-                                            id = id,
-                                            name = name,
+                                            id = aliasId,
+                                            name = aliasName,
                                             pattern = regex,
                                             commands = commandsList,
                                             enabled = enabled,

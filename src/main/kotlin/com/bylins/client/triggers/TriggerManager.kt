@@ -66,12 +66,44 @@ class TriggerManager(
         return matches
     }
 
+    /**
+     * Обрабатывает строку текста против указанного списка триггеров
+     * Используется для обработки триггеров из профилей
+     */
+    fun processLineWithTriggers(line: String, externalTriggers: List<Trigger>): List<TriggerMatch> {
+        val matches = mutableListOf<TriggerMatch>()
+
+        for (trigger in externalTriggers) {
+            if (!trigger.enabled) continue
+            if (trigger.once && firedOnceTriggers.contains(trigger.id)) continue
+
+            val matchResult = trigger.pattern.find(line)
+            if (matchResult != null) {
+                matches.add(TriggerMatch(trigger, matchResult, line))
+
+                // Уведомляем о срабатывании триггера
+                val groups = matchResult.groupValues.mapIndexed { index, value -> index to value }.toMap()
+                onTriggerFired?.invoke(trigger, line, groups)
+
+                // Выполняем команды триггера
+                executeTrigger(trigger, matchResult)
+
+                // Помечаем once триггер как выполненный
+                if (trigger.once) {
+                    firedOnceTriggers.add(trigger.id)
+                }
+            }
+        }
+
+        return matches
+    }
+
     private fun executeTrigger(trigger: Trigger, match: MatchResult) {
         for (command in trigger.commands) {
             // Заменяем переменные $1, $2 и т.д. на группы из regex
             var processedCommand = command
             for (i in 0..match.groupValues.size - 1) {
-                processedCommand = processedCommand.replace("$$i", match.groupValues[i])
+                processedCommand = processedCommand.replace("\$$i", match.groupValues[i])
             }
 
             // Отправляем команду
@@ -148,7 +180,7 @@ class TriggerManager(
 
             return triggers.size
         } catch (e: Exception) {
-            throw IllegalArgumentException("Failed to import triggers: ${e.message}", e)
+            throw IllegalArgumentException("Failed to import triggers: \${e.message}", e)
         }
     }
 }
