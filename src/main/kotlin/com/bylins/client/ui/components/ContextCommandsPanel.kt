@@ -399,8 +399,15 @@ private fun ContextRuleItem(
                 // Показываем scope если не World
                 when (scope) {
                     is ContextScope.Room -> {
+                        val parts = mutableListOf<String>()
+                        if (scope.roomIds.isNotEmpty()) {
+                            parts.add("IDs: ${scope.roomIds.take(2).joinToString()}${if (scope.roomIds.size > 2) "..." else ""}")
+                        }
+                        if (scope.roomTags.isNotEmpty()) {
+                            parts.add("Tags: ${scope.roomTags.take(2).joinToString()}${if (scope.roomTags.size > 2) "..." else ""}")
+                        }
                         Text(
-                            text = "Rooms: ${scope.roomIds.take(3).joinToString()}${if (scope.roomIds.size > 3) "..." else ""}",
+                            text = parts.joinToString(" | "),
                             color = colorScheme.onSurfaceVariant,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
@@ -575,6 +582,13 @@ private fun ContextRuleDialog(
     var roomIds by remember {
         mutableStateOf(
             (rule?.scope as? ContextScope.Room)?.roomIds?.joinToString("\n") ?: ""
+        )
+    }
+
+    // Room Tags (for Room scope)
+    var roomTags by remember {
+        mutableStateOf(
+            (rule?.scope as? ContextScope.Room)?.roomTags?.joinToString(", ") ?: ""
         )
     }
 
@@ -757,10 +771,17 @@ private fun ContextRuleDialog(
                                     Column(modifier = Modifier.padding(8.dp)) {
                                         selectedRoomIds.forEach { roomId ->
                                             val room = mapRooms[roomId]
-                                            // Показываем: "Room Name • Area (ID)" или просто ID
+                                            // Формат: "Room (Vnum) • Area (Zone)"
                                             val displayName = if (room != null) {
-                                                val areaStr = room.area?.let { " • $it" } ?: ""
-                                                "${room.name}$areaStr (${room.id})"
+                                                val zoneStr = room.zone ?: ""
+                                                val areaStr = room.area ?: ""
+                                                val locationPart = when {
+                                                    areaStr.isNotEmpty() && zoneStr.isNotEmpty() -> " • $areaStr ($zoneStr)"
+                                                    areaStr.isNotEmpty() -> " • $areaStr"
+                                                    zoneStr.isNotEmpty() -> " • ($zoneStr)"
+                                                    else -> ""
+                                                }
+                                                "${room.name} (${room.id})$locationPart"
                                             } else {
                                                 roomId
                                             }
@@ -798,6 +819,37 @@ private fun ContextRuleDialog(
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Теги комнат
+                            Text(
+                                text = "Теги комнат (через запятую)",
+                                color = Color(0xFFBBBBBB),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            OutlinedTextField(
+                                value = roomTags,
+                                onValueChange = { roomTags = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("shop, blacksmith, quest_npc", color = Color.Gray, fontSize = 12.sp) },
+                                colors = TextFieldDefaults.outlinedTextFieldColors(
+                                    textColor = Color.White,
+                                    backgroundColor = Color(0xFF1E1E1E),
+                                    cursorColor = Color.White,
+                                    focusedBorderColor = Color(0xFF4CAF50),
+                                    unfocusedBorderColor = Color.Gray
+                                ),
+                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                                singleLine = true
+                            )
+                            Text(
+                                text = "Команда активируется в комнатах с любым из указанных тегов",
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
 
                             // Room picker dialog
                             if (showRoomPicker) {
@@ -1204,11 +1256,12 @@ private fun ContextRuleDialog(
                             val actualScope: ContextScope = when (selectedScope) {
                                 "room" -> {
                                     val ids = roomIds.lines().filter { it.isNotBlank() }.toSet()
-                                    if (ids.isEmpty()) {
-                                        errorMessage = "At least one room ID is required"
+                                    val tags = roomTags.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                                    if (ids.isEmpty() && tags.isEmpty()) {
+                                        errorMessage = "At least one room ID or tag is required"
                                         return@Button
                                     }
-                                    ContextScope.Room(ids)
+                                    ContextScope.Room(roomIds = ids, roomTags = tags)
                                 }
                                 "zone" -> {
                                     val zoneList = zones.lines().filter { it.isNotBlank() }.toSet()

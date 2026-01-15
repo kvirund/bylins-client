@@ -4,7 +4,6 @@ import com.bylins.client.aliases.Alias
 import com.bylins.client.connection.ConnectionProfile
 import com.bylins.client.contextcommands.ContextCommandRule
 import com.bylins.client.contextcommands.ContextCommandTTL
-import com.bylins.client.contextcommands.ContextRuleType
 import com.bylins.client.contextcommands.ContextScope
 import com.bylins.client.contextcommands.ContextTriggerType
 import com.bylins.client.hotkeys.Hotkey
@@ -201,60 +200,36 @@ data class ConnectionProfileDto(
 data class ContextCommandRuleDto(
     val id: String,
     val enabled: Boolean = true,
-    // Новая структура
     val triggerType: String = "pattern",  // "pattern" or "permanent"
     val scope: String = "world",          // "room", "zone", "world"
     val pattern: String? = null,          // For pattern trigger
-    val roomIds: List<String>? = null,    // For room scope
+    val roomIds: List<String>? = null,    // For room scope (by ID)
+    val roomTags: List<String>? = null,   // For room scope (by tag)
     val zones: List<String>? = null,      // For zone scope
     val command: String,
     val ttlType: String = "room_change",  // "room_change", "zone_change", "fixed_time", "permanent", "one_time"
     val ttlMinutes: Int? = null,          // For fixed_time TTL
-    val priority: Int = 0,
-    // Deprecated: старое поле для обратной совместимости
-    val type: String? = null              // "pattern", "room", "zone" (legacy)
+    val priority: Int = 0
 ) {
     fun toRule(): ContextCommandRule? {
-        // Определяем triggerType и scope
-        val actualTriggerType: ContextTriggerType
-        val actualScope: ContextScope
+        val actualTriggerType = when (triggerType) {
+            "pattern" -> {
+                val p = pattern ?: return null
+                val regex = try { p.toRegex() } catch (e: Exception) { return null }
+                ContextTriggerType.Pattern(regex)
+            }
+            "permanent" -> ContextTriggerType.Permanent
+            else -> return null
+        }
 
-        if (type != null) {
-            // Обратная совместимость со старым форматом
-            when (type) {
-                "pattern" -> {
-                    val p = pattern ?: return null
-                    val regex = try { p.toRegex() } catch (e: Exception) { return null }
-                    actualTriggerType = ContextTriggerType.Pattern(regex)
-                    actualScope = ContextScope.World
-                }
-                "room" -> {
-                    actualTriggerType = ContextTriggerType.Permanent
-                    actualScope = ContextScope.Room(roomIds?.toSet() ?: emptySet())
-                }
-                "zone" -> {
-                    actualTriggerType = ContextTriggerType.Permanent
-                    actualScope = ContextScope.Zone(zones?.toSet() ?: emptySet())
-                }
-                else -> return null
-            }
-        } else {
-            // Новый формат
-            actualTriggerType = when (triggerType) {
-                "pattern" -> {
-                    val p = pattern ?: return null
-                    val regex = try { p.toRegex() } catch (e: Exception) { return null }
-                    ContextTriggerType.Pattern(regex)
-                }
-                "permanent" -> ContextTriggerType.Permanent
-                else -> return null
-            }
-            actualScope = when (scope) {
-                "room" -> ContextScope.Room(roomIds?.toSet() ?: emptySet())
-                "zone" -> ContextScope.Zone(zones?.toSet() ?: emptySet())
-                "world" -> ContextScope.World
-                else -> ContextScope.World
-            }
+        val actualScope = when (scope) {
+            "room" -> ContextScope.Room(
+                roomIds = roomIds?.toSet() ?: emptySet(),
+                roomTags = roomTags?.toSet() ?: emptySet()
+            )
+            "zone" -> ContextScope.Zone(zones?.toSet() ?: emptySet())
+            "world" -> ContextScope.World
+            else -> ContextScope.World
         }
 
         val ttl = when (ttlType) {
@@ -285,10 +260,11 @@ data class ContextCommandRuleDto(
             }
             val patternStr = (rule.triggerType as? ContextTriggerType.Pattern)?.regex?.pattern
 
-            val (scopeStr, roomIdsList, zonesList) = when (val s = rule.scope) {
-                is ContextScope.Room -> Triple("room", s.roomIds.toList(), null)
-                is ContextScope.Zone -> Triple("zone", null, s.zones.toList())
-                is ContextScope.World -> Triple("world", null, null)
+            data class ScopeData(val scopeStr: String, val roomIds: List<String>?, val roomTags: List<String>?, val zones: List<String>?)
+            val scopeData = when (val s = rule.scope) {
+                is ContextScope.Room -> ScopeData("room", s.roomIds.toList().ifEmpty { null }, s.roomTags.toList().ifEmpty { null }, null)
+                is ContextScope.Zone -> ScopeData("zone", null, null, s.zones.toList())
+                is ContextScope.World -> ScopeData("world", null, null, null)
             }
 
             val (ttlTypeStr, ttlMin) = when (val ttl = rule.ttl) {
@@ -303,10 +279,11 @@ data class ContextCommandRuleDto(
                 id = rule.id,
                 enabled = rule.enabled,
                 triggerType = triggerTypeStr,
-                scope = scopeStr,
+                scope = scopeData.scopeStr,
                 pattern = patternStr,
-                roomIds = roomIdsList,
-                zones = zonesList,
+                roomIds = scopeData.roomIds,
+                roomTags = scopeData.roomTags,
+                zones = scopeData.zones,
                 command = rule.command,
                 ttlType = ttlTypeStr,
                 ttlMinutes = ttlMin,

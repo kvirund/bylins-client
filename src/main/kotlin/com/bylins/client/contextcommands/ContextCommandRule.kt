@@ -18,19 +18,7 @@ data class ContextCommandRule(
     val command: String,  // Поддерживает $1, $2 для capture groups паттерна
     val ttl: ContextCommandTTL = ContextCommandTTL.UntilRoomChange,  // Только для Pattern
     val priority: Int = 0  // Выше = добавляется раньше (будет свежее)
-) {
-    // Для обратной совместимости - старое поле type
-    @Deprecated("Use triggerType and scope instead", ReplaceWith("triggerType"))
-    val type: ContextRuleType
-        get() = when (triggerType) {
-            is ContextTriggerType.Pattern -> ContextRuleType.Pattern(triggerType.regex)
-            is ContextTriggerType.Permanent -> when (scope) {
-                is ContextScope.Room -> ContextRuleType.Room(scope.roomIds)
-                is ContextScope.Zone -> ContextRuleType.Zone(scope.zones)
-                is ContextScope.World -> ContextRuleType.Pattern(".*".toRegex()) // Fallback
-            }
-        }
-}
+)
 
 /**
  * Тип триггера: как правило срабатывает
@@ -53,9 +41,21 @@ sealed class ContextTriggerType {
  */
 sealed class ContextScope {
     /**
-     * Действует только в указанных комнатах
+     * Действует только в указанных комнатах (по ID или тегам)
      */
-    data class Room(val roomIds: Set<String>) : ContextScope()
+    data class Room(
+        val roomIds: Set<String> = emptySet(),
+        val roomTags: Set<String> = emptySet()
+    ) : ContextScope() {
+        /**
+         * Проверяет, соответствует ли комната этому scope
+         */
+        fun matches(roomId: String, tags: Collection<String>): Boolean {
+            if (roomIds.contains(roomId)) return true
+            if (roomTags.isNotEmpty() && tags.any { roomTags.contains(it) }) return true
+            return false
+        }
+    }
 
     /**
      * Действует только в указанных зонах
@@ -66,16 +66,6 @@ sealed class ContextScope {
      * Действует везде (глобально)
      */
     object World : ContextScope()
-}
-
-/**
- * Старый тип правила (deprecated, для обратной совместимости)
- */
-@Deprecated("Use ContextTriggerType and ContextScope instead")
-sealed class ContextRuleType {
-    data class Pattern(val regex: Regex) : ContextRuleType()
-    data class Room(val roomIds: Set<String>) : ContextRuleType()
-    data class Zone(val zones: Set<String>) : ContextRuleType()
 }
 
 /**

@@ -354,9 +354,20 @@ class MapManager(
     fun clearMap() {
         _rooms.value = emptyMap()
         _currentRoomId.value = null
-        // Очищаем автосохранение
+        // Очищаем автосохранение в БД
         scope.launch {
             database.clearAutoSave()
+        }
+        // Удаляем JSON файл автосохранения
+        try {
+            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
+            val autosaveFile = mapsDir.resolve("autosave.json").toFile()
+            if (autosaveFile.exists()) {
+                autosaveFile.delete()
+                logger.info { "Deleted autosave.json" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error deleting autosave.json: ${e.message}" }
         }
     }
 

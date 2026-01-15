@@ -36,7 +36,7 @@ class ContextCommandManager(
 
     fun addRule(rule: ContextCommandRule) {
         _rules.value = _rules.value + rule
-        logger.info { "Added context command rule: ${rule.command} (${rule.type})" }
+        logger.info { "Added context command rule: ${rule.command} (trigger=${rule.triggerType}, scope=${rule.scope})" }
     }
 
     fun removeRule(id: String) {
@@ -152,7 +152,7 @@ class ContextCommandManager(
                 // Проверяем scope
                 val inScope = when (val scope = rule.scope) {
                     is ContextScope.World -> true
-                    is ContextScope.Room -> room?.id in scope.roomIds
+                    is ContextScope.Room -> room != null && scope.matches(room.id, room.tags)
                     is ContextScope.Zone -> room?.zone in scope.zones
                 }
                 if (!inScope) continue
@@ -198,7 +198,7 @@ class ContextCommandManager(
 
             // Проверяем scope
             val inScope = when (val scope = rule.scope) {
-                is ContextScope.Room -> room.id in scope.roomIds
+                is ContextScope.Room -> scope.matches(room.id, room.tags)
                 is ContextScope.Zone -> room.zone != null && room.zone in scope.zones
                 is ContextScope.World -> true  // Permanent + World = всегда активно
             }
