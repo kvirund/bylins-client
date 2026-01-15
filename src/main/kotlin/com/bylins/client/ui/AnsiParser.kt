@@ -69,8 +69,13 @@ class AnsiParser {
             val escPos = text.indexOf(ESC, currentPos)
 
             if (escPos == -1) {
-                // Нет больше escape последовательностей
-                append(text.substring(currentPos))
+                // Нет больше escape последовательностей - применяем текущий стиль к оставшемуся тексту
+                val remaining = text.substring(currentPos)
+                if (remaining.isNotEmpty()) {
+                    pushStyle(createSpanStyle(currentFgColor, currentBgColor, isBold, isItalic, isUnderline))
+                    append(remaining)
+                    pop()
+                }
                 break
             }
 
