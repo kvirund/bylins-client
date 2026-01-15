@@ -110,14 +110,19 @@ var status = {
         var max = options.max || 100;
         var color = options.color || "green";
         var showText = options.showText !== false;
+        var showMax = options.showMax !== false;  // default true, false = показывать только value
         var order = options.order || -1;
-        api.statusAddBar(id, label, value, max, color, showText, order);
+        api.statusAddBar(id, label, value, max, color, showText, showMax, order);
     },
     addText: function(id, options) {
         var label = options.label || id;
-        var value = options.value || "";
-        var order = options.order || -1;
-        api.statusAddText(id, label, value, order);
+        // null or undefined = label-only mode (no colon)
+        var value = (options.value !== undefined && options.value !== null) ? options.value : null;
+        var color = options.color || null;
+        var bold = options.bold || false;
+        var background = options.background || null;
+        var order = options.order !== undefined ? options.order : -1;
+        api.statusAddText(id, label, value, color, bold, background, order);
     },
     addFlags: function(id, options) {
         var label = options.label || id;

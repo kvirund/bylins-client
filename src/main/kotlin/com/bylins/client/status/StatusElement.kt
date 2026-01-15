@@ -16,16 +16,25 @@ sealed class StatusElement {
         val max: Int,
         val color: String = "green",  // "green", "red", "yellow", "blue" или "#RRGGBB"
         val showText: Boolean = true,
+        val showMax: Boolean = true,  // false = показывать только value без "/ max"
         val order: Int = 0
     ) : StatusElement()
 
     /**
      * Текстовый элемент (Золото, Опыт и т.д.)
+     * Если value = null, показывается только label без двоеточия
+     *
+     * @param color Цвет текста: "white", "red", "green", "yellow", "blue", "cyan", "magenta" или "#RRGGBB"
+     * @param bold Жирный шрифт
+     * @param background Цвет фона карточки (null = без фона)
      */
     data class Text(
         override val id: String,
         val label: String,
-        val value: String,
+        val value: String? = null,
+        val color: String? = null,      // null = цвет по умолчанию из темы
+        val bold: Boolean = false,
+        val background: String? = null, // null = без фона, иначе карточка с закруглёнными углами
         val order: Int = 0
     ) : StatusElement()
 

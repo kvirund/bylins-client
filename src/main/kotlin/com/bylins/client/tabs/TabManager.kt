@@ -130,9 +130,10 @@ class TabManager {
             for (tab in _tabs.value) {
                 if (tab.id == "main") continue
 
-                if (tab.shouldCapture(cleanLine)) {
-                    // Добавляем в эту вкладку (оригинальную строку с ANSI-кодами)
-                    tab.appendText(line)
+                val transformedLine = tab.captureAndTransform(cleanLine, line)
+                if (transformedLine != null) {
+                    // Добавляем трансформированную строку в эту вкладку
+                    tab.appendText(transformedLine)
 
                     // Если режим MOVE, помечаем что не нужно добавлять в main
                     if (tab.captureMode == CaptureMode.MOVE) {

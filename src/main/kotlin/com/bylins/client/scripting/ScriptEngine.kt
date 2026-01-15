@@ -26,8 +26,9 @@ interface ScriptEngine {
 
     /**
      * Загружает скрипт из файла
+     * @throws RuntimeException при ошибке загрузки
      */
-    fun loadScript(scriptPath: String): Script?
+    fun loadScript(scriptPath: String): Script
 
     /**
      * Выполняет код
@@ -54,15 +55,21 @@ data class Script(
     val path: String,
     val engine: ScriptEngine,
     val enabled: Boolean = true,
-    val profileId: String? = null  // ID профиля, к которому принадлежит скрипт (null = базовый скрипт)
+    val profileId: String? = null,  // ID профиля, к которому принадлежит скрипт (null = базовый скрипт)
+    val loadError: String? = null   // Ошибка загрузки (null = загружен успешно)
 ) {
     /**
      * Вызывает функцию в скрипте
      */
     fun call(functionName: String, vararg args: Any?): Any? {
-        if (!enabled) return null
+        if (!enabled || loadError != null) return null
         return engine.callFunction(functionName, *args)
     }
+
+    /**
+     * Скрипт загружен с ошибкой
+     */
+    val hasFailed: Boolean get() = loadError != null
 }
 
 /**

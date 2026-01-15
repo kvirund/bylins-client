@@ -300,38 +300,35 @@ class LuaEngine : ScriptEngine {
         })
     }
 
-    override fun loadScript(scriptPath: String): Script? {
+    override fun loadScript(scriptPath: String): Script {
         val file = File(scriptPath)
         if (!file.exists()) {
-            logger.warn { "Script not found: $scriptPath" }
-            return null
+            throw IllegalArgumentException("Script not found: $scriptPath")
         }
 
-        return try {
-            // Устанавливаем имя скрипта для логирования в API
-            (api as? ScriptAPIImpl)?.currentScriptName = file.name
+        // Устанавливаем имя скрипта для логирования в API
+        (api as? ScriptAPIImpl)?.currentScriptName = file.name
 
+        try {
             // Загружаем скрипт как InputStream - LuaJ напрямую получит UTF-8 байты
             // Это важно для правильной обработки кириллицы в строковых литералах
             file.inputStream().use { stream ->
                 globals?.load(stream, "@$scriptPath", "bt", globals)?.call()
             }
-
-            // Вызываем on_load если есть
-            callFunction("on_load", api)
-
-            Script(
-                id = UUID.randomUUID().toString(),
-                name = file.nameWithoutExtension,
-                path = scriptPath,
-                engine = this,
-                enabled = true
-            )
         } catch (e: Exception) {
-            logger.error { "Error loading script: ${e.message}" }
-            e.printStackTrace()
-            null
+            throw RuntimeException(e.message ?: "Lua error", e)
         }
+
+        // Вызываем on_load если есть
+        callFunction("on_load", api)
+
+        return Script(
+            id = UUID.randomUUID().toString(),
+            name = file.nameWithoutExtension,
+            path = scriptPath,
+            engine = this,
+            enabled = true
+        )
     }
 
     override fun execute(code: String) {

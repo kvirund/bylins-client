@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.ui.theme.LocalAppColorScheme
+import com.bylins.client.ui.ALL_TABS
 import java.awt.Desktop
 import java.io.File
 import javax.swing.JFileChooser
@@ -608,6 +609,98 @@ fun SettingsPanel(
                         colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning)
                     ) {
                         Text("Импорт", color = colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+
+        // Видимость вкладок
+        val hiddenTabs by clientState.hiddenTabs.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            backgroundColor = colorScheme.surface,
+            elevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Видимость вкладок",
+                    color = colorScheme.onSurface,
+                    fontSize = 16.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Divider(color = colorScheme.divider, thickness = 1.dp)
+
+                Text(
+                    text = "Отметьте вкладки, которые хотите видеть в интерфейсе",
+                    color = colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                // Две колонки с чекбоксами
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Первая колонка
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ALL_TABS.take(7).forEach { tab ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = tab.id !in hiddenTabs,
+                                    onCheckedChange = { checked ->
+                                        clientState.setTabVisible(tab.id, checked)
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = colorScheme.success,
+                                        uncheckedColor = colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Text(
+                                    text = tab.name,
+                                    color = colorScheme.onSurface,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Вторая колонка
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ALL_TABS.drop(7).forEach { tab ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = tab.id !in hiddenTabs,
+                                    onCheckedChange = { checked ->
+                                        clientState.setTabVisible(tab.id, checked)
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = colorScheme.success,
+                                        uncheckedColor = colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Text(
+                                    text = tab.name,
+                                    color = colorScheme.onSurface,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

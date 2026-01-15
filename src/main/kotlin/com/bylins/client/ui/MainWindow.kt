@@ -21,14 +21,39 @@ import com.bylins.client.ui.theme.LocalAppColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import java.awt.Cursor
 
+// Определение вкладки
+data class TabDef(val id: String, val name: String)
+
+// Все доступные вкладки
+val ALL_TABS = listOf(
+    TabDef("main", "Главная"),
+    TabDef("triggers", "Триггеры"),
+    TabDef("aliases", "Алиасы"),
+    TabDef("hotkeys", "Хоткеи"),
+    TabDef("stats", "Статистика"),
+    TabDef("graphs", "Графики"),
+    TabDef("map", "Карта"),
+    TabDef("scripts", "Скрипты"),
+    TabDef("plugins", "Плагины"),
+    TabDef("msdp", "MSDP"),
+    TabDef("gmcp", "GMCP"),
+    TabDef("settings", "Настройки"),
+    TabDef("profiles", "Профили")
+)
+
 @Composable
 fun MainWindow() {
     val clientState = remember { ClientState() }
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTabId by remember { mutableStateOf("main") }
     val inputFocusRequester = remember { FocusRequester() }
     val isConnected by clientState.isConnected.collectAsState()
     val msdpEnabled by clientState.msdpEnabled.collectAsState()
     val secondaryTextFieldFocused by clientState.secondaryTextFieldFocused.collectAsState()
+    val hiddenTabs by clientState.hiddenTabs.collectAsState()
+
+    // Фильтруем видимые вкладки
+    val visibleTabs = ALL_TABS.filter { it.id !in hiddenTabs }
+    val selectedTabIndex = visibleTabs.indexOfFirst { it.id == selectedTabId }.coerceAtLeast(0)
 
     // Отслеживаем последний обработанный KeyDown для поглощения KeyUp
     var lastHandledKey by remember { mutableStateOf<androidx.compose.ui.input.key.Key?>(null) }
@@ -112,91 +137,38 @@ fun MainWindow() {
                 Divider()
 
                 // Вкладки
-                TabRow(
-                    selectedTabIndex = selectedTab,
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTabIndex,
                     containerColor = appColorScheme.surface,
-                    contentColor = appColorScheme.onSurface
+                    contentColor = appColorScheme.onSurface,
+                    edgePadding = 0.dp
                 ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text("Главная") }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text("Триггеры") }
-                    )
-                    Tab(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        text = { Text("Алиасы") }
-                    )
-                    Tab(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        text = { Text("Хоткеи") }
-                    )
-                    Tab(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
-                        text = { Text("Статистика") }
-                    )
-                    Tab(
-                        selected = selectedTab == 5,
-                        onClick = { selectedTab = 5 },
-                        text = { Text("Графики") }
-                    )
-                    Tab(
-                        selected = selectedTab == 6,
-                        onClick = { selectedTab = 6 },
-                        text = { Text("Карта") }
-                    )
-                    Tab(
-                        selected = selectedTab == 7,
-                        onClick = { selectedTab = 7 },
-                        text = { Text("Скрипты") }
-                    )
-                    Tab(
-                        selected = selectedTab == 8,
-                        onClick = { selectedTab = 8 },
-                        text = { Text("Плагины") }
-                    )
-                    Tab(
-                        selected = selectedTab == 9,
-                        onClick = { selectedTab = 9 },
-                        text = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .background(
-                                            color = if (msdpEnabled) appColorScheme.success else appColorScheme.error,
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                    visibleTabs.forEachIndexed { index, tab ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabId = tab.id },
+                            text = {
+                                if (tab.id == "msdp") {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    color = if (msdpEnabled) appColorScheme.success else appColorScheme.error,
+                                                    shape = androidx.compose.foundation.shape.CircleShape
+                                                )
                                         )
-                                )
-                                Text("MSDP")
+                                        Text(tab.name)
+                                    }
+                                } else {
+                                    Text(tab.name)
+                                }
                             }
-                        }
-                    )
-                    Tab(
-                        selected = selectedTab == 10,
-                        onClick = { selectedTab = 10 },
-                        text = { Text("GMCP") }
-                    )
-                    Tab(
-                        selected = selectedTab == 11,
-                        onClick = { selectedTab = 11 },
-                        text = { Text("Настройки") }
-                    )
-                    Tab(
-                        selected = selectedTab == 12,
-                        onClick = { selectedTab = 12 },
-                        text = { Text("Профили") }
-                    )
+                        )
+                    }
                 }
 
                 Divider()
@@ -207,8 +179,8 @@ fun MainWindow() {
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    when (selectedTab) {
-                        0 -> {
+                    when (selectedTabId) {
+                        "main" -> {
                             // Главный вид с выводом текста и боковой панелью
                             val miniMapWidth by clientState.miniMapWidth.collectAsState()
                             val density = LocalDensity.current
@@ -259,84 +231,84 @@ fun MainWindow() {
                                 }
                             }
                         }
-                        1 -> {
+                        "triggers" -> {
                             // Панель триггеров
                             TriggersPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        2 -> {
+                        "aliases" -> {
                             // Панель алиасов
                             AliasesPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        3 -> {
+                        "hotkeys" -> {
                             // Панель горячих клавиш
                             HotkeysPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        4 -> {
+                        "stats" -> {
                             // Панель статистики
                             StatsPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        5 -> {
+                        "graphs" -> {
                             // Панель графиков
                             StatsGraphPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        6 -> {
+                        "map" -> {
                             // Панель карты
                             MapPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        7 -> {
+                        "scripts" -> {
                             // Панель скриптов
                             ScriptsPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        8 -> {
+                        "plugins" -> {
                             // Панель плагинов
                             PluginsPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        9 -> {
+                        "msdp" -> {
                             // Панель MSDP данных
                             MsdpPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        10 -> {
+                        "gmcp" -> {
                             // Панель GMCP данных
                             GmcpPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        11 -> {
+                        "settings" -> {
                             // Панель настроек
                             SettingsPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
-                        12 -> {
+                        "profiles" -> {
                             // Панель профилей персонажей
                             ProfilesPanel(
                                 clientState = clientState,

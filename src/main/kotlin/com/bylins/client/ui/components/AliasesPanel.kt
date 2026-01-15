@@ -32,15 +32,15 @@ fun AliasesPanel(
     val activeStack by clientState.profileManager.activeStack.collectAsState()
     val profiles by clientState.profileManager.profiles.collectAsState()
 
-    // Обновляем при изменении алиасов или стека
-    LaunchedEffect(aliases, activeStack) {
+    // Обновляем при изменении алиасов, стека или профилей
+    LaunchedEffect(aliases, activeStack, profiles) {
         aliasesWithSource.value = clientState.getAllAliasesWithSource()
     }
 
     var showDialog by remember { mutableStateOf(false) }
     var editingAlias by remember { mutableStateOf<Alias?>(null) }
     var editingAliasSource by remember { mutableStateOf<String?>(null) }
-    var targetProfileId by remember { mutableStateOf<String?>(null) }  // null = база
+    val targetProfileId by clientState.panelTargetProfileId.collectAsState()  // null = база
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -167,7 +167,7 @@ fun AliasesPanel(
                     onDismissRequest = { targetExpanded = false }
                 ) {
                     DropdownMenuItem(onClick = {
-                        targetProfileId = null
+                        clientState.setPanelTargetProfileId(null)
                         targetExpanded = false
                     }) {
                         Text("База", fontFamily = FontFamily.Monospace)
@@ -176,7 +176,7 @@ fun AliasesPanel(
                         val profile = profiles.find { it.id == profileId }
                         if (profile != null) {
                             DropdownMenuItem(onClick = {
-                                targetProfileId = profileId
+                                clientState.setPanelTargetProfileId(profileId)
                                 targetExpanded = false
                             }) {
                                 Text(profile.name, fontFamily = FontFamily.Monospace)

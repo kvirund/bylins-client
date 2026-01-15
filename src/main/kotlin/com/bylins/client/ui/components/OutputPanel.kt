@@ -118,11 +118,11 @@ fun OutputPanel(
                 showTabDialog = false
                 editingTab = null
             },
-            onSave = { name, patterns, captureMode ->
+            onSave = { name, filters, captureMode ->
                 if (editingTab != null) {
-                    clientState.updateTab(editingTab!!.id, name, patterns, captureMode)
+                    clientState.updateTab(editingTab!!.id, name, filters, captureMode)
                 } else {
-                    clientState.createTab(name, patterns, captureMode)
+                    clientState.createTab(name, filters, captureMode)
                 }
                 showTabDialog = false
                 editingTab = null

@@ -300,8 +300,8 @@ interface ScriptAPI {
     fun clearPathHighlight()
 
     // Статус-панель
-    fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String = "green", showText: Boolean = true, order: Int = -1)
-    fun statusAddText(id: String, label: String, value: String, order: Int = -1)
+    fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String = "green", showText: Boolean = true, showMax: Boolean = true, order: Int = -1)
+    fun statusAddText(id: String, label: String, value: String? = null, color: String? = null, bold: Boolean = false, background: String? = null, order: Int = -1)
     fun statusAddFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int = -1)
     fun statusAddMiniMap(id: String, currentRoomId: String? = null, visible: Boolean = true, order: Int = -1)
     fun statusAddPathPanel(id: String, targetName: String, stepsCount: Int, directions: List<String>, onClear: Any? = null, onFollow: Any? = null, order: Int = -1)
@@ -444,10 +444,10 @@ class ScriptAPIImpl(
     }
     override fun clearPathHighlight() = mapperActions.clearPathHighlight()
 
-    override fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int) =
-        statusActions.addBar(id, label, value, max, color, showText, order)
-    override fun statusAddText(id: String, label: String, value: String, order: Int) =
-        statusActions.addText(id, label, value, order)
+    override fun statusAddBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, showMax: Boolean, order: Int) =
+        statusActions.addBar(id, label, value, max, color, showText, showMax, order)
+    override fun statusAddText(id: String, label: String, value: String?, color: String?, bold: Boolean, background: String?, order: Int) =
+        statusActions.addText(id, label, value, color, bold, background, order)
     override fun statusAddFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int) {
         // Автоматическая конвертация из скриптовых типов
         @Suppress("UNCHECKED_CAST")
@@ -567,8 +567,8 @@ interface MapperActions {
 }
 
 interface StatusActions {
-    fun addBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int)
-    fun addText(id: String, label: String, value: String, order: Int)
+    fun addBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, showMax: Boolean, order: Int)
+    fun addText(id: String, label: String, value: String?, color: String?, bold: Boolean, background: String?, order: Int)
     fun addFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int)
     fun addMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int)
     fun addPathPanel(id: String, targetName: String, stepsCount: Int, directions: List<String>, onClear: (() -> Unit)?, onFollow: (() -> Unit)?, order: Int)

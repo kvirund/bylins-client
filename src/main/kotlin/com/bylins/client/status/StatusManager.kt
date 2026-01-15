@@ -45,23 +45,31 @@ class StatusManager(
         max: Int,
         color: String = "green",
         showText: Boolean = true,
+        showMax: Boolean = true,
         order: Int = _elements.value.size
     ) {
-        val bar = StatusElement.Bar(id, label, value, max, color, showText, order)
+        val bar = StatusElement.Bar(id, label, value, max, color, showText, showMax, order)
         _elements.value = _elements.value + (id to bar)
         updateStatusVariable(id, bar)
     }
 
     /**
      * Добавляет или обновляет текстовый элемент
+     * @param value если null, показывается только label без двоеточия
+     * @param color цвет текста (null = по умолчанию)
+     * @param bold жирный шрифт
+     * @param background цвет фона карточки (null = без фона)
      */
     fun addText(
         id: String,
         label: String,
-        value: String,
+        value: String? = null,
+        color: String? = null,
+        bold: Boolean = false,
+        background: String? = null,
         order: Int = _elements.value.size
     ) {
-        val text = StatusElement.Text(id, label, value, order)
+        val text = StatusElement.Text(id, label, value, color, bold, background, order)
         _elements.value = _elements.value + (id to text)
         updateStatusVariable(id, text)
     }
@@ -152,11 +160,15 @@ class StatusManager(
                 max = (updates["max"] as? Number)?.toInt() ?: existing.max,
                 color = updates["color"] as? String ?: existing.color,
                 showText = updates["showText"] as? Boolean ?: existing.showText,
+                showMax = updates["showMax"] as? Boolean ?: existing.showMax,
                 order = (updates["order"] as? Number)?.toInt() ?: existing.order
             )
             is StatusElement.Text -> existing.copy(
                 label = updates["label"] as? String ?: existing.label,
                 value = updates["value"] as? String ?: existing.value,
+                color = if (updates.containsKey("color")) updates["color"] as? String else existing.color,
+                bold = updates["bold"] as? Boolean ?: existing.bold,
+                background = if (updates.containsKey("background")) updates["background"] as? String else existing.background,
                 order = (updates["order"] as? Number)?.toInt() ?: existing.order
             )
             is StatusElement.Flags -> {
@@ -226,25 +238,29 @@ class StatusManager(
      * Обновляет readonly переменную для элемента статуса
      */
     private fun updateStatusVariable(id: String, element: StatusElement) {
-        val value = when (element) {
+        val value: Map<String, Any> = when (element) {
             is StatusElement.Bar -> mapOf(
                 "type" to "bar",
                 "label" to element.label,
                 "value" to element.value,
                 "max" to element.max,
                 "color" to element.color,
-                "showText" to element.showText
+                "showText" to element.showText,
+                "showMax" to element.showMax
             )
-            is StatusElement.Text -> mapOf(
-                "type" to "text",
-                "label" to element.label,
-                "value" to element.value
-            )
+            is StatusElement.Text -> buildMap<String, Any> {
+                put("type", "text")
+                put("label", element.label)
+                element.value?.let { put("value", it) }
+                element.color?.let { put("color", it) }
+                put("bold", element.bold)
+                element.background?.let { put("background", it) }
+            }
             is StatusElement.Flags -> mapOf(
                 "type" to "flags",
                 "label" to element.label,
                 "flags" to element.flags.map { flag ->
-                    mapOf(
+                    mapOf<String, Any>(
                         "name" to flag.name,
                         "active" to flag.active,
                         "color" to flag.color,

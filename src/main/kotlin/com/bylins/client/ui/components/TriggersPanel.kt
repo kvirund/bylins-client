@@ -32,15 +32,15 @@ fun TriggersPanel(
     val activeStack by clientState.profileManager.activeStack.collectAsState()
     val profiles by clientState.profileManager.profiles.collectAsState()
 
-    // Обновляем при изменении триггеров или стека
-    LaunchedEffect(triggers, activeStack) {
+    // Обновляем при изменении триггеров, стека или профилей
+    LaunchedEffect(triggers, activeStack, profiles) {
         triggersWithSource.value = clientState.getAllTriggersWithSource()
     }
 
     var showDialog by remember { mutableStateOf(false) }
     var editingTrigger by remember { mutableStateOf<Trigger?>(null) }
     var editingTriggerSource by remember { mutableStateOf<String?>(null) }
-    var targetProfileId by remember { mutableStateOf<String?>(null) }  // null = база
+    val targetProfileId by clientState.panelTargetProfileId.collectAsState()  // null = база
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -167,7 +167,7 @@ fun TriggersPanel(
                     onDismissRequest = { targetExpanded = false }
                 ) {
                     DropdownMenuItem(onClick = {
-                        targetProfileId = null
+                        clientState.setPanelTargetProfileId(null)
                         targetExpanded = false
                     }) {
                         Text("База", fontFamily = FontFamily.Monospace)
@@ -176,7 +176,7 @@ fun TriggersPanel(
                         val profile = profiles.find { it.id == profileId }
                         if (profile != null) {
                             DropdownMenuItem(onClick = {
-                                targetProfileId = profileId
+                                clientState.setPanelTargetProfileId(profileId)
                                 targetExpanded = false
                             }) {
                                 Text(profile.name, fontFamily = FontFamily.Monospace)

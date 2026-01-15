@@ -166,80 +166,114 @@ private fun ScriptItem(
     onUnload: (String) -> Unit
 ) {
     val colorScheme = LocalAppColorScheme.current
+    val hasFailed = script.hasFailed
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = colorScheme.surface,
+        backgroundColor = if (hasFailed) colorScheme.error.copy(alpha = 0.1f) else colorScheme.surface,
         elevation = 2.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(8.dp)
         ) {
-            // Информация о скрипте
-            Column(
-                modifier = Modifier.weight(1f)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // Информация о скрипте
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = script.name,
+                            color = when {
+                                hasFailed -> colorScheme.error
+                                script.enabled -> colorScheme.onSurface
+                                else -> colorScheme.onSurfaceVariant
+                            },
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        if (hasFailed) {
+                            Text(
+                                text = "⚠ ОШИБКА",
+                                color = colorScheme.error,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                    Text(
+                        text = "${script.engine.name} | ${script.path}",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                // Кнопки управления
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Кнопка вкл/выкл (для failed скриптов - показываем как выключенный)
+                    Switch(
+                        checked = script.enabled && !hasFailed,
+                        onCheckedChange = { enabled ->
+                            onToggle(script.id, enabled)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = colorScheme.success,
+                            checkedTrackColor = colorScheme.success.copy(alpha = 0.5f),
+                            uncheckedThumbColor = if (hasFailed) colorScheme.error else colorScheme.onSurfaceVariant,
+                            uncheckedTrackColor = if (hasFailed) colorScheme.error.copy(alpha = 0.3f) else colorScheme.border
+                        )
+                    )
+
+                    // Кнопка перезагрузки
+                    Button(
+                        onClick = { onReload(script.id) },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = if (hasFailed) colorScheme.warning else colorScheme.primary
+                        ),
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text(if (hasFailed) "🔄 Повторить" else "🔄", fontSize = 14.sp)
+                    }
+
+                    // Кнопка выгрузки
+                    Button(
+                        onClick = { onUnload(script.id) },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = colorScheme.error
+                        ),
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text("✕", color = colorScheme.onSurface, fontSize = 14.sp)
+                    }
+                }
+            }
+
+            // Показываем ошибку если есть
+            if (hasFailed && script.loadError != null) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = script.name,
-                    color = if (script.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = "${script.engine.name} | ${script.path}",
-                    color = colorScheme.onSurfaceVariant,
+                    text = script.loadError,
+                    color = colorScheme.error,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace
                 )
-            }
-
-            // Кнопки управления
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Кнопка вкл/выкл
-                Switch(
-                    checked = script.enabled,
-                    onCheckedChange = { enabled ->
-                        onToggle(script.id, enabled)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = colorScheme.success,
-                        checkedTrackColor = colorScheme.success.copy(alpha = 0.5f),
-                        uncheckedThumbColor = colorScheme.onSurfaceVariant,
-                        uncheckedTrackColor = colorScheme.border
-                    )
-                )
-
-                // Кнопка перезагрузки
-                Button(
-                    onClick = { onReload(script.id) },
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = colorScheme.primary
-                    ),
-                    modifier = Modifier.height(32.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text("🔄", fontSize = 14.sp)
-                }
-
-                // Кнопка выгрузки
-                Button(
-                    onClick = { onUnload(script.id) },
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = colorScheme.error
-                    ),
-                    modifier = Modifier.height(32.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text("✕", color = colorScheme.onSurface, fontSize = 14.sp)
-                }
             }
         }
     }

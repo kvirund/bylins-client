@@ -177,49 +177,46 @@ sys.setdefaultencoding('UTF-8')
         }
     }
 
-    override fun loadScript(scriptPath: String): Script? {
+    override fun loadScript(scriptPath: String): Script {
         val file = File(scriptPath)
         if (!file.exists()) {
-            logger.warn { "Script not found: $scriptPath" }
-            return null
+            throw IllegalArgumentException("Script not found: $scriptPath")
         }
 
-        return try {
-            // Устанавливаем имя скрипта для логирования в API
-            (api as? ScriptAPIImpl)?.currentScriptName = file.name
+        // Устанавливаем имя скрипта для логирования в API
+        (api as? ScriptAPIImpl)?.currentScriptName = file.name
 
-            // Читаем скрипт как UTF-8 и добавляем unicode_literals
-            val scriptContent = file.readText(Charsets.UTF_8)
+        // Читаем скрипт как UTF-8 и добавляем unicode_literals
+        val scriptContent = file.readText(Charsets.UTF_8)
 
-            // Создаём код с unicode_literals в начале
-            // Для Python 2: from __future__ должен быть первым statement (после docstrings/comments)
-            val wrappedCode = buildString {
-                appendLine("# -*- coding: utf-8 -*-")
-                appendLine("from __future__ import unicode_literals")
-                append(scriptContent.lines().dropWhile {
-                    it.trim().isEmpty() ||
-                    it.trim().startsWith("#") ||
-                    it.trim().startsWith("from __future__")
-                }.joinToString("\n"))
-            }
+        // Создаём код с unicode_literals в начале
+        // Для Python 2: from __future__ должен быть первым statement (после docstrings/comments)
+        val wrappedCode = buildString {
+            appendLine("# -*- coding: utf-8 -*-")
+            appendLine("from __future__ import unicode_literals")
+            append(scriptContent.lines().dropWhile {
+                it.trim().isEmpty() ||
+                it.trim().startsWith("#") ||
+                it.trim().startsWith("from __future__")
+            }.joinToString("\n"))
+        }
 
+        try {
             interpreter?.exec(wrappedCode)
-
-            // Вызываем on_load если есть
-            callFunction("on_load", api)
-
-            Script(
-                id = UUID.randomUUID().toString(),
-                name = file.nameWithoutExtension,
-                path = scriptPath,
-                engine = this,
-                enabled = true
-            )
         } catch (e: Exception) {
-            logger.error { "Error loading script: ${e.message}" }
-            e.printStackTrace()
-            null
+            throw RuntimeException(e.message ?: "Python error", e)
         }
+
+        // Вызываем on_load если есть
+        callFunction("on_load", api)
+
+        return Script(
+            id = UUID.randomUUID().toString(),
+            name = file.nameWithoutExtension,
+            path = scriptPath,
+            engine = this,
+            enabled = true
+        )
     }
 
     override fun execute(code: String) {

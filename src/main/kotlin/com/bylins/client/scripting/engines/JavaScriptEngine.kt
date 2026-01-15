@@ -220,33 +220,39 @@ class JavaScriptEngine : ScriptEngine {
         }
     }
 
-    override fun loadScript(scriptPath: String): Script? {
+    override fun loadScript(scriptPath: String): Script {
         val file = File(scriptPath)
         if (!file.exists()) {
-            logger.warn { "Script not found: $scriptPath" }
-            return null
+            throw IllegalArgumentException("Script not found: $scriptPath")
         }
 
-        return try {
-            // Устанавливаем имя скрипта для логирования в API
-            (api as? ScriptAPIImpl)?.currentScriptName = file.name
+        // Устанавливаем имя скрипта для логирования в API
+        (api as? ScriptAPIImpl)?.currentScriptName = file.name
 
-            // Явно читаем скрипт в UTF-8
-            val scriptCode = file.readText(Charsets.UTF_8)
+        // Явно читаем скрипт в UTF-8
+        val scriptCode = file.readText(Charsets.UTF_8)
+
+        try {
             engine?.eval(scriptCode)
-
-            Script(
-                id = UUID.randomUUID().toString(),
-                name = file.nameWithoutExtension,
-                path = scriptPath,
-                engine = this,
-                enabled = true
-            )
         } catch (e: Exception) {
-            logger.error { "Error loading script: ${e.message}" }
-            e.printStackTrace()
-            null
+            // Извлекаем понятное сообщение об ошибке
+            val message = when (e) {
+                is javax.script.ScriptException -> {
+                    val lineInfo = if (e.lineNumber > 0) " (строка ${e.lineNumber})" else ""
+                    "${e.message?.substringBefore(" in <eval>") ?: e.message}$lineInfo"
+                }
+                else -> e.message ?: "Unknown error"
+            }
+            throw RuntimeException(message, e)
         }
+
+        return Script(
+            id = UUID.randomUUID().toString(),
+            name = file.nameWithoutExtension,
+            path = scriptPath,
+            engine = this,
+            enabled = true
+        )
     }
 
     override fun execute(code: String) {

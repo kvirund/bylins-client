@@ -208,5 +208,7 @@ data class ClientConfig(
     val connectionProfiles: List<ConnectionProfileDto> = emptyList(),  // Список профилей подключений
     val currentProfileId: String? = null,  // ID текущего выбранного профиля подключения
     val ignoreNumLock: Boolean = false,  // Игнорировать состояние NumLock для хоткеев
-    val activeProfileStack: List<String> = emptyList()  // Стек активных профилей персонажей
+    val activeProfileStack: List<String> = emptyList(),  // Стек активных профилей персонажей
+    val hiddenTabs: Set<String> = emptySet(),  // Скрытые вкладки (по ID)
+    val lastMapRoomId: String? = null  // Последняя текущая комната на карте
 )

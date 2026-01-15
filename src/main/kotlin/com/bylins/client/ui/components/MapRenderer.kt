@@ -330,7 +330,34 @@ object DefaultRoomRenderer : RoomRenderer {
         val effectiveAlpha = if (isPathConnection) 1.0f else distanceAlpha
 
         if (to != null) {
-            // Explored exit to visible room - solid line
+            // For cardinal directions (dz == 0), check if we can draw a straight line
+            if (direction.dz == 0) {
+                // For N/S: rooms must be on same vertical (same gridX)
+                // For E/W: rooms must be on same horizontal (same gridY)
+                val isVerticalDirection = direction.dy != 0  // N or S
+                val isHorizontalDirection = direction.dx != 0  // E or W
+
+                val canDrawStraightLine = when {
+                    isVerticalDirection -> from.gridX == to.gridX  // Same column
+                    isHorizontalDirection -> from.gridY == to.gridY  // Same row
+                    else -> false
+                }
+
+                if (!canDrawStraightLine) {
+                    // Rooms are diagonal - draw dangling exit instead
+                    drawDanglingExitInternal(
+                        from = from,
+                        direction = direction,
+                        context = context,
+                        isExplored = true,
+                        isOnPath = isPathConnection,
+                        effectiveAlpha = effectiveAlpha
+                    )
+                    return
+                }
+            }
+
+            // Rooms are aligned (or diagonal exit like NE/SW) - draw connection
             val startX = from.screenX + direction.dx * roomSize / 2
             val startY = from.screenY + direction.dy * roomSize / 2
             val endX = to.screenX - direction.dx * roomSize / 2
@@ -354,43 +381,17 @@ object DefaultRoomRenderer : RoomRenderer {
             }
         } else if (direction.dz == 0) {
             // Dangling exit (explored but target not displayed, or unexplored)
-            // Keep short - less than half the spacing between rooms
-            val startX = from.screenX + direction.dx * roomSize / 2
-            val startY = from.screenY + direction.dy * roomSize / 2
-            val exitLength = roomSize * 0.4f  // Short - under half of spacing
-            val endX = startX + direction.dx * exitLength
-            val endY = startY + direction.dy * exitLength
-
-            // Check if this dangling exit is on the path (even though target is off-canvas)
             val isDanglingOnPath = isOnPath && targetOnPath
             val danglingAlpha = if (isDanglingOnPath) 1.0f else effectiveAlpha
 
-            val baseExitColor = when {
-                isDanglingOnPath -> colors.warning  // Warning for path
-                isExplored -> colors.onSurfaceVariant
-                else -> colors.warning  // Warning for unexplored
-            }
-            val exitColor = baseExitColor.copy(alpha = baseExitColor.alpha * danglingAlpha)
-            val exitWidth = if (isDanglingOnPath) 5f * zoom else 3f * zoom
-
-            drawLine(
-                color = exitColor,
-                start = Offset(startX, startY),
-                end = Offset(endX, endY),
-                strokeWidth = exitWidth,
-                pathEffect = if (isDanglingOnPath) null else PathEffect.dashPathEffect(floatArrayOf(4f * zoom, 2f * zoom), 0f)
+            drawDanglingExitInternal(
+                from = from,
+                direction = direction,
+                context = context,
+                isExplored = isExplored,
+                isOnPath = isDanglingOnPath,
+                effectiveAlpha = danglingAlpha
             )
-
-            drawCircle(
-                color = exitColor,
-                radius = if (isDanglingOnPath) 6f * zoom else 4f * zoom,
-                center = Offset(endX, endY)
-            )
-
-            // Draw arrow for path direction on dangling exit
-            if (isDanglingOnPath) {
-                drawArrowInternal(startX, startY, endX, endY, exitColor, zoom)
-            }
         }
     }
 
@@ -415,6 +416,55 @@ object DefaultRoomRenderer : RoomRenderer {
             close()
         }
         drawPath(path, color)
+    }
+
+    /**
+     * Draws a dangling exit (short line with circle at end).
+     * Used for unexplored exits, off-canvas targets, and off-grid targets.
+     */
+    private fun DrawScope.drawDanglingExitInternal(
+        from: RoomDisplayInfo,
+        direction: Direction,
+        context: RoomRenderContext,
+        isExplored: Boolean,
+        isOnPath: Boolean,
+        effectiveAlpha: Float
+    ) {
+        val roomSize = context.roomSize
+        val zoom = context.zoom
+        val colors = context.colors
+
+        val startX = from.screenX + direction.dx * roomSize / 2
+        val startY = from.screenY + direction.dy * roomSize / 2
+        val exitLength = roomSize * 0.4f
+        val endX = startX + direction.dx * exitLength
+        val endY = startY + direction.dy * exitLength
+
+        val baseExitColor = when {
+            isOnPath -> colors.warning
+            isExplored -> colors.onSurfaceVariant
+            else -> colors.warning
+        }
+        val exitColor = baseExitColor.copy(alpha = baseExitColor.alpha * effectiveAlpha)
+        val exitWidth = if (isOnPath) 5f * zoom else 3f * zoom
+
+        drawLine(
+            color = exitColor,
+            start = Offset(startX, startY),
+            end = Offset(endX, endY),
+            strokeWidth = exitWidth,
+            pathEffect = if (isOnPath) null else PathEffect.dashPathEffect(floatArrayOf(4f * zoom, 2f * zoom), 0f)
+        )
+
+        drawCircle(
+            color = exitColor,
+            radius = if (isOnPath) 6f * zoom else 4f * zoom,
+            center = Offset(endX, endY)
+        )
+
+        if (isOnPath) {
+            drawArrowInternal(startX, startY, endX, endY, exitColor, zoom)
+        }
     }
 }
 

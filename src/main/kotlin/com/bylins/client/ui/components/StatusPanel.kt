@@ -83,7 +83,7 @@ private fun StatusBarElement(bar: StatusElement.Bar) {
             )
             if (bar.showText) {
                 Text(
-                    text = "${bar.value} / ${bar.max}",
+                    text = if (bar.showMax) "${bar.value} / ${bar.max}" else "${bar.value}",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -99,20 +99,57 @@ private fun StatusBarElement(bar: StatusElement.Bar) {
 
 @Composable
 private fun StatusTextElement(text: StatusElement.Text) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = "${text.label}:",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-        )
-        Text(
-            text = text.value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium
-        )
+    val textColor = text.color?.let { parseColor(it) }
+        ?: MaterialTheme.colorScheme.onSurface
+    val fontWeight = if (text.bold) FontWeight.Bold else FontWeight.Medium
+
+    // Wrapper с фоном если указан background
+    val content: @Composable () -> Unit = {
+        if (text.value != null) {
+            // С value - показываем label: value
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "${text.label}:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = textColor.copy(alpha = 0.7f),
+                    fontWeight = if (text.bold) FontWeight.SemiBold else FontWeight.Normal
+                )
+                Text(
+                    text = text.value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = textColor,
+                    fontWeight = fontWeight
+                )
+            }
+        } else {
+            // Без value - показываем только label
+            Text(
+                text = text.label,
+                style = MaterialTheme.typography.bodySmall,
+                color = textColor,
+                fontWeight = fontWeight
+            )
+        }
+    }
+
+    if (text.background != null) {
+        // С фоновой карточкой
+        val backgroundColor = parseColor(text.background)
+        Surface(
+            color = backgroundColor.copy(alpha = 0.3f),
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                content()
+            }
+        }
+    } else {
+        // Без фона
+        content()
     }
 }
 

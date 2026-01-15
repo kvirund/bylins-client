@@ -58,44 +58,51 @@ class ScriptManager(
             return null
         }
 
+        if (isDisabled) {
+            // Для отключённых скриптов - только добавляем в список без выполнения
+            val script = Script(
+                id = java.util.UUID.randomUUID().toString(),
+                name = cleanName.substringBeforeLast("."),
+                path = file.absolutePath,
+                engine = engine,
+                enabled = false,
+                profileId = profileId
+            )
+            _scripts.value = _scripts.value + script
+            logger.info { "Added disabled ${engine.name} script: $cleanName${profileId?.let { " (profile: $it)" } ?: ""}" }
+            return script
+        }
+
+        // Для включённых - полная загрузка с выполнением кода
         return try {
-            if (isDisabled) {
-                // Для отключённых скриптов - только добавляем в список без выполнения
-                val script = Script(
-                    id = java.util.UUID.randomUUID().toString(),
-                    name = cleanName.substringBeforeLast("."),
-                    path = file.absolutePath,
-                    engine = engine,
-                    enabled = false,
-                    profileId = profileId
-                )
-                _scripts.value = _scripts.value + script
-                logger.info { "Added disabled ${engine.name} script: $cleanName${profileId?.let { " (profile: $it)" } ?: ""}" }
-                script
-            } else {
-                // Для включённых - полная загрузка с выполнением кода
-                val script = engine.loadScript(file.absolutePath)
-                if (script != null) {
-                    // Добавляем profileId к скрипту
-                    val scriptWithProfile = script.copy(profileId = profileId)
-                    _scripts.value = _scripts.value + scriptWithProfile
+            val script = engine.loadScript(file.absolutePath)
+            // Добавляем profileId к скрипту
+            val scriptWithProfile = script.copy(profileId = profileId)
+            _scripts.value = _scripts.value + scriptWithProfile
 
-                    // Вызываем on_load если функция существует
-                    try {
-                        scriptWithProfile.call("on_load", api)
-                    } catch (e: Exception) {
-                        logger.warn { "Error calling on_load for ${script.name}: ${e.message}" }
-                    }
-
-                    logger.info { "Loaded ${engine.name} script: $cleanName${profileId?.let { " (profile: $it)" } ?: ""}" }
-                    scriptWithProfile
-                } else {
-                    null
-                }
+            // Вызываем on_load если функция существует
+            try {
+                scriptWithProfile.call("on_load", api)
+            } catch (e: Exception) {
+                logger.warn { "Error calling on_load for ${script.name}: ${e.message}" }
             }
+
+            logger.info { "Loaded ${engine.name} script: $cleanName${profileId?.let { " (profile: $it)" } ?: ""}" }
+            scriptWithProfile
         } catch (e: Exception) {
-            logger.error(e) { "Error loading ${engine.name} script $cleanName: ${e.message}" }
-            null
+            // Ошибка при загрузке - создаём скрипт с ошибкой
+            val failedScript = Script(
+                id = java.util.UUID.randomUUID().toString(),
+                name = cleanName.substringBeforeLast("."),
+                path = file.absolutePath,
+                engine = engine,
+                enabled = true,
+                profileId = profileId,
+                loadError = e.message ?: "Unknown error"
+            )
+            _scripts.value = _scripts.value + failedScript
+            logger.warn { "Failed to load ${engine.name} script $cleanName: ${e.message}" }
+            failedScript
         }
     }
 
@@ -125,43 +132,64 @@ class ScriptManager(
         if (scriptIndex == -1) return
 
         val script = currentList[scriptIndex]
-        if (script.enabled) return // Уже включён
+        if (script.enabled && !script.hasFailed) return // Уже включён и работает
 
         val file = File(script.path)
         if (!file.exists()) {
             logger.warn { "Script file not found: ${script.path}" }
+            // Помечаем как failed
+            val failedScript = script.copy(enabled = true, loadError = "File not found: ${script.path}")
+            _scripts.value = currentList.toMutableList().apply {
+                set(scriptIndex, failedScript)
+            }
             return
         }
 
         try {
-            // Переименовываем файл (убираем .disabled)
+            // Переименовываем файл (убираем .disabled) если нужно
             val newPath = script.path.replace(".disabled", "")
-            val newFile = File(newPath)
-            if (file.renameTo(newFile)) {
-                // Загружаем скрипт заново (уже как включённый), но не добавляем в список
-                val engine = script.engine
-                val newScript = engine.loadScript(newFile.absolutePath)
-
-                if (newScript != null) {
-                    // Заменяем в списке на том же месте
+            val newFile = if (script.path != newPath) {
+                val targetFile = File(newPath)
+                if (!file.renameTo(targetFile)) {
+                    logger.error { "Failed to rename file: ${script.path}" }
+                    val failedScript = script.copy(enabled = true, loadError = "Failed to rename file")
                     _scripts.value = currentList.toMutableList().apply {
-                        set(scriptIndex, newScript)
+                        set(scriptIndex, failedScript)
                     }
-
-                    // Вызываем on_load если функция существует
-                    try {
-                        newScript.call("on_load", api)
-                    } catch (e: Exception) {
-                        logger.warn { "Error calling on_load for ${newScript.name}: ${e.message}" }
-                    }
-
-                    logger.info { "Enabled ${engine.name} script: ${newScript.name}" }
+                    return
                 }
+                targetFile
             } else {
-                logger.error { "Failed to rename file: ${script.path}" }
+                file
             }
+
+            // Загружаем скрипт заново
+            val engine = script.engine
+            val newScript = engine.loadScript(newFile.absolutePath)
+
+            // Сохраняем profileId
+            val scriptWithProfile = newScript.copy(profileId = script.profileId)
+
+            // Заменяем в списке на том же месте
+            _scripts.value = currentList.toMutableList().apply {
+                set(scriptIndex, scriptWithProfile)
+            }
+
+            // Вызываем on_load если функция существует
+            try {
+                scriptWithProfile.call("on_load", api)
+            } catch (e: Exception) {
+                logger.warn { "Error calling on_load for ${scriptWithProfile.name}: ${e.message}" }
+            }
+
+            logger.info { "Enabled ${engine.name} script: ${scriptWithProfile.name}" }
         } catch (e: Exception) {
-            logger.error { "Error enabling script: ${e.message}" }
+            // Помечаем как failed
+            val failedScript = script.copy(enabled = true, loadError = e.message ?: "Unknown error")
+            _scripts.value = currentList.toMutableList().apply {
+                set(scriptIndex, failedScript)
+            }
+            logger.warn { "Error enabling script: ${e.message}" }
         }
     }
 
@@ -264,35 +292,43 @@ class ScriptManager(
         val script = currentList[scriptIndex]
         val file = File(script.path)
 
-        // Вызываем on_unload если функция существует
-        try {
-            script.call("on_unload")
-        } catch (e: Exception) {
-            // Игнорируем ошибки
+        // Вызываем on_unload если функция существует (только если скрипт был загружен успешно)
+        if (!script.hasFailed) {
+            try {
+                script.call("on_unload")
+            } catch (e: Exception) {
+                // Игнорируем ошибки
+            }
         }
 
         // Перезагружаем через движок
         val engine = engines.find { it.name == script.engine.name } ?: return
-        val newScript = engine.loadScript(file.absolutePath)
 
-        if (newScript != null) {
+        try {
+            val newScript = engine.loadScript(file.absolutePath)
+            // Сохраняем profileId от старого скрипта
+            val scriptWithProfile = newScript.copy(profileId = script.profileId)
+
             // Заменяем в списке на том же месте
             _scripts.value = currentList.toMutableList().apply {
-                set(scriptIndex, newScript)
+                set(scriptIndex, scriptWithProfile)
             }
 
             // Вызываем on_load если функция существует
             try {
-                newScript.call("on_load", api)
+                scriptWithProfile.call("on_load", api)
             } catch (e: Exception) {
                 // Игнорируем ошибки если функция не существует
             }
 
             logger.info { "Reloaded ${script.engine.name} script: ${script.name}" }
-        } else {
-            // Если не удалось загрузить - удаляем из списка
-            _scripts.value = currentList.filter { it.id != scriptId }
-            logger.warn { "Failed to reload script: ${script.name}" }
+        } catch (e: Exception) {
+            // Ошибка при загрузке - помечаем как failed
+            val failedScript = script.copy(loadError = e.message ?: "Unknown error")
+            _scripts.value = currentList.toMutableList().apply {
+                set(scriptIndex, failedScript)
+            }
+            logger.warn { "Error reloading script ${script.name}: ${e.message}" }
         }
     }
 

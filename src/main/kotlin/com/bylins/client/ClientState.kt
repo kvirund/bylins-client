@@ -200,6 +200,18 @@ class ClientState {
     private val _ignoreNumLock = MutableStateFlow(false)
     val ignoreNumLock: StateFlow<Boolean> = _ignoreNumLock
 
+    // Скрытые вкладки
+    private val _hiddenTabs = MutableStateFlow<Set<String>>(emptySet())
+    val hiddenTabs: StateFlow<Set<String>> = _hiddenTabs
+
+    // Целевой профиль для добавления хоткеев/триггеров/алиасов в UI панелях (null = база)
+    private val _panelTargetProfileId = MutableStateFlow<String?>(null)
+    val panelTargetProfileId: StateFlow<String?> = _panelTargetProfileId
+
+    fun setPanelTargetProfileId(profileId: String?) {
+        _panelTargetProfileId.value = profileId
+    }
+
     private val telnetClient = TelnetClient(this, _encoding)
 
     // Скриптинг - инициализируется позже
@@ -299,9 +311,11 @@ class ClientState {
     val pathHighlightRoomIds = mapManager.pathHighlightRoomIds
     val pathHighlightTargetId = mapManager.pathHighlightTargetId
     val zoneNotes = mapManager.zoneNotes
+    val mapViewCenterRoomId = mapManager.viewCenterRoomId
 
     fun getZoneNotes(zoneName: String): String = mapManager.getZoneNotes(zoneName)
     fun setZoneNotes(zoneName: String, notes: String) = mapManager.setZoneNotes(zoneName, notes)
+    fun setMapViewCenterRoom(roomId: String?) = mapManager.setViewCenterRoom(roomId)
 
     init {
         // Регистрируем shutdown hook для корректного завершения
@@ -337,6 +351,20 @@ class ClientState {
         _fontFamily.value = configData.fontFamily
         _fontSize.value = configData.fontSize
         _ignoreNumLock.value = configData.ignoreNumLock
+        _hiddenTabs.value = configData.hiddenTabs
+
+        // Загружаем последнюю просмотренную комнату карты из конфига
+        logger.info { "Loading lastMapRoomId from config: ${configData.lastMapRoomId}, map has ${mapManager.rooms.value.size} rooms" }
+        configData.lastMapRoomId?.let { roomId ->
+            // Устанавливаем комнату центра обзора в mapManager, если комната существует на карте
+            val room = mapManager.getRoom(roomId)
+            if (room != null) {
+                mapManager.setViewCenterRoom(roomId)
+                logger.info { "Restored last map view center: $roomId (${room.name})" }
+            } else {
+                logger.warn { "Last map room $roomId not found on map" }
+            }
+        }
 
         // Загружаем профили подключений из конфига
         _connectionProfiles.value = configData.connectionProfiles
@@ -660,8 +688,8 @@ class ClientState {
         if (isConnected.value) {
             disconnect()
         }
-        // Сохраняем конфигурацию
-        saveConfig()
+        // Сохраняем конфигурацию немедленно (без дебаунса)
+        saveConfigNow()
         // Завершаем работу маппера (сохраняет снапшот)
         mapManager.shutdown()
         // Выгружаем плагины
@@ -1668,13 +1696,7 @@ class ClientState {
         saveConfig()
     }
 
-    fun createTab(name: String, patterns: List<String>, captureMode: com.bylins.client.tabs.CaptureMode) {
-        val filters = patterns.map { pattern ->
-            com.bylins.client.tabs.TabFilter(
-                pattern = pattern.toRegex(),
-                includeMatched = true
-            )
-        }
+    fun createTab(name: String, filters: List<com.bylins.client.tabs.TabFilter>, captureMode: com.bylins.client.tabs.CaptureMode) {
         val tab = com.bylins.client.tabs.Tab(
             id = java.util.UUID.randomUUID().toString(),
             name = name,
@@ -1684,13 +1706,7 @@ class ClientState {
         addTab(tab)
     }
 
-    fun updateTab(id: String, name: String, patterns: List<String>, captureMode: com.bylins.client.tabs.CaptureMode) {
-        val filters = patterns.map { pattern ->
-            com.bylins.client.tabs.TabFilter(
-                pattern = pattern.toRegex(),
-                includeMatched = true
-            )
-        }
+    fun updateTab(id: String, name: String, filters: List<com.bylins.client.tabs.TabFilter>, captureMode: com.bylins.client.tabs.CaptureMode) {
         tabManager.updateTab(id, name, filters, captureMode)
         saveConfig()
     }
@@ -1738,6 +1754,9 @@ class ClientState {
     }
 
     private fun doSaveConfig() {
+        // Сохраняем комнату, на которую центрирована карта (или текущую комнату игрока как fallback)
+        val lastMapRoomId = mapManager.viewCenterRoomId.value ?: mapManager.currentRoomId.value
+        logger.info { "Saving config, lastMapRoomId: $lastMapRoomId" }
         configManager.saveConfig(
             triggers.value,
             aliases.value,
@@ -1753,7 +1772,9 @@ class ClientState {
             _connectionProfiles.value,
             _currentProfileId.value,
             _ignoreNumLock.value,
-            if (::profileManager.isInitialized) profileManager.activeStack.value else emptyList()
+            if (::profileManager.isInitialized) profileManager.activeStack.value else emptyList(),
+            _hiddenTabs.value,
+            lastMapRoomId
         )
     }
 
@@ -1816,6 +1837,21 @@ class ClientState {
         _ignoreNumLock.value = ignore
         saveConfig()
         logger.info { "Ignore NumLock changed to: $ignore" }
+    }
+
+    // Управление видимостью вкладок
+    fun setTabVisible(tabId: String, visible: Boolean) {
+        _hiddenTabs.value = if (visible) {
+            _hiddenTabs.value - tabId
+        } else {
+            _hiddenTabs.value + tabId
+        }
+        saveConfig()
+        logger.info { "Tab '$tabId' visibility changed to: $visible" }
+    }
+
+    fun isTabVisible(tabId: String): Boolean {
+        return tabId !in _hiddenTabs.value
     }
 
     // Управление профилями подключений
@@ -2956,14 +2992,14 @@ class ClientState {
     }
 
     private fun createStatusActions() = object : com.bylins.client.scripting.StatusActions {
-        override fun addBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, order: Int) {
+        override fun addBar(id: String, label: String, value: Int, max: Int, color: String, showText: Boolean, showMax: Boolean, order: Int) {
             val actualOrder = if (order < 0) statusManager.elements.value.size else order
-            statusManager.addBar(id, label, value, max, color, showText, actualOrder)
+            statusManager.addBar(id, label, value, max, color, showText, showMax, actualOrder)
         }
 
-        override fun addText(id: String, label: String, value: String, order: Int) {
+        override fun addText(id: String, label: String, value: String?, color: String?, bold: Boolean, background: String?, order: Int) {
             val actualOrder = if (order < 0) statusManager.elements.value.size else order
-            statusManager.addText(id, label, value, actualOrder)
+            statusManager.addText(id, label, value, color, bold, background, actualOrder)
         }
 
         override fun addFlags(id: String, label: String, flags: List<Map<String, Any>>, order: Int) {
@@ -3027,13 +3063,16 @@ class ClientState {
                     "showText" to element.showText,
                     "order" to element.order
                 )
-                is com.bylins.client.status.StatusElement.Text -> mapOf(
-                    "type" to "text",
-                    "id" to element.id,
-                    "label" to element.label,
-                    "value" to element.value,
-                    "order" to element.order
-                )
+                is com.bylins.client.status.StatusElement.Text -> buildMap {
+                    put("type", "text")
+                    put("id", element.id)
+                    put("label", element.label)
+                    element.value?.let { put("value", it) }
+                    element.color?.let { put("color", it) }
+                    put("bold", element.bold)
+                    element.background?.let { put("background", it) }
+                    put("order", element.order)
+                }
                 is com.bylins.client.status.StatusElement.Flags -> mapOf(
                     "type" to "flags",
                     "id" to element.id,

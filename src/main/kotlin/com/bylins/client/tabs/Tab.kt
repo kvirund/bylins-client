@@ -73,25 +73,53 @@ data class Tab(
 
     /**
      * Проверяет, должна ли строка попасть в эту вкладку
+     * @param cleanLine строка без ANSI-кодов
+     * @param rawLine оригинальная строка с ANSI-кодами
+     * @return трансформированная строка или null если не матчит
      */
-    fun shouldCapture(line: String): Boolean {
-        if (filters.isEmpty()) return false
-        return filters.any { it.matches(line) }
+    fun captureAndTransform(cleanLine: String, rawLine: String): String? {
+        if (filters.isEmpty()) return null
+        for (filter in filters) {
+            val result = filter.transform(cleanLine, rawLine)
+            if (result != null) return result
+        }
+        return null
     }
 }
 
 /**
  * Фильтр для захвата текста во вкладку
+ * @param pattern regex паттерн для матчинга
+ * @param replacement строка замены (null = копировать как есть, иначе применить замену с $1, $2...)
+ * @param matchWithColors true = матчить по строке с ANSI-кодами цветов
  */
 data class TabFilter(
     val pattern: Regex,
-    val includeMatched: Boolean = true
+    val replacement: String? = null,  // null = копировать как есть
+    val matchWithColors: Boolean = false,
+    val includeMatched: Boolean = true  // deprecated, kept for compatibility
 ) {
     /**
-     * Проверяет, соответствует ли строка паттерну
+     * Трансформирует строку если она матчит паттерн
+     * @param cleanLine строка без ANSI-кодов
+     * @param rawLine оригинальная строка с ANSI-кодами
+     * @return трансформированная строка или null если не матчит
      */
-    fun matches(line: String): Boolean {
-        return pattern.matches(line)
+    fun transform(cleanLine: String, rawLine: String): String? {
+        val lineToMatch = if (matchWithColors) rawLine else cleanLine
+        val match = pattern.find(lineToMatch) ?: return null
+
+        // Если замена не задана - возвращаем оригинальную строку
+        if (replacement == null) {
+            return rawLine
+        }
+
+        // Применяем замену с поддержкой $0, $1, $2...
+        var result = replacement
+        match.groupValues.forEachIndexed { index, value ->
+            result = result!!.replace("\$$index", value)
+        }
+        return result
     }
 }
 
@@ -105,14 +133,9 @@ enum class CaptureMode {
     COPY,
 
     /**
-     * Перемещает текст в эту вкладку, удаляя из основной (redirect)
+     * Перемещает текст в эту вкладку, удаляя из основной
      */
-    MOVE,
-
-    /**
-     * Только эта вкладка (не показывать в основной, но и не удалять)
-     */
-    ONLY
+    MOVE
 }
 
 /**
@@ -127,11 +150,17 @@ data class TabDto(
     val maxLines: Int = 10000
 ) {
     fun toTab(): Tab {
+        // ONLY был удалён, старые конфиги с ONLY будут использовать COPY
+        val mode = try {
+            CaptureMode.valueOf(captureMode)
+        } catch (e: IllegalArgumentException) {
+            CaptureMode.COPY
+        }
         return Tab(
             id = id,
             name = name,
             filters = filters.map { it.toTabFilter() },
-            captureMode = CaptureMode.valueOf(captureMode),
+            captureMode = mode,
             maxLines = maxLines
         )
     }
@@ -152,12 +181,15 @@ data class TabDto(
 @Serializable
 data class TabFilterDto(
     val pattern: String,
-    val includeMatched: Boolean = true
+    val replacement: String? = null,
+    val matchWithColors: Boolean = false,
+    val includeMatched: Boolean = true  // deprecated
 ) {
     fun toTabFilter(): TabFilter {
         return TabFilter(
             pattern = pattern.toRegex(),
-            includeMatched = includeMatched
+            replacement = replacement,
+            matchWithColors = matchWithColors
         )
     }
 
@@ -165,7 +197,8 @@ data class TabFilterDto(
         fun fromTabFilter(filter: TabFilter): TabFilterDto {
             return TabFilterDto(
                 pattern = filter.pattern.pattern,
-                includeMatched = filter.includeMatched
+                replacement = filter.replacement,
+                matchWithColors = filter.matchWithColors
             )
         }
     }

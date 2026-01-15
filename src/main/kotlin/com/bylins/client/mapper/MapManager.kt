@@ -23,6 +23,10 @@ class MapManager(
     private val _currentRoomId = MutableStateFlow<String?>(null)
     val currentRoomId: StateFlow<String?> = _currentRoomId
 
+    // Комната, на которую центрирована карта при просмотре (сохраняется между сессиями)
+    private val _viewCenterRoomId = MutableStateFlow<String?>(null)
+    val viewCenterRoomId: StateFlow<String?> = _viewCenterRoomId
+
     private val _mapEnabled = MutableStateFlow(false)
     val mapEnabled: StateFlow<Boolean> = _mapEnabled
 
@@ -361,6 +365,13 @@ class MapManager(
      */
     fun setMapEnabled(enabled: Boolean) {
         _mapEnabled.value = enabled
+    }
+
+    /**
+     * Устанавливает комнату для центрирования карты при просмотре
+     */
+    fun setViewCenterRoom(roomId: String?) {
+        _viewCenterRoomId.value = roomId
     }
 
     /**

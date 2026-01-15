@@ -57,6 +57,8 @@ fun MapPanel(
     val pathTargetRoomId by clientState.pathHighlightTargetId.collectAsState()
     // Zone notes
     val zoneNotesMap by clientState.zoneNotes.collectAsState()
+    // Сохранённый центр обзора карты из MapManager
+    val savedViewCenterRoomId by clientState.mapViewCenterRoomId.collectAsState()
 
     var offsetX by remember { mutableStateOf(0f) }
     var offsetY by remember { mutableStateOf(0f) }
@@ -69,9 +71,14 @@ fun MapPanel(
     var mousePosition by remember { mutableStateOf(Offset.Zero) }
     var canvasSize by remember { mutableStateOf(Pair(0f, 0f)) }
 
-    // Центр обзора карты (может отличаться от текущей комнаты)
-    var viewCenterRoomId by remember { mutableStateOf<String?>(null) }
-    var followPlayer by remember { mutableStateOf(true) }
+    // Центр обзора карты (инициализируется из сохранённого значения)
+    var viewCenterRoomId by remember(savedViewCenterRoomId) { mutableStateOf(savedViewCenterRoomId) }
+    var followPlayer by remember { mutableStateOf(savedViewCenterRoomId == null) }
+
+    // Сохраняем viewCenterRoomId в mapManager при изменении
+    LaunchedEffect(viewCenterRoomId) {
+        clientState.setMapViewCenterRoom(viewCenterRoomId)
+    }
 
     // Context menu state
     var showContextMenu by remember { mutableStateOf(false) }

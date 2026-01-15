@@ -36,8 +36,8 @@ fun HotkeysPanel(
     val activeStack by clientState.profileManager.activeStack.collectAsState()
     val profiles by clientState.profileManager.profiles.collectAsState()
 
-    // Обновляем при изменении хоткеев или стека
-    LaunchedEffect(hotkeys, activeStack) {
+    // Обновляем при изменении хоткеев, стека или профилей
+    LaunchedEffect(hotkeys, activeStack, profiles) {
         hotkeysWithSource.value = clientState.getAllHotkeysWithSource()
     }
 
@@ -45,7 +45,7 @@ fun HotkeysPanel(
     var showAddDialog by remember { mutableStateOf(false) }
     var editingHotkey by remember { mutableStateOf<Hotkey?>(null) }
     var editingHotkeySource by remember { mutableStateOf<String?>(null) }
-    var targetProfileId by remember { mutableStateOf<String?>(null) }  // null = база
+    val targetProfileId by clientState.panelTargetProfileId.collectAsState()  // null = база
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -228,7 +228,7 @@ fun HotkeysPanel(
                     onDismissRequest = { targetExpanded = false }
                 ) {
                     DropdownMenuItem(onClick = {
-                        targetProfileId = null
+                        clientState.setPanelTargetProfileId(null)
                         targetExpanded = false
                     }) {
                         Text("База", fontFamily = FontFamily.Monospace)
@@ -237,7 +237,7 @@ fun HotkeysPanel(
                         val profile = profiles.find { it.id == profileId }
                         if (profile != null) {
                             DropdownMenuItem(onClick = {
-                                targetProfileId = profileId
+                                clientState.setPanelTargetProfileId(profileId)
                                 targetExpanded = false
                             }) {
                                 Text(profile.name, fontFamily = FontFamily.Monospace)
