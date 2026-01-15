@@ -30,6 +30,7 @@ val ALL_TABS = listOf(
     TabDef("triggers", "Триггеры"),
     TabDef("aliases", "Алиасы"),
     TabDef("hotkeys", "Хоткеи"),
+    TabDef("context", "Контекст"),
     TabDef("stats", "Статистика"),
     TabDef("graphs", "Графики"),
     TabDef("map", "Карта"),
@@ -252,6 +253,13 @@ fun MainWindow() {
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
+                        "context" -> {
+                            // Панель контекстных команд
+                            ContextCommandsPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                         "stats" -> {
                             // Панель статистики
                             StatsPanel(
@@ -320,14 +328,22 @@ fun MainWindow() {
 
                 Divider()
 
-                // Поле ввода команд (доступно всегда)
-                InputPanel(
-                    clientState = clientState,
-                    focusRequester = inputFocusRequester,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
-                )
+                // Поле ввода команд с плавающим баром контекстных команд на нижней границе
+                Box(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                    InputPanel(
+                        clientState = clientState,
+                        focusRequester = inputFocusRequester,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Контекстные команды (Alt+1-0) - плавает на нижней границе поля ввода
+                    ContextCommandBar(
+                        clientState = clientState,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = 8.dp, y = 8.dp)
+                    )
+                }
             }
         }
         }

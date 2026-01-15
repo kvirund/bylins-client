@@ -7,6 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -18,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -785,137 +787,141 @@ fun RoomTooltip(
     mouseX: Float,
     mouseY: Float,
     zoneNotes: String = "",
-    maxWidth: Int = 400
+    maxWidth: Int = 300,
+    canvasWidth: Float = 0f,
+    canvasHeight: Float = 0f
 ) {
     val colorScheme = LocalAppColorScheme.current
-    val tooltipX = (mouseX + 12).coerceAtLeast(5f)
-    val tooltipY = (mouseY + 12).coerceAtLeast(5f)
     val hasZoneNotes = zoneNotes.isNotBlank()
+
+    // Умное позиционирование
+    val padding = 10f
+
+    // Сначала рендерим в Box чтобы получить реальный размер, затем позиционируем
+    var tooltipSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
+
+    // Вычисляем позицию на основе реального или оценочного размера
+    val estimatedWidth = if (tooltipSize.width > 0) tooltipSize.width else 200f
+    val estimatedHeight = if (tooltipSize.height > 0) tooltipSize.height else 100f
+
+    // Определяем позицию - предпочитаем справа-снизу, но адаптируемся к границам
+    val tooltipX = when {
+        canvasWidth <= 0 -> mouseX + padding
+        mouseX + padding + estimatedWidth <= canvasWidth -> mouseX + padding  // Справа влезает
+        mouseX - padding - estimatedWidth >= 0 -> mouseX - padding - estimatedWidth  // Слева влезает
+        else -> (canvasWidth - estimatedWidth - 5f).coerceAtLeast(5f)  // Центрируем
+    }
+
+    val tooltipY = when {
+        canvasHeight <= 0 -> mouseY + padding
+        mouseY + padding + estimatedHeight <= canvasHeight -> mouseY + padding  // Снизу влезает
+        mouseY - padding - estimatedHeight >= 0 -> mouseY - padding - estimatedHeight  // Сверху влезает
+        else -> (canvasHeight - estimatedHeight - 5f).coerceAtLeast(5f)  // Центрируем
+    }
 
     Surface(
         modifier = Modifier
             .offset { IntOffset(tooltipX.roundToInt(), tooltipY.roundToInt()) }
-            .widthIn(max = maxWidth.dp),
-        color = colorScheme.surface.copy(alpha = 0.93f),
+            .widthIn(max = 280.dp)  // Max width but can be smaller
+            .onGloballyPositioned { coordinates ->
+                tooltipSize = androidx.compose.ui.geometry.Size(
+                    coordinates.size.width.toFloat(),
+                    coordinates.size.height.toFloat()
+                )
+            },
+        color = colorScheme.surface.copy(alpha = 0.97f),
         shape = MaterialTheme.shapes.small,
-        shadowElevation = 6.dp
+        shadowElevation = 4.dp
     ) {
-        Row(modifier = Modifier.padding(8.dp)) {
-            // Left column - Room info
-            Column(modifier = Modifier.weight(1f)) {
-                // Название + (ID) в одной строке
-                Row {
-                    Text(
-                        text = room.name,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = colorScheme.onSurface
-                    )
-                    Text(
-                        text = " (${room.id})",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                        color = colorScheme.onSurfaceVariant
-                    )
-                }
+        Column(
+            modifier = Modifier.padding(6.dp),
+            horizontalAlignment = Alignment.Start
+        ) {
+            // Название + (ID)
+            Text(
+                text = "${room.name} (${room.id})",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = colorScheme.onSurface
+            )
 
-                // Выходы
-                if (room.exits.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    room.exits.forEach { (dir, exit) ->
-                        val isExplored = exit.targetRoomId.isNotEmpty()
-                        val targetRoom = if (isExplored) allRooms[exit.targetRoomId] else null
-                        val targetName = when {
-                            !isExplored -> "???"
-                            targetRoom != null -> targetRoom.name
-                            else -> "(за пределами)"
-                        }
-                        val color = when {
-                            !isExplored -> colorScheme.warning
-                            targetRoom != null -> colorScheme.success
-                            else -> colorScheme.onSurfaceVariant
-                        }
-                        Text(
-                            text = "${dir.shortName} → $targetName",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                            color = color
-                        )
+            // Выходы
+            if (room.exits.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(3.dp))
+                room.exits.forEach { (dir, exit) ->
+                    val isExplored = exit.targetRoomId.isNotEmpty()
+                    val targetRoom = if (isExplored) allRooms[exit.targetRoomId] else null
+                    val targetName = when {
+                        !isExplored -> "???"
+                        targetRoom != null -> targetRoom.name
+                        else -> "(за пределами)"
                     }
-                }
-
-                // Zone | Terrain в одной строке
-                val hasZone = !room.zone.isNullOrEmpty()
-                val hasTerrain = !room.terrain.isNullOrEmpty()
-                if (hasZone || hasTerrain) {
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Row {
-                        if (hasZone) {
-                            Text(
-                                text = room.zone!!,
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                                color = colorScheme.secondary
-                            )
-                        }
-                        if (hasZone && hasTerrain) {
-                            Text(
-                                text = " | ",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                                color = colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (hasTerrain) {
-                            val terrainColor = TerrainColors.getColor(room.terrain) ?: colorScheme.onSurfaceVariant
-                            Text(
-                                text = room.terrain!!,
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                                color = terrainColor
-                            )
-                        }
+                    val color = when {
+                        !isExplored -> colorScheme.warning
+                        targetRoom != null -> colorScheme.success
+                        else -> colorScheme.onSurfaceVariant
                     }
-                }
-
-                // Заметка комнаты (markdown)
-                if (room.notes.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(3.dp))
-                    MarkdownText(
-                        text = room.notes,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                        color = colorScheme.warning
-                    )
-                }
-
-                // Теги
-                if (room.tags.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = "Теги: ${room.tags.joinToString(", ")}",
+                        text = "${dir.shortName} → $targetName",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                        color = Color(0xFFCC88FF)
+                        color = color
                     )
                 }
             }
 
-            // Right column - Zone notes (if available)
+            // Area (Zone) | Terrain
+            val hasArea = !room.area.isNullOrEmpty()
+            val hasZone = !room.zone.isNullOrEmpty()
+            val hasTerrain = !room.terrain.isNullOrEmpty()
+            if (hasArea || hasZone || hasTerrain) {
+                Spacer(modifier = Modifier.height(2.dp))
+                val parts = mutableListOf<String>()
+                if (hasArea && hasZone) parts.add("${room.area} (${room.zone})")
+                else if (hasArea) parts.add(room.area!!)
+                else if (hasZone) parts.add(room.zone!!)
+                if (hasTerrain) parts.add(room.terrain!!)
+
+                Text(
+                    text = parts.joinToString(" | "),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                    color = colorScheme.secondary
+                )
+            }
+
+            // Заметка комнаты
+            if (room.notes.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = room.notes.take(150) + if (room.notes.length > 150) "..." else "",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                    color = colorScheme.warning
+                )
+            }
+
+            // Теги
+            if (room.tags.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Теги: ${room.tags.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                    color = Color(0xFFCC88FF)
+                )
+            }
+
+            // Заметки зоны - в отдельном блоке с разделителем
             if (hasZoneNotes) {
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Box(
                     modifier = Modifier
-                        .width(1.dp)
-                        .fillMaxHeight()
-                        .background(colorScheme.divider)
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(colorScheme.divider.copy(alpha = 0.5f))
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Заметки зоны:",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
-                        color = colorScheme.secondary
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    MarkdownText(
-                        text = zoneNotes,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                        color = colorScheme.onSurface
-                    )
-                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Зона: " + zoneNotes.take(150) + if (zoneNotes.length > 150) "..." else "",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                    color = colorScheme.onSurfaceVariant
+                )
             }
         }
     }

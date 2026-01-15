@@ -2,6 +2,11 @@ package com.bylins.client.config
 
 import com.bylins.client.aliases.Alias
 import com.bylins.client.connection.ConnectionProfile
+import com.bylins.client.contextcommands.ContextCommandRule
+import com.bylins.client.contextcommands.ContextCommandTTL
+import com.bylins.client.contextcommands.ContextRuleType
+import com.bylins.client.contextcommands.ContextScope
+import com.bylins.client.contextcommands.ContextTriggerType
 import com.bylins.client.hotkeys.Hotkey
 import com.bylins.client.triggers.Trigger
 import com.bylins.client.triggers.TriggerColorize
@@ -193,12 +198,133 @@ data class ConnectionProfileDto(
 }
 
 @Serializable
+data class ContextCommandRuleDto(
+    val id: String,
+    val enabled: Boolean = true,
+    // Новая структура
+    val triggerType: String = "pattern",  // "pattern" or "permanent"
+    val scope: String = "world",          // "room", "zone", "world"
+    val pattern: String? = null,          // For pattern trigger
+    val roomIds: List<String>? = null,    // For room scope
+    val zones: List<String>? = null,      // For zone scope
+    val command: String,
+    val ttlType: String = "room_change",  // "room_change", "zone_change", "fixed_time", "permanent", "one_time"
+    val ttlMinutes: Int? = null,          // For fixed_time TTL
+    val priority: Int = 0,
+    // Deprecated: старое поле для обратной совместимости
+    val type: String? = null              // "pattern", "room", "zone" (legacy)
+) {
+    fun toRule(): ContextCommandRule? {
+        // Определяем triggerType и scope
+        val actualTriggerType: ContextTriggerType
+        val actualScope: ContextScope
+
+        if (type != null) {
+            // Обратная совместимость со старым форматом
+            when (type) {
+                "pattern" -> {
+                    val p = pattern ?: return null
+                    val regex = try { p.toRegex() } catch (e: Exception) { return null }
+                    actualTriggerType = ContextTriggerType.Pattern(regex)
+                    actualScope = ContextScope.World
+                }
+                "room" -> {
+                    actualTriggerType = ContextTriggerType.Permanent
+                    actualScope = ContextScope.Room(roomIds?.toSet() ?: emptySet())
+                }
+                "zone" -> {
+                    actualTriggerType = ContextTriggerType.Permanent
+                    actualScope = ContextScope.Zone(zones?.toSet() ?: emptySet())
+                }
+                else -> return null
+            }
+        } else {
+            // Новый формат
+            actualTriggerType = when (triggerType) {
+                "pattern" -> {
+                    val p = pattern ?: return null
+                    val regex = try { p.toRegex() } catch (e: Exception) { return null }
+                    ContextTriggerType.Pattern(regex)
+                }
+                "permanent" -> ContextTriggerType.Permanent
+                else -> return null
+            }
+            actualScope = when (scope) {
+                "room" -> ContextScope.Room(roomIds?.toSet() ?: emptySet())
+                "zone" -> ContextScope.Zone(zones?.toSet() ?: emptySet())
+                "world" -> ContextScope.World
+                else -> ContextScope.World
+            }
+        }
+
+        val ttl = when (ttlType) {
+            "room_change" -> ContextCommandTTL.UntilRoomChange
+            "zone_change" -> ContextCommandTTL.UntilZoneChange
+            "fixed_time" -> ContextCommandTTL.FixedTime(ttlMinutes ?: 5)
+            "permanent" -> ContextCommandTTL.Permanent
+            "one_time" -> ContextCommandTTL.OneTime
+            else -> ContextCommandTTL.UntilRoomChange
+        }
+
+        return ContextCommandRule(
+            id = id,
+            enabled = enabled,
+            triggerType = actualTriggerType,
+            scope = actualScope,
+            command = command,
+            ttl = ttl,
+            priority = priority
+        )
+    }
+
+    companion object {
+        fun fromRule(rule: ContextCommandRule): ContextCommandRuleDto {
+            val triggerTypeStr = when (rule.triggerType) {
+                is ContextTriggerType.Pattern -> "pattern"
+                is ContextTriggerType.Permanent -> "permanent"
+            }
+            val patternStr = (rule.triggerType as? ContextTriggerType.Pattern)?.regex?.pattern
+
+            val (scopeStr, roomIdsList, zonesList) = when (val s = rule.scope) {
+                is ContextScope.Room -> Triple("room", s.roomIds.toList(), null)
+                is ContextScope.Zone -> Triple("zone", null, s.zones.toList())
+                is ContextScope.World -> Triple("world", null, null)
+            }
+
+            val (ttlTypeStr, ttlMin) = when (val ttl = rule.ttl) {
+                is ContextCommandTTL.UntilRoomChange -> "room_change" to null
+                is ContextCommandTTL.UntilZoneChange -> "zone_change" to null
+                is ContextCommandTTL.FixedTime -> "fixed_time" to ttl.minutes
+                is ContextCommandTTL.Permanent -> "permanent" to null
+                is ContextCommandTTL.OneTime -> "one_time" to null
+            }
+
+            return ContextCommandRuleDto(
+                id = rule.id,
+                enabled = rule.enabled,
+                triggerType = triggerTypeStr,
+                scope = scopeStr,
+                pattern = patternStr,
+                roomIds = roomIdsList,
+                zones = zonesList,
+                command = rule.command,
+                ttlType = ttlTypeStr,
+                ttlMinutes = ttlMin,
+                priority = rule.priority
+            )
+        }
+    }
+}
+
+@Serializable
 data class ClientConfig(
     val triggers: List<TriggerDto> = emptyList(),
     val aliases: List<AliasDto> = emptyList(),
     val hotkeys: List<HotkeyDto> = emptyList(),
     val variables: Map<String, String> = emptyMap(),
     val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
+    val contextCommandRules: List<ContextCommandRuleDto> = emptyList(),  // Context command rules
+    val contextCommandMaxQueueSize: Int = 50,  // Max size of context command queue
     val encoding: String = "UTF-8",  // Кодировка для telnet (UTF-8, windows-1251, и т.д.)
     val miniMapWidth: Int = 250,  // Ширина боковой панели с миникартой в dp
     val miniMapHeight: Int = 300,  // Высота миникарты в статус-панели в dp

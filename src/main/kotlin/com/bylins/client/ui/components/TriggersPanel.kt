@@ -2,6 +2,7 @@ package com.bylins.client.ui.components
 
 import mu.KotlinLogging
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -345,18 +346,48 @@ private fun TriggerItem(
                             fontSize = 14.sp,
                             fontFamily = FontFamily.Monospace
                         )
-                        // Бейдж источника
-                        Card(
-                            backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
-                            elevation = 0.dp
-                        ) {
-                            Text(
-                                text = sourceName,
-                                color = colorScheme.onSurface,
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                        // Бейдж источника с dropdown для перемещения
+                        var showMoveMenu by remember { mutableStateOf(false) }
+                        Box {
+                            Card(
+                                backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
+                                elevation = 0.dp,
+                                modifier = Modifier.clickable {
+                                    if (availableTargets.isNotEmpty()) showMoveMenu = true
+                                }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = sourceName,
+                                        color = colorScheme.onSurface,
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    if (availableTargets.isNotEmpty()) {
+                                        Text(
+                                            text = " ▼",
+                                            color = colorScheme.onSurface,
+                                            fontSize = 7.sp
+                                        )
+                                    }
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = showMoveMenu,
+                                onDismissRequest = { showMoveMenu = false }
+                            ) {
+                                availableTargets.forEach { (targetId, targetName) ->
+                                    DropdownMenuItem(onClick = {
+                                        onMove(targetId)
+                                        showMoveMenu = false
+                                    }) {
+                                        Text("→ $targetName", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                    }
+                                }
+                            }
                         }
                     }
                     Text(
@@ -476,45 +507,6 @@ private fun TriggerItem(
                             if (trigger.colorize.bold) append(", BOLD")
                         }
                         InfoRow("Color:", colorInfo)
-                    }
-
-                    // Переместить в другой профиль
-                    if (availableTargets.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        var showMoveMenu by remember { mutableStateOf(false) }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "Переместить в:",
-                                color = colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Box {
-                                Button(
-                                    onClick = { showMoveMenu = true },
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                ) {
-                                    Text("Выбрать...", color = Color.White, fontSize = 11.sp)
-                                }
-                                DropdownMenu(
-                                    expanded = showMoveMenu,
-                                    onDismissRequest = { showMoveMenu = false }
-                                ) {
-                                    availableTargets.forEach { (targetId, targetName) ->
-                                        DropdownMenuItem(onClick = {
-                                            onMove(targetId)
-                                            showMoveMenu = false
-                                        }) {
-                                            Text(targetName, fontFamily = FontFamily.Monospace)
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }

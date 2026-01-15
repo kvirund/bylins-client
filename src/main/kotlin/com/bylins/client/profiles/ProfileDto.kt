@@ -1,6 +1,7 @@
 package com.bylins.client.profiles
 
 import com.bylins.client.config.AliasDto
+import com.bylins.client.config.ContextCommandRuleDto
 import com.bylins.client.config.HotkeyDto
 import com.bylins.client.config.TriggerDto
 import kotlinx.serialization.Serializable
@@ -19,6 +20,7 @@ data class ProfileDto(
     val triggers: List<TriggerDto> = emptyList(),
     val aliases: List<AliasDto> = emptyList(),
     val hotkeys: List<HotkeyDto> = emptyList(),
+    val contextCommandRules: List<ContextCommandRuleDto> = emptyList(),
     val variables: Map<String, String> = emptyMap(),
     val createdAt: String? = null,  // ISO-8601 timestamp
     val updatedAt: String? = null   // ISO-8601 timestamp
@@ -36,6 +38,7 @@ data class ProfileDto(
             triggers = triggers.map { it.toTrigger() },
             aliases = aliases.map { it.toAlias() },
             hotkeys = hotkeys.mapNotNull { it.toHotkey() },  // toHotkey() может вернуть null
+            contextCommandRules = contextCommandRules.mapNotNull { it.toRule() },
             variables = variables,
             scriptsDir = scriptsDir,
             createdAt = createdAt?.let { parseInstant(it) } ?: Instant.now(),
@@ -56,6 +59,7 @@ data class ProfileDto(
                 triggers = profile.triggers.map { TriggerDto.fromTrigger(it) },
                 aliases = profile.aliases.map { AliasDto.fromAlias(it) },
                 hotkeys = profile.hotkeys.map { HotkeyDto.fromHotkey(it) },
+                contextCommandRules = profile.contextCommandRules.map { ContextCommandRuleDto.fromRule(it) },
                 variables = profile.variables,
                 createdAt = profile.createdAt.toString(),
                 updatedAt = profile.updatedAt.toString()

@@ -2,6 +2,7 @@ package com.bylins.client.ui.components
 
 import mu.KotlinLogging
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -445,19 +446,48 @@ private fun HotkeyRow(
             modifier = Modifier.weight(1f)
         )
 
-        // Бейдж источника
-        Card(
-            backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
-            elevation = 0.dp,
-            modifier = Modifier.padding(end = 8.dp)
-        ) {
-            Text(
-                text = sourceName,
-                color = colorScheme.onSurface,
-                fontSize = 9.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-            )
+        // Бейдж источника с dropdown для перемещения
+        var showMoveMenu by remember { mutableStateOf(false) }
+        Box(modifier = Modifier.padding(end = 8.dp)) {
+            Card(
+                backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
+                elevation = 0.dp,
+                modifier = Modifier.clickable {
+                    if (availableTargets.isNotEmpty()) showMoveMenu = true
+                }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = sourceName,
+                        color = colorScheme.onSurface,
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    if (availableTargets.isNotEmpty()) {
+                        Text(
+                            text = " ▼",
+                            color = colorScheme.onSurface,
+                            fontSize = 7.sp
+                        )
+                    }
+                }
+            }
+            DropdownMenu(
+                expanded = showMoveMenu,
+                onDismissRequest = { showMoveMenu = false }
+            ) {
+                availableTargets.forEach { (targetId, targetName) ->
+                    DropdownMenuItem(onClick = {
+                        onMove(targetId)
+                        showMoveMenu = false
+                    }) {
+                        Text("→ $targetName", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    }
+                }
+            }
         }
 
         // Кнопки управления
@@ -492,40 +522,6 @@ private fun HotkeyRow(
                     color = Color.White,
                     fontSize = 12.sp
                 )
-            }
-
-            // Кнопка перемещения (если есть куда перемещать)
-            if (availableTargets.isNotEmpty()) {
-                var showMoveMenu by remember { mutableStateOf(false) }
-                Box {
-                    Button(
-                        onClick = { showMoveMenu = true },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.warning
-                        ),
-                        modifier = Modifier.size(28.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = "→",
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showMoveMenu,
-                        onDismissRequest = { showMoveMenu = false }
-                    ) {
-                        availableTargets.forEach { (targetId, targetName) ->
-                            DropdownMenuItem(onClick = {
-                                onMove(targetId)
-                                showMoveMenu = false
-                            }) {
-                                Text(targetName, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                    }
-                }
             }
 
             // Кнопка удаления

@@ -106,7 +106,10 @@ class TabManager {
     fun setActiveTab(id: String) {
         if (_tabs.value.any { it.id == id }) {
             // Принудительно обновляем содержимое вкладки перед показом
-            getTab(id)?.flush()
+            val tab = getTab(id)
+            tab?.flush()
+            // Сбрасываем индикатор непрочитанных
+            tab?.markAsRead()
             _activeTabId.value = id
         }
     }
@@ -127,13 +130,16 @@ class TabManager {
             val cleanLine = ansiParser.stripAnsi(line)
 
             // Проверяем каждую вкладку (кроме главной)
+            val currentActiveTabId = _activeTabId.value
             for (tab in _tabs.value) {
                 if (tab.id == "main") continue
 
                 val transformedLine = tab.captureAndTransform(cleanLine, line)
                 if (transformedLine != null) {
                     // Добавляем трансформированную строку в эту вкладку
-                    tab.appendText(transformedLine)
+                    // Помечаем как непрочитанную если вкладка не активна
+                    val isActive = tab.id == currentActiveTabId
+                    tab.appendText(transformedLine, markUnread = !isActive)
 
                     // Если режим MOVE, помечаем что не нужно добавлять в main
                     if (tab.captureMode == CaptureMode.MOVE) {

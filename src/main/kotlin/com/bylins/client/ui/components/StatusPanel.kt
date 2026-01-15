@@ -383,7 +383,9 @@ private fun StatusMiniMapElement(
                         mouseX = mousePosition.x,
                         mouseY = mousePosition.y,
                         zoneNotes = zoneNotesMap[hoveredZoneId] ?: "",
-                        maxWidth = 350
+                        maxWidth = 250,
+                        canvasWidth = canvasSize.first,
+                        canvasHeight = canvasSize.second
                     )
                 }
 

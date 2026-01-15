@@ -5,7 +5,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
@@ -287,8 +287,14 @@ fun MapPanel(
         // Основная область карты с панелью зоны
         // Получаем текущую зону из комнаты
         val currentZoneId = effectiveCenterRoomId?.let { rooms[it]?.zone } ?: ""
-        val currentZoneName = effectiveCenterRoomId?.let { rooms[it]?.area }
-            ?: currentZoneId.ifEmpty { "Неизвестная зона" }
+        val currentAreaName = effectiveCenterRoomId?.let { rooms[it]?.area }
+        // Формат: "Area (Zone ID)" или просто Zone ID если нет area
+        val currentZoneName = when {
+            currentAreaName != null && currentZoneId.isNotEmpty() -> "$currentAreaName ($currentZoneId)"
+            currentAreaName != null -> currentAreaName
+            currentZoneId.isNotEmpty() -> currentZoneId
+            else -> "Неизвестная зона"
+        }
         val currentZoneNotes = zoneNotesMap[currentZoneId] ?: ""
 
         Row(modifier = Modifier.fillMaxSize().weight(1f)) {
@@ -297,89 +303,124 @@ fun MapPanel(
                 // Get current zone for border styling
                 val currentZone = effectiveCenterRoomId?.let { rooms[it]?.zone }
 
+            // Click tracking via onPointerEvent
+            var pendingClickRoom by remember { mutableStateOf<Room?>(null) }
+            var pendingClickTime by remember { mutableStateOf(0L) }
+            var pressPos by remember { mutableStateOf(Offset.Zero) }
+            var totalDragDist by remember { mutableStateOf(0f) }
+            var isPressed by remember { mutableStateOf(false) }
+            val doubleClickTimeout = 300L
+            val dragThreshold = 10f
+
+            // Execute pending single click after timeout
+            LaunchedEffect(pendingClickRoom, pendingClickTime) {
+                if (pendingClickRoom != null) {
+                    kotlinx.coroutines.delay(doubleClickTimeout)
+                    if (pendingClickRoom != null) {
+                        followPlayer = false
+                        viewCenterRoomId = pendingClickRoom!!.id
+                        offsetX = 0f
+                        offsetY = 0f
+                        pendingClickRoom = null
+                    }
+                }
+            }
+
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(colorScheme.background)
-                    .pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val newOffsetX = offsetX + dragAmount.x
-                            val newOffsetY = offsetY + dragAmount.y
-
-                            val canvasW = canvasSize.first
-                            val canvasH = canvasSize.second
-                            val rooms = currentDisplayRooms
-
-                            if (canvasW > 0 && canvasH > 0 && rooms.isNotEmpty()) {
-                                // Check if at least one room would be visible after drag
-                                val margin = roomSize / 2
-                                val anyVisible = rooms.values.any { roomInfo ->
-                                    val newX = roomInfo.screenX + dragAmount.x
-                                    val newY = roomInfo.screenY + dragAmount.y
-                                    newX >= -margin && newX <= canvasW + margin &&
-                                    newY >= -margin && newY <= canvasH + margin
-                                }
-
-                                if (anyVisible) {
-                                    offsetX = newOffsetX
-                                    offsetY = newOffsetY
-                                }
-                            } else {
-                                // No rooms or canvas not ready - allow movement
-                                offsetX = newOffsetX
-                                offsetY = newOffsetY
-                            }
-                        }
-                    }
-                    .pointerInput(displayRooms, roomSize) {
-                        detectTapGestures(
-                            onTap = { tapOffset ->
-                                // Single click - change view center
-                                val room = findRoomAtPosition(displayRooms, tapOffset.x, tapOffset.y, roomSize)
-                                if (room != null) {
-                                    followPlayer = false
-                                    viewCenterRoomId = room.id
-                                    offsetX = 0f
-                                    offsetY = 0f
-                                }
-                            },
-                            onDoubleTap = { tapOffset ->
-                                // Double click - open edit dialog
-                                val room = findRoomAtPosition(displayRooms, tapOffset.x, tapOffset.y, roomSize)
-                                if (room != null) {
-                                    selectedRoom = room
-                                    showRoomDialog = true
-                                }
-                            }
-                        )
-                    }
-                    .onPointerEvent(PointerEventType.Move) { event ->
-                        mousePosition = event.changes.first().position
-                        hoveredRoom = findRoomAtPosition(displayRooms, mousePosition.x, mousePosition.y, roomSize)
-                    }
-                    .onPointerEvent(PointerEventType.Exit) {
-                        hoveredRoom = null
-                    }
-                    .onPointerEvent(PointerEventType.Scroll) { event ->
-                        // Mouse wheel zoom
-                        val delta = event.changes.first().scrollDelta.y
-                        zoom = if (delta < 0) {
-                            (zoom * 1.15f).coerceAtMost(3f)
-                        } else {
-                            (zoom / 1.15f).coerceAtLeast(0.3f)
-                        }
-                    }
                     .onPointerEvent(PointerEventType.Press) { event ->
-                        // Right-click context menu
                         val change = event.changes.first()
-                        if (event.button == PointerButton.Secondary) {
+                        if (event.button == PointerButton.Primary) {
+                            pressPos = change.position
+                            totalDragDist = 0f
+                            isPressed = true
+                        } else if (event.button == PointerButton.Secondary) {
+                            // Right-click context menu
                             val room = findRoomAtPosition(displayRooms, change.position.x, change.position.y, roomSize)
                             if (room != null) {
                                 contextMenuRoom = room
                                 contextMenuPosition = change.position
                                 showContextMenu = true
                             }
+                        }
+                    }
+                    .onPointerEvent(PointerEventType.Move) { event ->
+                        val change = event.changes.first()
+                        mousePosition = change.position
+                        hoveredRoom = findRoomAtPosition(displayRooms, mousePosition.x, mousePosition.y, roomSize)
+
+                        // Handle drag
+                        if (isPressed && change.pressed) {
+                            val delta = change.position - pressPos
+                            val dist = delta.getDistance()
+
+                            if (dist > dragThreshold || totalDragDist > dragThreshold) {
+                                // It's a drag
+                                totalDragDist += (change.position - (if (totalDragDist > 0) change.previousPosition else pressPos)).getDistance()
+                                pendingClickRoom = null  // Cancel pending click
+
+                                val dragDelta = change.position - change.previousPosition
+                                val newOffsetX = offsetX + dragDelta.x
+                                val newOffsetY = offsetY + dragDelta.y
+
+                                val canvasW = canvasSize.first
+                                val canvasH = canvasSize.second
+                                val rooms = currentDisplayRooms
+
+                                if (canvasW > 0 && canvasH > 0 && rooms.isNotEmpty()) {
+                                    val margin = roomSize / 2
+                                    val anyVisible = rooms.values.any { roomInfo ->
+                                        val newX = roomInfo.screenX + dragDelta.x
+                                        val newY = roomInfo.screenY + dragDelta.y
+                                        newX >= -margin && newX <= canvasW + margin &&
+                                        newY >= -margin && newY <= canvasH + margin
+                                    }
+                                    if (anyVisible) {
+                                        offsetX = newOffsetX
+                                        offsetY = newOffsetY
+                                    }
+                                } else {
+                                    offsetX = newOffsetX
+                                    offsetY = newOffsetY
+                                }
+                            }
+                        }
+                    }
+                    .onPointerEvent(PointerEventType.Release) { event ->
+                        if (event.button == PointerButton.Primary && isPressed) {
+                            isPressed = false
+                            val wasDrag = totalDragDist > dragThreshold
+
+                            if (!wasDrag) {
+                                val clickedRoom = findRoomAtPosition(displayRooms, pressPos.x, pressPos.y, roomSize)
+
+                                if (clickedRoom != null) {
+                                    if (pendingClickRoom?.id == clickedRoom.id) {
+                                        // Double click - open dialog only
+                                        pendingClickRoom = null
+                                        selectedRoom = clickedRoom
+                                        showRoomDialog = true
+                                    } else {
+                                        // Schedule single click (delayed to check for double-click)
+                                        pendingClickRoom = clickedRoom
+                                        pendingClickTime = System.currentTimeMillis()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .onPointerEvent(PointerEventType.Exit) {
+                        hoveredRoom = null
+                        isPressed = false
+                    }
+                    .onPointerEvent(PointerEventType.Scroll) { event ->
+                        val delta = event.changes.first().scrollDelta.y
+                        zoom = if (delta < 0) {
+                            (zoom * 1.15f).coerceAtMost(3f)
+                        } else {
+                            (zoom / 1.15f).coerceAtLeast(0.3f)
                         }
                     }
             ) {
@@ -456,7 +497,9 @@ fun MapPanel(
                     mouseX = mousePosition.x,
                     mouseY = mousePosition.y,
                     zoneNotes = zoneNotesMap[hoveredZoneId] ?: "",
-                    maxWidth = 400
+                    maxWidth = 280,
+                    canvasWidth = canvasSize.first,
+                    canvasHeight = canvasSize.second
                 )
             }
 

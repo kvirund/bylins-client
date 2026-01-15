@@ -45,6 +45,14 @@ fun HotkeyDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
 
+    // Check if the current combination is reserved for context commands
+    val isReservedForContextCommands = remember(alt, ctrl, shift, selectedKey) {
+        alt && !ctrl && !shift && selectedKey in listOf(
+            Key.Zero, Key.One, Key.Two, Key.Three, Key.Four,
+            Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine
+        )
+    }
+
     val focusRequester = remember { FocusRequester() }
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -219,6 +227,32 @@ fun HotkeyDialog(
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(top = 8.dp)
                     )
+                }
+
+                // Warning for reserved context command keys
+                if (isReservedForContextCommands) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .background(colorScheme.warning.copy(alpha = 0.2f))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "!",
+                            color = colorScheme.warning,
+                            fontSize = 16.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "Alt+0-9 reserved for context commands. This hotkey will override context command slot.",
+                            color = colorScheme.warning,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
 
                 // Кнопки

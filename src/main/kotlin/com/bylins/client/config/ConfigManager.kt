@@ -2,6 +2,7 @@ package com.bylins.client.config
 
 import mu.KotlinLogging
 import com.bylins.client.aliases.Alias
+import com.bylins.client.contextcommands.ContextCommandRule
 import com.bylins.client.hotkeys.Hotkey
 import com.bylins.client.tabs.Tab
 import com.bylins.client.tabs.TabDto
@@ -38,6 +39,8 @@ class ConfigManager {
         hotkeys: List<Hotkey>,
         variables: Map<String, String>,
         tabs: List<Tab>,
+        contextCommandRules: List<ContextCommandRule> = emptyList(),
+        contextCommandMaxQueueSize: Int = 50,
         encoding: String = "UTF-8",
         miniMapWidth: Int = 250,
         miniMapHeight: Int = 300,
@@ -58,6 +61,8 @@ class ConfigManager {
                 hotkeys = hotkeys.map { HotkeyDto.fromHotkey(it) },
                 variables = variables,
                 tabs = tabs.map { TabDto.fromTab(it) },
+                contextCommandRules = contextCommandRules.map { ContextCommandRuleDto.fromRule(it) },
+                contextCommandMaxQueueSize = contextCommandMaxQueueSize,
                 encoding = encoding,
                 miniMapWidth = miniMapWidth,
                 miniMapHeight = miniMapHeight,
@@ -90,10 +95,12 @@ class ConfigManager {
             if (!Files.exists(configFile)) {
                 logger.info { "Config file not found: $configFile" }
                 return ConfigData(
-                    emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
-                    "UTF-8", 250, 300, "DARK", "MONOSPACE", 14,
-                    com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
-                    null, false, emptyList()
+                    triggers = emptyList(),
+                    aliases = emptyList(),
+                    hotkeys = emptyList(),
+                    variables = emptyMap(),
+                    tabs = emptyList(),
+                    connectionProfiles = com.bylins.client.connection.ConnectionProfile.createDefaultProfiles()
                 )
             }
 
@@ -120,16 +127,41 @@ class ConfigManager {
             val hiddenTabs = config.hiddenTabs
             val lastMapRoomId = config.lastMapRoomId
 
-            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock, ${activeProfileStack.size} active profiles, lastMapRoomId: $lastMapRoomId)" }
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, miniMapHeight, theme, fontFamily, fontSize, connectionProfiles, currentProfileId, ignoreNumLock, activeProfileStack, hiddenTabs, lastMapRoomId)
+            val contextCommandRules = config.contextCommandRules
+            val contextCommandMaxQueueSize = config.contextCommandMaxQueueSize
+
+            logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, ${contextCommandRules.size} context rules, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock, ${activeProfileStack.size} active profiles, lastMapRoomId: $lastMapRoomId)" }
+            return ConfigData(
+                triggers = triggers,
+                aliases = aliases,
+                hotkeys = hotkeys,
+                variables = variables,
+                tabs = tabs,
+                contextCommandRules = contextCommandRules,
+                contextCommandMaxQueueSize = contextCommandMaxQueueSize,
+                encoding = encoding,
+                miniMapWidth = miniMapWidth,
+                miniMapHeight = miniMapHeight,
+                theme = theme,
+                fontFamily = fontFamily,
+                fontSize = fontSize,
+                connectionProfiles = connectionProfiles,
+                currentProfileId = currentProfileId,
+                ignoreNumLock = ignoreNumLock,
+                activeProfileStack = activeProfileStack,
+                hiddenTabs = hiddenTabs,
+                lastMapRoomId = lastMapRoomId
+            )
         } catch (e: Exception) {
             logger.error { "Failed to load config: ${e.message}" }
             e.printStackTrace()
             return ConfigData(
-                emptyList(), emptyList(), emptyList(), emptyMap(), emptyList(),
-                "UTF-8", 250, 300, "DARK", "MONOSPACE", 14,
-                com.bylins.client.connection.ConnectionProfile.createDefaultProfiles(),
-                null, false, emptyList()
+                triggers = emptyList(),
+                aliases = emptyList(),
+                hotkeys = emptyList(),
+                variables = emptyMap(),
+                tabs = emptyList(),
+                connectionProfiles = com.bylins.client.connection.ConnectionProfile.createDefaultProfiles()
             )
         }
     }
@@ -185,7 +217,19 @@ class ConfigManager {
             val fontSize = config.fontSize
 
             logger.info { "Config imported from: ${file.absolutePath} (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize)" }
-            return ConfigData(triggers, aliases, hotkeys, variables, tabs, encoding, miniMapWidth, miniMapHeight, theme, fontFamily, fontSize)
+            return ConfigData(
+                triggers = triggers,
+                aliases = aliases,
+                hotkeys = hotkeys,
+                variables = variables,
+                tabs = tabs,
+                encoding = encoding,
+                miniMapWidth = miniMapWidth,
+                miniMapHeight = miniMapHeight,
+                theme = theme,
+                fontFamily = fontFamily,
+                fontSize = fontSize
+            )
         } catch (e: Exception) {
             logger.error { "Failed to import config: ${e.message}" }
             e.printStackTrace()
@@ -213,6 +257,8 @@ data class ConfigData(
     val hotkeys: List<Hotkey>,
     val variables: Map<String, String>,
     val tabs: List<Tab>,
+    val contextCommandRules: List<ContextCommandRuleDto> = emptyList(),
+    val contextCommandMaxQueueSize: Int = 50,
     val encoding: String = "UTF-8",
     val miniMapWidth: Int = 250,
     val miniMapHeight: Int = 300,

@@ -490,6 +490,37 @@ class ProfileManager(
         }
     }
 
+    // === Context Command Rules ===
+
+    /**
+     * Добавляет правило контекстной команды в профиль
+     */
+    fun addContextRuleToProfile(profileId: String, rule: com.bylins.client.contextcommands.ContextCommandRule) {
+        updateProfile(profileId) { profile ->
+            profile.copy(contextCommandRules = profile.contextCommandRules + rule)
+        }
+    }
+
+    /**
+     * Удаляет правило контекстной команды из профиля
+     */
+    fun removeContextRuleFromProfile(profileId: String, ruleId: String) {
+        updateProfile(profileId) { profile ->
+            profile.copy(contextCommandRules = profile.contextCommandRules.filter { it.id != ruleId })
+        }
+    }
+
+    /**
+     * Обновляет правило контекстной команды в профиле
+     */
+    fun updateContextRuleInProfile(profileId: String, rule: com.bylins.client.contextcommands.ContextCommandRule) {
+        updateProfile(profileId) { profile ->
+            profile.copy(contextCommandRules = profile.contextCommandRules.map {
+                if (it.id == rule.id) rule else it
+            })
+        }
+    }
+
     /**
      * Устанавливает переменную в профиле
      */

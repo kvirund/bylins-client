@@ -49,7 +49,9 @@ class ClientState {
     private val aliasManager = AliasManager(
         onCommand = { command ->
             // Callback для отправки команд из алиасов (без рекурсии)
-            sendRaw(command)
+            // Подставляем переменные перед отправкой
+            val substituted = variableManager.substituteVariables(command)
+            sendRaw(substituted)
         },
         onAliasFired = { alias, command, groups ->
             // Уведомляем скрипты о срабатывании алиаса
@@ -165,9 +167,28 @@ class ClientState {
                         fromDirection = null // TODO: передать направление откуда пришли
                     ))
                 }
+
+                // Обрабатываем контекстные команды при входе в комнату
+                if (::contextCommandManager.isInitialized) {
+                    contextCommandManager.onRoomEnter(room)
+
+                    // Обрабатываем правила контекстных команд из профилей
+                    if (::profileManager.isInitialized) {
+                        for (profile in profileManager.getActiveProfiles()) {
+                            if (profile.contextCommandRules.isNotEmpty()) {
+                                logger.debug { "Processing ${profile.contextCommandRules.size} room/zone context rules from profile ${profile.name}" }
+                            }
+                            contextCommandManager.processRoomRules(room, profile.contextCommandRules)
+                        }
+                    }
+                }
             }
         }
     )
+
+    // Менеджер контекстных команд
+    lateinit var contextCommandManager: com.bylins.client.contextcommands.ContextCommandManager
+        private set
     private val roomParser = com.bylins.client.mapper.RoomParser()
 
     private var lastCommand: String? = null
@@ -318,6 +339,12 @@ class ClientState {
     fun setMapViewCenterRoom(roomId: String?) = mapManager.setViewCenterRoom(roomId)
 
     init {
+        // Инициализируем менеджер контекстных команд
+        contextCommandManager = com.bylins.client.contextcommands.ContextCommandManager(
+            onCommand = { command -> send(command) },
+            getCurrentRoom = { mapManager.getCurrentRoom() }
+        )
+
         // Регистрируем shutdown hook для корректного завершения
         Runtime.getRuntime().addShutdownHook(Thread {
             shutdown()
@@ -384,6 +411,11 @@ class ClientState {
             variableManager.loadVariables(configData.variables)
             tabManager.loadTabs(configData.tabs)
         }
+
+        // Загружаем правила контекстных команд
+        val contextRules = configData.contextCommandRules.mapNotNull { it.toRule() }
+        contextCommandManager.loadRules(contextRules)
+        contextCommandManager.setMaxQueueSize(configData.contextCommandMaxQueueSize)
 
         // Восстанавливаем стек профилей персонажей
         if (::profileManager.isInitialized && configData.activeProfileStack.isNotEmpty()) {
@@ -1083,6 +1115,26 @@ class ClientState {
                 return true
             }
 
+            // #context-command N - выполнить N-ю контекстную команду
+            command.startsWith("#context-command ") || command.startsWith("#cc ") -> {
+                val prefix = if (command.startsWith("#cc ")) "#cc " else "#context-command "
+                val indexStr = command.removePrefix(prefix).trim()
+                val index = indexStr.toIntOrNull()
+                if (index != null && index > 0) {
+                    contextCommandManager.executeCommand(index - 1)  // 1-based to 0-based
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#context-command] Использование: #context-command N (N = 1-10)\u001B[0m")
+                }
+                return true
+            }
+
+            // #context-clear - очистить очередь контекстных команд
+            command == "#context-clear" || command == "#cc-clear" -> {
+                contextCommandManager.clearQueue()
+                telnetClient.addLocalOutput("\u001B[1;32m[#context-command] Очередь контекстных команд очищена\u001B[0m")
+                return true
+            }
+
             // Speedwalk: распознаём паттерн типа 5n2e3w
             command.matches(Regex("^[0-9]*[nsewud]{1,2}([0-9]+[nsewud]{1,2})*$", RegexOption.IGNORE_CASE)) -> {
                 val directions = parseSpeedwalk(command)
@@ -1469,6 +1521,20 @@ class ClientState {
             } else {
                 modifiedLines.add(line)
             }
+
+            // Обрабатываем контекстные команды по паттернам
+            contextCommandManager.processLine(cleanLine)
+
+            // Обрабатываем контекстные команды из профилей
+            if (::profileManager.isInitialized) {
+                val activeProfiles = profileManager.getActiveProfiles()
+                for (profile in activeProfiles) {
+                    if (profile.contextCommandRules.isNotEmpty()) {
+                        logger.debug { "Processing ${profile.contextCommandRules.size} context rules from profile ${profile.name}" }
+                    }
+                    contextCommandManager.processLineWithRules(cleanLine, profile.contextCommandRules)
+                }
+            }
         }
 
         // Восстанавливаем переводы строк
@@ -1662,6 +1728,13 @@ class ClientState {
         isAltPressed: Boolean,
         isShiftPressed: Boolean
     ): Boolean {
+        // Проверяем зарезервированные хоткеи контекстных команд (Alt+1-0)
+        if (contextCommandManager.processReservedHotkey(key, isAltPressed)) {
+            sessionStats.incrementHotkeysUsed()
+            lastHotkeyTimestamp = System.currentTimeMillis()
+            return true
+        }
+
         // Проверяем хоткеи из профилей (наложение - последний профиль приоритетнее)
         var handled = false
         if (::profileManager.isInitialized) {
@@ -1758,23 +1831,25 @@ class ClientState {
         val lastMapRoomId = mapManager.viewCenterRoomId.value ?: mapManager.currentRoomId.value
         logger.info { "Saving config, lastMapRoomId: $lastMapRoomId" }
         configManager.saveConfig(
-            triggers.value,
-            aliases.value,
-            hotkeys.value,
-            variableManager.getAllVariables(),
-            tabManager.getTabsForSave(),
-            _encoding,
-            _miniMapWidth.value,
-            _miniMapHeight.value,
-            _currentTheme.value,
-            _fontFamily.value,
-            _fontSize.value,
-            _connectionProfiles.value,
-            _currentProfileId.value,
-            _ignoreNumLock.value,
-            if (::profileManager.isInitialized) profileManager.activeStack.value else emptyList(),
-            _hiddenTabs.value,
-            lastMapRoomId
+            triggers = triggers.value,
+            aliases = aliases.value,
+            hotkeys = hotkeys.value,
+            variables = variableManager.getAllVariables(),
+            tabs = tabManager.getTabsForSave(),
+            contextCommandRules = contextCommandManager.rules.value,
+            contextCommandMaxQueueSize = contextCommandManager.maxQueueSize.value,
+            encoding = _encoding,
+            miniMapWidth = _miniMapWidth.value,
+            miniMapHeight = _miniMapHeight.value,
+            theme = _currentTheme.value,
+            fontFamily = _fontFamily.value,
+            fontSize = _fontSize.value,
+            connectionProfiles = _connectionProfiles.value,
+            currentProfileId = _currentProfileId.value,
+            ignoreNumLock = _ignoreNumLock.value,
+            activeProfileStack = if (::profileManager.isInitialized) profileManager.activeStack.value else emptyList(),
+            hiddenTabs = _hiddenTabs.value,
+            lastMapRoomId = lastMapRoomId
         )
     }
 
@@ -2295,6 +2370,45 @@ class ClientState {
                 profile.triggers.forEach { trigger ->
                     result.add(trigger to profile.id)
                 }
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Все правила контекстных команд с источниками (для UI)
+     * Возвращает пары (правило, ID профиля или null для базы)
+     */
+    fun getAllContextRulesWithSource(): List<Pair<com.bylins.client.contextcommands.ContextCommandRule, String?>> {
+        val result = mutableListOf<Pair<com.bylins.client.contextcommands.ContextCommandRule, String?>>()
+
+        // Сначала базовые правила
+        contextCommandManager.rules.value.forEach { rule ->
+            result.add(rule to null)
+        }
+
+        // Затем правила из каждого профиля в порядке стека
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                profile.contextCommandRules.forEach { rule ->
+                    result.add(rule to profile.id)
+                }
+            }
+        }
+
+        return result
+    }
+
+    /**
+     * Все эффективные правила контекстных команд (база + профили)
+     */
+    fun getEffectiveContextRules(): List<com.bylins.client.contextcommands.ContextCommandRule> {
+        val result = contextCommandManager.rules.value.toMutableList()
+
+        if (::profileManager.isInitialized) {
+            for (profile in profileManager.getActiveProfiles()) {
+                result.addAll(profile.contextCommandRules)
             }
         }
 

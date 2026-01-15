@@ -17,6 +17,10 @@ data class Tab(
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content
 
+    // Индикатор непрочитанных сообщений (для неактивных вкладок)
+    private val _hasUnreadMessages = MutableStateFlow(false)
+    val hasUnreadMessages: StateFlow<Boolean> = _hasUnreadMessages
+
     private val lines = mutableListOf<String>()
 
     // Счётчик для оптимизации обновлений
@@ -24,8 +28,9 @@ data class Tab(
 
     /**
      * Добавляет текст во вкладку
+     * @param markUnread если true, помечает вкладку как имеющую непрочитанные сообщения
      */
-    fun appendText(text: String) {
+    fun appendText(text: String, markUnread: Boolean = false) {
         // Разбиваем на строки
         val newLines = text.split("\n")
 
@@ -41,6 +46,11 @@ data class Tab(
         // Ограничиваем количество строк
         while (lines.size > maxLines) {
             lines.removeAt(0)
+        }
+
+        // Помечаем непрочитанные сообщения
+        if (markUnread) {
+            _hasUnreadMessages.value = true
         }
 
         // Обновляем содержимое только каждые N добавлений или если буфер большой
@@ -69,6 +79,13 @@ data class Tab(
         lines.clear()
         _content.value = ""
         updateCounter = 0
+    }
+
+    /**
+     * Сбрасывает индикатор непрочитанных сообщений
+     */
+    fun markAsRead() {
+        _hasUnreadMessages.value = false
     }
 
     /**

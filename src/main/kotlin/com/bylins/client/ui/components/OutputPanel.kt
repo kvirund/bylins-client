@@ -3,6 +3,7 @@ package com.bylins.client.ui.components
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -52,6 +53,9 @@ fun OutputPanel(
                 modifier = Modifier.weight(1f)
             ) {
                 tabs.forEach { tab ->
+                    // Подписываемся на индикатор непрочитанных сообщений
+                    val hasUnread by tab.hasUnreadMessages.collectAsState()
+
                     Tab(
                         selected = tab.id == activeTabId,
                         onClick = { clientState.setActiveTab(tab.id) },
@@ -61,6 +65,14 @@ fun OutputPanel(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Text(tab.name)
+                                // Индикатор непрочитанных сообщений (оранжевая точка)
+                                if (hasUnread && tab.id != activeTabId) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(Color(0xFFFF9800), shape = CircleShape)
+                                    )
+                                }
                                 // Кнопки управления (кроме главной вкладки)
                                 if (tab.id != "main") {
                                     IconButton(

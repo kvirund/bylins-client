@@ -1,6 +1,7 @@
 package com.bylins.client.profiles
 
 import com.bylins.client.aliases.Alias
+import com.bylins.client.contextcommands.ContextCommandRule
 import com.bylins.client.hotkeys.Hotkey
 import com.bylins.client.triggers.Trigger
 import java.nio.file.Path
@@ -18,6 +19,7 @@ data class Profile(
     val triggers: List<Trigger> = emptyList(),   // Триггеры профиля
     val aliases: List<Alias> = emptyList(),      // Алиасы профиля
     val hotkeys: List<Hotkey> = emptyList(),     // Хоткеи профиля
+    val contextCommandRules: List<ContextCommandRule> = emptyList(), // Правила контекстных команд профиля
     val variables: Map<String, String> = emptyMap(), // Переменные профиля
     val scriptsDir: Path? = null,                // Путь к папке scripts/ профиля
     val createdAt: Instant = Instant.now(),      // Дата создания

@@ -240,7 +240,9 @@ fun MiniMapPanel(
                     mouseX = mousePosition.x,
                     mouseY = mousePosition.y,
                     zoneNotes = zoneNotesMap[hoveredZoneId] ?: "",
-                    maxWidth = 350
+                    maxWidth = 220,
+                    canvasWidth = canvasSize.first,
+                    canvasHeight = canvasSize.second
                 )
             }
 

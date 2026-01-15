@@ -52,7 +52,8 @@
       "Bash(python3:*)",
       "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew.bat compileKotlin:*)",
       "Bash(JAVA_HOME=\"C:/Program Files/Java/jdk-17\" ./gradlew build:*)",
-      "Bash(set:*)"
+      "Bash(set:*)",
+      "Bash(cmd.exe /c:*)"
     ]
   }
 }
