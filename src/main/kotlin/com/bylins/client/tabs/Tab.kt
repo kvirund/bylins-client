@@ -147,7 +147,8 @@ data class TabDto(
     val name: String,
     val filters: List<TabFilterDto> = emptyList(),
     val captureMode: String = "COPY",
-    val maxLines: Int = 10000
+    val maxLines: Int = 10000,
+    val content: String? = null  // Сохранённое содержимое вкладки
 ) {
     fun toTab(): Tab {
         // ONLY был удалён, старые конфиги с ONLY будут использовать COPY
@@ -156,13 +157,19 @@ data class TabDto(
         } catch (e: IllegalArgumentException) {
             CaptureMode.COPY
         }
-        return Tab(
+        val tab = Tab(
             id = id,
             name = name,
             filters = filters.map { it.toTabFilter() },
             captureMode = mode,
             maxLines = maxLines
         )
+        // Восстанавливаем содержимое
+        if (!content.isNullOrEmpty()) {
+            tab.appendText(content)
+            tab.flush()
+        }
+        return tab
     }
 
     companion object {
@@ -172,7 +179,8 @@ data class TabDto(
                 name = tab.name,
                 filters = tab.filters.map { TabFilterDto.fromTabFilter(it) },
                 captureMode = tab.captureMode.name,
-                maxLines = tab.maxLines
+                maxLines = tab.maxLines,
+                content = tab.content.value.takeIf { it.isNotEmpty() }
             )
         }
     }

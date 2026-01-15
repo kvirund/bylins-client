@@ -176,14 +176,31 @@ class TabManager {
      * Загружает вкладки из списка
      */
     fun loadTabs(tabs: List<Tab>) {
+        // Ищем сохранённую главную вкладку
+        val savedMainTab = tabs.find { it.id == "main" }
+        val otherTabs = tabs.filter { it.id != "main" }
+
+        // Восстанавливаем содержимое главной вкладки
+        if (savedMainTab != null) {
+            val savedContent = savedMainTab.content.value
+            if (savedContent.isNotEmpty()) {
+                mainTab.appendText(savedContent)
+                mainTab.flush()
+            }
+        }
+
+        // Добавляем welcome message после восстановленного лога
+        mainTab.appendText("\nДобро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n")
+        mainTab.flush()
+
         // Сохраняем главную вкладку и добавляем загруженные
-        _tabs.value = listOf(mainTab) + tabs
+        _tabs.value = listOf(mainTab) + otherTabs
     }
 
     /**
-     * Возвращает все вкладки (кроме главной) для сохранения
+     * Возвращает все вкладки (включая главную) для сохранения
      */
     fun getTabsForSave(): List<Tab> {
-        return _tabs.value.filter { it.id != "main" }
+        return _tabs.value
     }
 }
