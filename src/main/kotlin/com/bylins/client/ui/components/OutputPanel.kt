@@ -28,7 +28,6 @@ fun OutputPanel(
 ) {
     val tabs by clientState.tabs.collectAsState()
     val activeTabId by clientState.activeTabId.collectAsState()
-    val receivedData by clientState.receivedData.collectAsState()
 
     // Получаем настройки шрифта
     val fontFamilyName by clientState.fontFamily.collectAsState()
@@ -102,7 +101,6 @@ fun OutputPanel(
         if (activeTab != null) {
             TabContent(
                 tab = activeTab,
-                receivedData = receivedData,
                 fontFamily = fontFamily,
                 fontSize = fontSize,
                 modifier = Modifier.fillMaxSize()
@@ -171,7 +169,6 @@ private fun getLastLines(text: String, maxLines: Int): String {
 @Composable
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
-    receivedData: String, // Для главной вкладки
     modifier: Modifier = Modifier,
     fontFamily: FontFamily = FontFamily.Monospace,
     fontSize: Int = 14
@@ -179,11 +176,11 @@ fun TabContent(
     val scrollState = rememberScrollState()
     val ansiParser = remember(tab.id) { AnsiParser() }
 
-    // Получаем содержимое вкладки
+    // Получаем содержимое вкладки (для всех вкладок, включая главную)
     val tabContent by tab.content.collectAsState()
 
-    // Определяем текст для отображения
-    val displayText = if (tab.id == "main") receivedData else tabContent
+    // Используем содержимое вкладки для всех вкладок
+    val displayText = tabContent
 
     // КРИТИЧНО: Ограничиваем отображаемый текст последними 1000 строками
     // для избежания O(n²) сложности при парсинге ANSI кодов
