@@ -155,6 +155,14 @@ class TabManager {
             mainTab.appendText(mainText)
         }
 
+        // Принудительно обновляем UI для всех вкладок
+        mainTab.flush()
+        for (tab in _tabs.value) {
+            if (tab.id != "main") {
+                tab.flush()
+            }
+        }
+
         return mainText
     }
 
