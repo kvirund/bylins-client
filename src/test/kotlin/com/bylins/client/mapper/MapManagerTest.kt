@@ -13,6 +13,8 @@ class MapManagerTest {
         val manager = MapManager()
         // Clear any rooms loaded from autosave
         manager.clearMap()
+        // Enable mapping for tests
+        manager.setMapEnabled(true)
         return manager
     }
 

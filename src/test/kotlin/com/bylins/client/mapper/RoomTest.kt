@@ -132,9 +132,10 @@ class RoomTest {
         assertEquals(true, map["visited"])
 
         @Suppress("UNCHECKED_CAST")
-        val exits = map["exits"] as List<String>
+        val exits = map["exits"] as Map<String, String>
         assertEquals(2, exits.size)
-        assertTrue(exits.contains("NORTH"))
-        assertTrue(exits.contains("SOUTH"))
+        assertTrue(exits.containsKey("north"))
+        assertTrue(exits.containsKey("south"))
+        assertEquals("200", exits["north"])
     }
 }

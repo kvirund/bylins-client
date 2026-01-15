@@ -168,13 +168,14 @@ class TabManager {
 
     /**
      * Добавляет текст напрямую в главную вкладку (без фильтрации)
-     * Используется для echo команд, системных сообщений и т.д.
+     * Используется для системных сообщений от скриптов/плагинов
+     * Примечание: для отображения используется receivedData, это только для сохранения в лог
      */
     fun addToMainTab(text: String) {
-        if (text.isNotEmpty()) {
-            mainTab.appendText(text)
-            mainTab.flush()
-        }
+        if (text.isEmpty()) return
+
+        mainTab.appendText(text)
+        mainTab.flush()
     }
 
     /**

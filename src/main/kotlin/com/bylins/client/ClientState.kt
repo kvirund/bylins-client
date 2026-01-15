@@ -766,9 +766,8 @@ class ClientState {
             return // Команда отменена плагином
         }
 
-        // Эхо команды в лог
+        // Эхо команды в лог (через TelnetClient для правильной работы с промптом)
         telnetClient.echoCommand(command)
-        tabManager.addToMainTab("\u001B[1;36m$command\u001B[0m\n")
 
         // Логируем команду (без ANSI кодов)
         logManager.log(command)
