@@ -167,6 +167,17 @@ class TabManager {
     }
 
     /**
+     * Добавляет текст напрямую в главную вкладку (без фильтрации)
+     * Используется для echo команд, системных сообщений и т.д.
+     */
+    fun addToMainTab(text: String) {
+        if (text.isNotEmpty()) {
+            mainTab.appendText(text)
+            mainTab.flush()
+        }
+    }
+
+    /**
      * Очищает все вкладки
      */
     fun clearAll() {

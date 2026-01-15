@@ -768,6 +768,7 @@ class ClientState {
 
         // Эхо команды в лог
         telnetClient.echoCommand(command)
+        tabManager.addToMainTab("\u001B[1;36m$command\u001B[0m\n")
 
         // Логируем команду (без ANSI кодов)
         logManager.log(command)
@@ -2200,8 +2201,15 @@ class ClientState {
             // Создаем реализацию ScriptAPI
             val scriptAPI = com.bylins.client.scripting.ScriptAPIImpl(
                 sendCommand = { command -> send(command) },
-                echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
-                logMessage = { message -> telnetClient.addLocalOutput("\u001B[1;36m$message\u001B[0m") },
+                echoText = { text ->
+                    telnetClient.addToOutputRaw(text)
+                    tabManager.addToMainTab(text + "\n")
+                },
+                logMessage = { message ->
+                    val formatted = "\u001B[1;36m$message\u001B[0m"
+                    telnetClient.addLocalOutput(formatted)
+                    tabManager.addToMainTab(formatted + "\n")
+                },
                 requestFocus = { requestInputFocus() },
                 triggerActions = createTriggerActions(),
                 aliasActions = createAliasActions(),
@@ -2468,7 +2476,10 @@ class ClientState {
         return com.bylins.client.plugins.PluginAPIImpl(
             pluginId = pluginId,
             sendCommand = { command -> send(command) },
-            echoText = { text -> telnetClient.addToOutputRaw(text) },  // Raw чтобы избежать рекурсии триггеров
+            echoText = { text ->
+                telnetClient.addToOutputRaw(text)
+                tabManager.addToMainTab(text + "\n")
+            },
             eventBus = pluginEventBus,
             variableGetter = { name -> variableManager.getVariable(name)?.asString() },
             variableSetter = { name, value -> variableManager.setVariable(name, value) },
