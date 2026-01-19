@@ -41,3 +41,4 @@ scripts/**/.venv/
 tmpclaude-*
 bin/
 world/
+.claude/
