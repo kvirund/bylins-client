@@ -36,6 +36,7 @@ val ALL_TABS = listOf(
     TabDef("map", "Карта"),
     TabDef("scripts", "Скрипты"),
     TabDef("plugins", "Плагины"),
+    TabDef("bot", "AI-Бот"),
     TabDef("msdp", "MSDP"),
     TabDef("gmcp", "GMCP"),
     TabDef("settings", "Настройки"),
@@ -291,6 +292,13 @@ fun MainWindow() {
                         "plugins" -> {
                             // Панель плагинов
                             PluginsPanel(
+                                clientState = clientState,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        "bot" -> {
+                            // Панель AI-бота
+                            BotPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )
