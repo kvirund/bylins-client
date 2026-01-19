@@ -120,8 +120,5 @@ data class Room(
 @Serializable
 data class Exit(
     val targetRoomId: String,
-    val door: String? = null,
-    val locked: Boolean = false,
-    val hidden: Boolean = false,
-    val oneWay: Boolean = false
+    val door: String? = null
 )

@@ -229,13 +229,6 @@ fun RoomDetailsDialog(
                                                 color = colorScheme.success,
                                                 fontWeight = FontWeight.Bold
                                             )
-                                            if (exit.oneWay) {
-                                                Text(
-                                                    text = "[односторонний]",
-                                                    color = colorScheme.warning,
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
-                                            }
                                             if (exit.door != null) {
                                                 Text(
                                                     text = "[дверь: ${exit.door}]",

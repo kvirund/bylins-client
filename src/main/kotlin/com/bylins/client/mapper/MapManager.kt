@@ -4,9 +4,6 @@ import mu.KotlinLogging
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -44,22 +41,63 @@ class MapManager(
     private val _pathHighlightTargetId = MutableStateFlow<String?>(null)
     val pathHighlightTargetId: StateFlow<String?> = _pathHighlightTargetId
 
-    // Zone notes
+    // Zone notes and names
     private val _zoneNotes = MutableStateFlow<Map<String, String>>(emptyMap())
     val zoneNotes: StateFlow<Map<String, String>> = _zoneNotes
 
+    private val _zoneNames = MutableStateFlow<Map<String, String>>(emptyMap())
+    val zoneNames: StateFlow<Map<String, String>> = _zoneNames
+
     private val pathfinder = Pathfinder()
     private val database = MapDatabase()
-
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var snapshotJob: Job? = null
-    private val SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000L // 5 минут
 
     init {
-        // Загружаем автосохранение при старте
-        loadAutoSave()
-        // Запускаем периодические снапшоты
-        startPeriodicSnapshots()
+        loadFromDatabase()
+        deleteOldAutosaveJson()
+    }
+
+    /**
+     * Удаляет старый autosave.json если существует (миграция)
+     */
+    private fun deleteOldAutosaveJson() {
+        try {
+            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
+            val autosaveFile = mapsDir.resolve("autosave.json").toFile()
+            if (autosaveFile.exists()) {
+                autosaveFile.delete()
+                logger.info { "Deleted old autosave.json (migrated to SQLite)" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error deleting autosave.json: ${e.message}" }
+        }
+    }
+
+    /**
+     * Загружает данные из БД при старте
+     */
+    private fun loadFromDatabase() {
+        val savedRooms = database.loadAllRooms()
+        if (savedRooms != null && savedRooms.isNotEmpty()) {
+            _rooms.value = savedRooms
+            logger.info { "Loaded ${savedRooms.size} rooms from database" }
+        }
+
+        // Load zones (name and notes)
+        val savedZones = database.loadAllZones()
+        if (savedZones.isNotEmpty()) {
+            val names = mutableMapOf<String, String>()
+            val notes = mutableMapOf<String, String>()
+            savedZones.forEach { (zoneId, pair) ->
+                pair.first?.let { names[zoneId] = it }
+                if (pair.second.isNotEmpty()) {
+                    notes[zoneId] = pair.second
+                }
+            }
+            _zoneNames.value = names
+            _zoneNotes.value = notes
+            logger.info { "Loaded ${savedZones.size} zones from database" }
+        }
     }
 
     /**
@@ -67,9 +105,8 @@ class MapManager(
      */
     fun addRoom(room: Room) {
         _rooms.value = _rooms.value + (room.id to room)
-        // Инкрементальное сохранение в БД
         scope.launch {
-            database.saveRoomIncremental(room)
+            database.saveRoom(room)
         }
     }
 
@@ -88,9 +125,8 @@ class MapManager(
         if (_currentRoomId.value == id) {
             _currentRoomId.value = null
         }
-        // Удаляем из автосохранения
         scope.launch {
-            database.deleteRoomFromAutoSave(id)
+            database.deleteRoom(id)
         }
     }
 
@@ -271,6 +307,11 @@ class MapManager(
         logger.info { "handleMovement(extended): dir=$direction name='$newRoomName' exits=$exits roomId=$roomId zone=$zone area=$area terrain=$terrain" }
         val currentRoom = getCurrentRoom()
 
+        // Сохраняем имя зоны отдельно (zone_id -> area_name)
+        if (!zone.isNullOrBlank() && !area.isNullOrBlank()) {
+            setZoneName(zone, area)
+        }
+
         if (!_mapEnabled.value) {
             return null
         }
@@ -354,20 +395,8 @@ class MapManager(
     fun clearMap() {
         _rooms.value = emptyMap()
         _currentRoomId.value = null
-        // Очищаем автосохранение в БД
         scope.launch {
-            database.clearAutoSave()
-        }
-        // Удаляем JSON файл автосохранения
-        try {
-            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
-            val autosaveFile = mapsDir.resolve("autosave.json").toFile()
-            if (autosaveFile.exists()) {
-                autosaveFile.delete()
-                logger.info { "Deleted autosave.json" }
-            }
-        } catch (e: Exception) {
-            logger.error { "Error deleting autosave.json: ${e.message}" }
+            database.clearAllRooms()
         }
     }
 
@@ -483,84 +512,22 @@ class MapManager(
     }
 
     /**
-     * Экспортирует карту в JSON
+     * Экспортирует карту в Map (для сериализации)
      */
     fun exportMap(): Map<String, Room> {
         return _rooms.value
     }
 
     /**
-     * Импортирует карту из JSON
+     * Импортирует карту из Map
      */
     fun importMap(rooms: Map<String, Room>) {
         _rooms.value = rooms
-    }
-
-    /**
-     * Сохраняет карту в файл
-     */
-    fun saveToFile(filePath: String? = null): Boolean {
-        return try {
-            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
-            if (!Files.exists(mapsDir)) {
-                Files.createDirectories(mapsDir)
+        // Сохраняем все комнаты в БД
+        scope.launch {
+            rooms.values.forEach { room ->
+                database.saveRoom(room)
             }
-
-            val file = if (filePath != null) {
-                File(filePath)
-            } else {
-                mapsDir.resolve("autosave.json").toFile()
-            }
-
-            val json = Json {
-                prettyPrint = true
-                ignoreUnknownKeys = true
-            }
-
-            val jsonString = json.encodeToString(_rooms.value)
-            file.writeText(jsonString)
-
-            logger.info { "Map saved: ${file.absolutePath} (${_rooms.value.size} rooms)" }
-            true
-        } catch (e: Exception) {
-            logger.error { "Error saving map: ${e.message}" }
-            e.printStackTrace()
-            false
-        }
-    }
-
-    /**
-     * Загружает карту из файла
-     */
-    fun loadFromFile(filePath: String? = null): Boolean {
-        return try {
-            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
-            val file = if (filePath != null) {
-                File(filePath)
-            } else {
-                mapsDir.resolve("autosave.json").toFile()
-            }
-
-            if (!file.exists()) {
-                logger.info { "Map file not found: ${file.absolutePath}" }
-                return false
-            }
-
-            val json = Json {
-                prettyPrint = true
-                ignoreUnknownKeys = true
-            }
-
-            val jsonString = file.readText()
-            val rooms = json.decodeFromString<Map<String, Room>>(jsonString)
-
-            _rooms.value = rooms
-            logger.info { "Map loaded: ${file.absolutePath} (${rooms.size} rooms)" }
-            true
-        } catch (e: Exception) {
-            logger.error { "Error loading map: ${e.message}" }
-            e.printStackTrace()
-            false
         }
     }
 
@@ -727,45 +694,45 @@ class MapManager(
         logger.info { "All zones cleared" }
     }
 
-    // === Работа с базой данных ===
+    // === Работа с заметками и именами зон ===
 
     /**
-     * Сохраняет текущую карту в базу данных
+     * Получает заметки для зоны
      */
-    fun saveMapToDatabase(name: String, description: String = ""): Boolean {
-        if (_rooms.value.isEmpty()) {
-            logger.info { "No rooms to save" }
-            return false
+    fun getZoneNotes(zoneId: String): String {
+        return _zoneNotes.value[zoneId] ?: ""
+    }
+
+    /**
+     * Устанавливает заметки для зоны
+     */
+    fun setZoneNotes(zoneId: String, notes: String) {
+        if (zoneId.isBlank()) return
+        _zoneNotes.value = _zoneNotes.value + (zoneId to notes)
+        scope.launch {
+            database.saveZone(zoneId, notes = notes)
         }
-        return database.saveMap(name, _rooms.value, description)
     }
 
     /**
-     * Загружает карту из базы данных
+     * Получает имя зоны (area name) по zone_id
      */
-    fun loadMapFromDatabase(name: String): Boolean {
-        val rooms = database.loadMap(name)
-        if (rooms != null) {
-            _rooms.value = rooms
-            // Сбрасываем текущую комнату
-            _currentRoomId.value = null
-            return true
+    fun getZoneName(zoneId: String): String? {
+        return _zoneNames.value[zoneId]
+    }
+
+    /**
+     * Устанавливает имя зоны (вызывается при получении MSDP AREA)
+     */
+    fun setZoneName(zoneId: String, areaName: String) {
+        if (zoneId.isBlank() || areaName.isBlank()) return
+        // Не обновляем если уже есть такое же имя
+        if (_zoneNames.value[zoneId] == areaName) return
+        _zoneNames.value = _zoneNames.value + (zoneId to areaName)
+        scope.launch {
+            database.saveZone(zoneId, name = areaName)
         }
-        return false
-    }
-
-    /**
-     * Возвращает список всех карт в базе данных
-     */
-    fun listMapsInDatabase(): List<MapInfo> {
-        return database.listMaps()
-    }
-
-    /**
-     * Удаляет карту из базы данных
-     */
-    fun deleteMapFromDatabase(name: String): Boolean {
-        return database.deleteMap(name)
+        logger.debug { "Saved zone name: $zoneId -> $areaName" }
     }
 
     /**
@@ -775,99 +742,10 @@ class MapManager(
         database.close()
     }
 
-    // ============================================
-    // Автосохранение и снапшоты
-    // ============================================
-
     /**
-     * Загружает карту из автосохранения при старте
-     */
-    private fun loadAutoSave() {
-        val savedRooms = database.loadAutoSave()
-        if (savedRooms != null && savedRooms.isNotEmpty()) {
-            _rooms.value = savedRooms
-            logger.info { "Loaded ${savedRooms.size} rooms from autosave" }
-        }
-        // Load zone notes
-        val savedZoneNotes = database.loadAllZoneNotes()
-        if (savedZoneNotes.isNotEmpty()) {
-            _zoneNotes.value = savedZoneNotes
-            logger.info { "Loaded ${savedZoneNotes.size} zone notes from database" }
-        }
-    }
-
-    /**
-     * Получает заметки для зоны
-     */
-    fun getZoneNotes(zoneName: String): String {
-        return _zoneNotes.value[zoneName] ?: ""
-    }
-
-    /**
-     * Устанавливает заметки для зоны
-     */
-    fun setZoneNotes(zoneName: String, notes: String) {
-        if (zoneName.isBlank()) return
-        _zoneNotes.value = _zoneNotes.value + (zoneName to notes)
-        scope.launch {
-            database.saveZoneNotes(zoneName, notes)
-        }
-    }
-
-    /**
-     * Запускает периодическое сохранение снапшотов
-     */
-    private fun startPeriodicSnapshots() {
-        snapshotJob?.cancel()
-        snapshotJob = scope.launch {
-            while (isActive) {
-                delay(SNAPSHOT_INTERVAL_MS)
-                if (_rooms.value.isNotEmpty()) {
-                    saveSnapshot()
-                }
-            }
-        }
-    }
-
-    /**
-     * Сохраняет полный снапшот карты в JSON файл
-     */
-    fun saveSnapshot() {
-        if (_rooms.value.isEmpty()) return
-
-        try {
-            val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
-            if (!Files.exists(mapsDir)) {
-                Files.createDirectories(mapsDir)
-            }
-
-            val file = mapsDir.resolve("autosave.json").toFile()
-            val json = Json {
-                prettyPrint = true
-                ignoreUnknownKeys = true
-            }
-
-            val jsonString = json.encodeToString(_rooms.value)
-            file.writeText(jsonString)
-
-            logger.info { "Snapshot saved: ${file.absolutePath} (${_rooms.value.size} rooms)" }
-        } catch (e: Exception) {
-            logger.error { "Error saving snapshot: ${e.message}" }
-            e.printStackTrace()
-        }
-    }
-
-    /**
-     * Вызывается при закрытии приложения - сохраняет финальный снапшот
+     * Вызывается при закрытии приложения
      */
     fun shutdown() {
-        snapshotJob?.cancel()
-        if (_rooms.value.isNotEmpty()) {
-            // Синхронно сохраняем снапшот при закрытии
-            runBlocking {
-                saveSnapshot()
-            }
-        }
         scope.cancel()
         database.close()
     }

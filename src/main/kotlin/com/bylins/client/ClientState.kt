@@ -332,10 +332,13 @@ class ClientState {
     val pathHighlightRoomIds = mapManager.pathHighlightRoomIds
     val pathHighlightTargetId = mapManager.pathHighlightTargetId
     val zoneNotes = mapManager.zoneNotes
+    val zoneNames = mapManager.zoneNames
     val mapViewCenterRoomId = mapManager.viewCenterRoomId
 
     fun getZoneNotes(zoneName: String): String = mapManager.getZoneNotes(zoneName)
     fun setZoneNotes(zoneName: String, notes: String) = mapManager.setZoneNotes(zoneName, notes)
+    fun getZoneName(zoneId: String): String? = mapManager.getZoneName(zoneId)
+    fun setZoneName(zoneId: String, areaName: String) = mapManager.setZoneName(zoneId, areaName)
     fun setMapViewCenterRoom(roomId: String?) = mapManager.setViewCenterRoom(roomId)
 
     init {
@@ -431,11 +434,8 @@ class ClientState {
             var wasConnected = false
             isConnected.collect { connected ->
                 if (wasConnected && !connected) {
-                    // Соединение было разорвано - сохраняем снапшот карты
-                    if (mapManager.rooms.value.isNotEmpty()) {
-                        logger.info { "Connection lost, auto-saving map snapshot..." }
-                        mapManager.saveSnapshot()
-                    }
+                    // Соединение было разорвано - карта уже сохраняется автоматически в SQLite
+                    logger.info { "Connection lost" }
                     // Останавливаем сбор статистики
                     sessionStats.stopSession()
                     // Останавливаем логирование
@@ -647,8 +647,7 @@ class ClientState {
                 variableManager.setSystemVariable("host", host)
                 variableManager.setSystemVariable("port", port)
                 variableManager.setSystemVariable("connected", 1)
-                // Автозагрузка карты при подключении
-                mapManager.loadFromFile()
+                // Карта уже загружена из SQLite при инициализации MapManager
 
                 // Уведомляем скрипты о подключении
                 if (::scriptManager.isInitialized) {
@@ -678,11 +677,7 @@ class ClientState {
     }
 
     fun disconnect() {
-        // Автосохранение карты перед отключением (снапшот)
-        if (mapManager.rooms.value.isNotEmpty()) {
-            mapManager.saveSnapshot()
-        }
-
+        // Карта сохраняется автоматически в SQLite при каждом изменении
         telnetClient.disconnect()
 
         // Сбрасываем MSDP состояние
@@ -2160,14 +2155,6 @@ class ClientState {
         mapManager.importMap(rooms)
     }
 
-    fun saveMapToFile(filePath: String? = null): Boolean {
-        return mapManager.saveToFile(filePath)
-    }
-
-    fun loadMapFromFile(filePath: String? = null): Boolean {
-        return mapManager.loadFromFile(filePath)
-    }
-
     // Работа с зонами
     fun detectAndAssignZones() {
         mapManager.detectAndAssignZones()
@@ -2248,23 +2235,6 @@ class ClientState {
 
     fun getPathPreview(steps: Int = 5): List<com.bylins.client.mapper.Direction> {
         return mapManager.getPathPreview(steps)
-    }
-
-    // Работа с базой данных карт
-    fun saveMapToDatabase(name: String, description: String = ""): Boolean {
-        return mapManager.saveMapToDatabase(name, description)
-    }
-
-    fun loadMapFromDatabase(name: String): Boolean {
-        return mapManager.loadMapFromDatabase(name)
-    }
-
-    fun listMapsInDatabase(): List<com.bylins.client.mapper.MapInfo> {
-        return mapManager.listMapsInDatabase()
-    }
-
-    fun deleteMapFromDatabase(name: String): Boolean {
-        return mapManager.deleteMapFromDatabase(name)
     }
 
     // Управление скриптами

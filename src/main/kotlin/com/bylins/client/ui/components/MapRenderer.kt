@@ -679,7 +679,6 @@ private fun isOneWayExit(
     exit: com.bylins.client.mapper.Exit,
     allRooms: Map<String, Room>
 ): Boolean {
-    if (exit.oneWay) return true
     if (exit.targetRoomId.isEmpty()) return false
 
     val targetRoom = allRooms[exit.targetRoomId] ?: return false

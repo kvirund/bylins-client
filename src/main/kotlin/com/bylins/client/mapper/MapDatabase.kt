@@ -5,18 +5,18 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.sql.Connection
 import java.sql.DriverManager
-import java.sql.ResultSet
 import java.time.Instant
 
 /**
  * База данных для хранения карт в SQLite
  *
  * Схема:
- * - maps: список карт (id, name, description, created_at, updated_at)
- * - rooms: комнаты (id, map_id, room_id, name, x, y, z, visited, color, notes, terrain)
- * - exits: выходы между комнатами (id, room_id, direction, target_room_id)
+ * - zones: зоны (id, name, notes, updated_at)
+ * - rooms: комнаты (id, name, description, zone_id, terrain, color, notes, tags, visited, updated_at)
+ * - exits: выходы между комнатами (room_id, direction, target_room_id, door)
  */
 private val logger = KotlinLogging.logger("MapDatabase")
+
 class MapDatabase {
     private var connection: Connection? = null
     private val dbPath: String
@@ -30,8 +30,8 @@ class MapDatabase {
 
         dbPath = mapsDir.resolve("maps.db").toString()
         connect()
+        migrateIfNeeded()
         createTables()
-        createAutoSaveTables()
     }
 
     /**
@@ -49,19 +49,158 @@ class MapDatabase {
     }
 
     /**
+     * Миграция данных из старых таблиц
+     */
+    private fun migrateIfNeeded() {
+        try {
+            val statement = connection?.createStatement()
+
+            // Проверяем наличие старых таблиц
+            val hasOldTables = tableExists("autosave_rooms") || tableExists("zone_notes") || tableExists("zone_names")
+
+            if (hasOldTables) {
+                logger.info { "Starting migration from old schema..." }
+                connection?.autoCommit = false
+
+                // 1. Создаём новую таблицу zones если её нет
+                statement?.execute("""
+                    CREATE TABLE IF NOT EXISTS zones (
+                        id TEXT PRIMARY KEY,
+                        name TEXT,
+                        notes TEXT DEFAULT '',
+                        updated_at INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                // 2. Мигрируем данные из zone_notes и zone_names
+                if (tableExists("zone_names")) {
+                    statement?.execute("""
+                        INSERT OR IGNORE INTO zones (id, name, notes, updated_at)
+                        SELECT zone_id, area_name, '', updated_at FROM zone_names
+                    """.trimIndent())
+                }
+                if (tableExists("zone_notes")) {
+                    // Обновляем notes для существующих зон
+                    statement?.execute("""
+                        UPDATE zones SET notes = (
+                            SELECT notes FROM zone_notes WHERE zone_notes.zone_name = zones.id
+                        ) WHERE EXISTS (
+                            SELECT 1 FROM zone_notes WHERE zone_notes.zone_name = zones.id
+                        )
+                    """.trimIndent())
+                    // Вставляем зоны которых ещё нет
+                    statement?.execute("""
+                        INSERT OR IGNORE INTO zones (id, name, notes, updated_at)
+                        SELECT zone_name, NULL, notes, updated_at FROM zone_notes
+                    """.trimIndent())
+                }
+
+                // 3. Создаём новые таблицы rooms и exits
+                statement?.execute("""
+                    CREATE TABLE IF NOT EXISTS rooms_new (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT DEFAULT '',
+                        zone_id TEXT,
+                        terrain TEXT,
+                        color TEXT,
+                        notes TEXT DEFAULT '',
+                        tags TEXT DEFAULT '',
+                        visited INTEGER DEFAULT 0,
+                        updated_at INTEGER NOT NULL,
+                        FOREIGN KEY (zone_id) REFERENCES zones(id)
+                    )
+                """.trimIndent())
+
+                statement?.execute("""
+                    CREATE TABLE IF NOT EXISTS exits_new (
+                        room_id TEXT NOT NULL,
+                        direction TEXT NOT NULL,
+                        target_room_id TEXT NOT NULL,
+                        door TEXT,
+                        PRIMARY KEY (room_id, direction),
+                        FOREIGN KEY (room_id) REFERENCES rooms_new(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+
+                // 4. Мигрируем данные из autosave_rooms
+                if (tableExists("autosave_rooms")) {
+                    statement?.execute("""
+                        INSERT OR REPLACE INTO rooms_new (id, name, description, zone_id, terrain, color, notes, tags, visited, updated_at)
+                        SELECT room_id, name, COALESCE(description, ''), zone, terrain, color, COALESCE(notes, ''), COALESCE(tags, ''), visited, updated_at
+                        FROM autosave_rooms
+                    """.trimIndent())
+                }
+
+                // 5. Мигрируем данные из autosave_exits
+                if (tableExists("autosave_exits")) {
+                    statement?.execute("""
+                        INSERT OR REPLACE INTO exits_new (room_id, direction, target_room_id, door)
+                        SELECT room_id, direction, COALESCE(target_room_id, ''), door
+                        FROM autosave_exits
+                    """.trimIndent())
+                }
+
+                // 6. Удаляем старые таблицы
+                statement?.execute("DROP TABLE IF EXISTS autosave_exits")
+                statement?.execute("DROP TABLE IF EXISTS autosave_rooms")
+                statement?.execute("DROP TABLE IF EXISTS zone_notes")
+                statement?.execute("DROP TABLE IF EXISTS zone_names")
+                statement?.execute("DROP TABLE IF EXISTS exits")
+                statement?.execute("DROP TABLE IF EXISTS rooms")
+                statement?.execute("DROP TABLE IF EXISTS maps")
+
+                // 7. Переименовываем новые таблицы
+                statement?.execute("ALTER TABLE rooms_new RENAME TO rooms")
+                statement?.execute("ALTER TABLE exits_new RENAME TO exits")
+
+                connection?.commit()
+                connection?.autoCommit = true
+
+                logger.info { "Migration completed successfully" }
+            }
+
+            statement?.close()
+        } catch (e: Exception) {
+            connection?.rollback()
+            connection?.autoCommit = true
+            logger.error { "Error during migration: ${e.message}" }
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Проверяет существование таблицы
+     */
+    private fun tableExists(tableName: String): Boolean {
+        return try {
+            val stmt = connection?.prepareStatement(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+            )
+            stmt?.setString(1, tableName)
+            val rs = stmt?.executeQuery()
+            val exists = rs?.next() == true
+            rs?.close()
+            stmt?.close()
+            exists
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * Создание таблиц если их нет
      */
     private fun createTables() {
         try {
             val statement = connection?.createStatement()
 
-            // Таблица карт
+            // Таблица зон
             statement?.execute("""
-                CREATE TABLE IF NOT EXISTS maps (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    description TEXT,
-                    created_at INTEGER NOT NULL,
+                CREATE TABLE IF NOT EXISTS zones (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    notes TEXT DEFAULT '',
                     updated_at INTEGER NOT NULL
                 )
             """.trimIndent())
@@ -69,454 +208,134 @@ class MapDatabase {
             // Таблица комнат
             statement?.execute("""
                 CREATE TABLE IF NOT EXISTS rooms (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    map_id INTEGER NOT NULL,
-                    room_id TEXT NOT NULL,
+                    id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
-                    x INTEGER NOT NULL,
-                    y INTEGER NOT NULL,
-                    z INTEGER NOT NULL,
-                    visited INTEGER NOT NULL DEFAULT 0,
-                    color TEXT,
-                    notes TEXT,
+                    description TEXT DEFAULT '',
+                    zone_id TEXT,
                     terrain TEXT,
-                    FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE,
-                    UNIQUE(map_id, room_id)
+                    color TEXT,
+                    notes TEXT DEFAULT '',
+                    tags TEXT DEFAULT '',
+                    visited INTEGER DEFAULT 0,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY (zone_id) REFERENCES zones(id)
                 )
             """.trimIndent())
 
             // Таблица выходов
             statement?.execute("""
                 CREATE TABLE IF NOT EXISTS exits (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    room_id INTEGER NOT NULL,
+                    room_id TEXT NOT NULL,
                     direction TEXT NOT NULL,
                     target_room_id TEXT NOT NULL,
+                    door TEXT,
+                    PRIMARY KEY (room_id, direction),
                     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
                 )
             """.trimIndent())
 
-            // Индексы для быстрого поиска
-            statement?.execute("CREATE INDEX IF NOT EXISTS idx_rooms_map_id ON rooms(map_id)")
-            statement?.execute("CREATE INDEX IF NOT EXISTS idx_rooms_coords ON rooms(map_id, x, y, z)")
-            statement?.execute("CREATE INDEX IF NOT EXISTS idx_exits_room ON exits(room_id)")
+            // Индексы
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_rooms_zone ON rooms(zone_id)")
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_exits_target ON exits(target_room_id)")
 
             statement?.close()
-            logger.info { "Tables created successfully" }
+            logger.info { "Tables created/verified successfully" }
         } catch (e: Exception) {
             logger.error { "Error creating tables: ${e.message}" }
             e.printStackTrace()
         }
     }
 
-    /**
-     * Сохраняет карту в базу данных
-     */
-    fun saveMap(name: String, rooms: Map<String, Room>, description: String = ""): Boolean {
-        return try {
-            connection?.autoCommit = false
-
-            // Удаляем старую карту если есть
-            deleteMap(name)
-
-            // Создаем новую запись карты
-            val mapId = createMap(name, description)
-            if (mapId == null) {
-                connection?.rollback()
-                return false
-            }
-
-            // Сохраняем комнаты
-            val roomIdMapping = mutableMapOf<String, Long>()
-            for ((roomKey, room) in rooms) {
-                val dbRoomId = insertRoom(mapId, room)
-                if (dbRoomId != null) {
-                    roomIdMapping[roomKey] = dbRoomId
-                }
-            }
-
-            // Сохраняем выходы
-            for ((roomKey, room) in rooms) {
-                val dbRoomId = roomIdMapping[roomKey] ?: continue
-                for ((direction, exit) in room.exits) {
-                    insertExit(dbRoomId, direction.name, exit.targetRoomId)
-                }
-            }
-
-            connection?.commit()
-            connection?.autoCommit = true
-
-            logger.info { "Map '$name' saved successfully (${rooms.size} rooms)" }
-            true
-        } catch (e: Exception) {
-            connection?.rollback()
-            connection?.autoCommit = true
-            logger.error { "Error saving map: ${e.message}" }
-            e.printStackTrace()
-            false
-        }
-    }
+    // ============================================
+    // Операции с зонами
+    // ============================================
 
     /**
-     * Загружает карту из базы данных
+     * Сохраняет или обновляет зону
      */
-    fun loadMap(name: String): Map<String, Room>? {
-        return try {
-            // Получаем ID карты
-            val mapId = getMapId(name) ?: return null
-
-            // Загружаем комнаты
-            val rooms = mutableMapOf<String, Room>()
-            val roomIdMapping = mutableMapOf<Long, String>()
-
-            val roomsStmt = connection?.prepareStatement(
-                "SELECT * FROM rooms WHERE map_id = ?"
-            )
-            roomsStmt?.setLong(1, mapId)
-            val roomsRs = roomsStmt?.executeQuery()
-
-            while (roomsRs?.next() == true) {
-                val room = parseRoom(roomsRs)
-                rooms[room.id] = room
-                roomIdMapping[roomsRs.getLong("id")] = room.id
-            }
-
-            roomsRs?.close()
-            roomsStmt?.close()
-
-            // Загружаем выходы
-            for ((dbRoomId, roomKey) in roomIdMapping) {
-                val exitsStmt = connection?.prepareStatement(
-                    "SELECT direction, target_room_id FROM exits WHERE room_id = ?"
-                )
-                exitsStmt?.setLong(1, dbRoomId)
-                val exitsRs = exitsStmt?.executeQuery()
-
-                val room = rooms[roomKey]
-                while (exitsRs?.next() == true) {
-                    val directionName = exitsRs.getString("direction")
-                    val targetRoomId = exitsRs.getString("target_room_id")
-                    val direction = Direction.valueOf(directionName)
-                    room?.addExit(direction, targetRoomId)
-                }
-
-                exitsRs?.close()
-                exitsStmt?.close()
-            }
-
-            logger.info { "Map '$name' loaded successfully (${rooms.size} rooms)" }
-            rooms
-        } catch (e: Exception) {
-            logger.error { "Error loading map: ${e.message}" }
-            e.printStackTrace()
-            null
-        }
-    }
-
-    /**
-     * Возвращает список всех карт
-     */
-    fun listMaps(): List<MapInfo> {
-        val maps = mutableListOf<MapInfo>()
+    fun saveZone(zoneId: String, name: String? = null, notes: String? = null) {
+        if (zoneId.isBlank()) return
         try {
-            val stmt = connection?.createStatement()
-            val rs = stmt?.executeQuery("""
-                SELECT m.name, m.description, m.created_at, m.updated_at,
-                       COUNT(r.id) as room_count
-                FROM maps m
-                LEFT JOIN rooms r ON m.id = r.map_id
-                GROUP BY m.id
-                ORDER BY m.updated_at DESC
-            """.trimIndent())
-
-            while (rs?.next() == true) {
-                maps.add(MapInfo(
-                    name = rs.getString("name"),
-                    description = rs.getString("description") ?: "",
-                    roomCount = rs.getInt("room_count"),
-                    createdAt = rs.getLong("created_at"),
-                    updatedAt = rs.getLong("updated_at")
-                ))
-            }
-
-            rs?.close()
-            stmt?.close()
-        } catch (e: Exception) {
-            logger.error { "Error listing maps: ${e.message}" }
-            e.printStackTrace()
-        }
-        return maps
-    }
-
-    /**
-     * Удаляет карту из базы данных
-     */
-    fun deleteMap(name: String): Boolean {
-        return try {
-            val stmt = connection?.prepareStatement("DELETE FROM maps WHERE name = ?")
-            stmt?.setString(1, name)
-            val deleted = stmt?.executeUpdate() ?: 0
-            stmt?.close()
-
-            if (deleted > 0) {
-                logger.info { "Map '$name' deleted" }
-            }
-            deleted > 0
-        } catch (e: Exception) {
-            logger.error { "Error deleting map: ${e.message}" }
-            e.printStackTrace()
-            false
-        }
-    }
-
-    // Вспомогательные методы
-
-    private fun createMap(name: String, description: String): Long? {
-        return try {
             val now = Instant.now().epochSecond
-            val stmt = connection?.prepareStatement(
-                "INSERT INTO maps (name, description, created_at, updated_at) VALUES (?, ?, ?, ?)"
-            )
-            stmt?.setString(1, name)
-            stmt?.setString(2, description)
-            stmt?.setLong(3, now)
-            stmt?.setLong(4, now)
-            stmt?.executeUpdate()
-            stmt?.close()
 
-            // Получаем ID созданной карты
-            val idStmt = connection?.prepareStatement("SELECT last_insert_rowid()")
-            val rs = idStmt?.executeQuery()
-            val id = if (rs?.next() == true) rs.getLong(1) else null
-            rs?.close()
-            idStmt?.close()
-            id
+            // Проверяем существует ли зона
+            val existingStmt = connection?.prepareStatement("SELECT name, notes FROM zones WHERE id = ?")
+            existingStmt?.setString(1, zoneId)
+            val rs = existingStmt?.executeQuery()
+
+            if (rs?.next() == true) {
+                // Обновляем существующую зону
+                val currentName = rs.getString("name")
+                val currentNotes = rs.getString("notes")
+                rs.close()
+                existingStmt?.close()
+
+                val newName = name ?: currentName
+                val newNotes = notes ?: currentNotes
+
+                val updateStmt = connection?.prepareStatement("""
+                    UPDATE zones SET name = ?, notes = ?, updated_at = ? WHERE id = ?
+                """.trimIndent())
+                updateStmt?.setString(1, newName)
+                updateStmt?.setString(2, newNotes)
+                updateStmt?.setLong(3, now)
+                updateStmt?.setString(4, zoneId)
+                updateStmt?.executeUpdate()
+                updateStmt?.close()
+            } else {
+                rs?.close()
+                existingStmt?.close()
+
+                // Вставляем новую зону
+                val insertStmt = connection?.prepareStatement("""
+                    INSERT INTO zones (id, name, notes, updated_at) VALUES (?, ?, ?, ?)
+                """.trimIndent())
+                insertStmt?.setString(1, zoneId)
+                insertStmt?.setString(2, name ?: "")
+                insertStmt?.setString(3, notes ?: "")
+                insertStmt?.setLong(4, now)
+                insertStmt?.executeUpdate()
+                insertStmt?.close()
+            }
         } catch (e: Exception) {
-            logger.error { "Error creating map: ${e.message}" }
-            null
+            logger.error { "Error saving zone: ${e.message}" }
         }
     }
 
-    private fun getMapId(name: String): Long? {
+    /**
+     * Загружает все зоны: Map<zoneId, Pair<name, notes>>
+     */
+    fun loadAllZones(): Map<String, Pair<String?, String>> {
         return try {
-            val stmt = connection?.prepareStatement("SELECT id FROM maps WHERE name = ?")
-            stmt?.setString(1, name)
-            val rs = stmt?.executeQuery()
-            val id = if (rs?.next() == true) rs.getLong("id") else null
-            rs?.close()
-            stmt?.close()
-            id
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun insertRoom(mapId: Long, room: Room): Long? {
-        return try {
-            val stmt = connection?.prepareStatement("""
-                INSERT INTO rooms (map_id, room_id, name, x, y, z, visited, color, notes, terrain)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent())
-            stmt?.setLong(1, mapId)
-            stmt?.setString(2, room.id)
-            stmt?.setString(3, room.name)
-            stmt?.setInt(4, 0)  // x - deprecated, not used
-            stmt?.setInt(5, 0)  // y - deprecated, not used
-            stmt?.setInt(6, 0)  // z - deprecated, not used
-            stmt?.setInt(7, if (room.visited) 1 else 0)
-            stmt?.setString(8, room.color)
-            stmt?.setString(9, room.notes)
-            stmt?.setString(10, room.terrain)
-            stmt?.executeUpdate()
-            stmt?.close()
-
-            // Получаем ID созданной комнаты
-            val idStmt = connection?.prepareStatement("SELECT last_insert_rowid()")
-            val rs = idStmt?.executeQuery()
-            val id = if (rs?.next() == true) rs.getLong(1) else null
-            rs?.close()
-            idStmt?.close()
-            id
-        } catch (e: Exception) {
-            logger.error { "Error inserting room: ${e.message}" }
-            null
-        }
-    }
-
-    private fun insertExit(roomId: Long, direction: String, targetRoomId: String) {
-        try {
-            val stmt = connection?.prepareStatement(
-                "INSERT INTO exits (room_id, direction, target_room_id) VALUES (?, ?, ?)"
-            )
-            stmt?.setLong(1, roomId)
-            stmt?.setString(2, direction)
-            stmt?.setString(3, targetRoomId)
-            stmt?.executeUpdate()
-            stmt?.close()
-        } catch (e: Exception) {
-            logger.error { "Error inserting exit: ${e.message}" }
-        }
-    }
-
-    private fun parseRoom(rs: ResultSet): Room {
-        return Room(
-            id = rs.getString("room_id"),
-            name = rs.getString("name"),
-            // x, y, z - deprecated, not used (coordinates calculated via BFS)
-            visited = rs.getInt("visited") == 1,
-            color = rs.getString("color"),
-            notes = rs.getString("notes") ?: "",
-            terrain = rs.getString("terrain") ?: ""
-        )
-    }
-
-    /**
-     * Закрывает соединение с базой данных
-     */
-    fun close() {
-        try {
-            connection?.close()
-            logger.info { "Database connection closed" }
-        } catch (e: Exception) {
-            logger.error { "Error closing database: ${e.message}" }
-        }
-    }
-
-    // ============================================
-    // Инкрементальное автосохранение
-    // ============================================
-
-    /**
-     * Создание таблиц для автосохранения
-     */
-    private fun createAutoSaveTables() {
-        try {
-            val statement = connection?.createStatement()
-
-            // Таблица автосохранения комнат
-            statement?.execute("""
-                CREATE TABLE IF NOT EXISTS autosave_rooms (
-                    room_id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    x INTEGER NOT NULL,
-                    y INTEGER NOT NULL,
-                    z INTEGER NOT NULL,
-                    visited INTEGER NOT NULL DEFAULT 0,
-                    color TEXT,
-                    notes TEXT,
-                    terrain TEXT,
-                    zone TEXT,
-                    tags TEXT,
-                    updated_at INTEGER NOT NULL
-                )
-            """.trimIndent())
-
-            // Таблица автосохранения выходов
-            statement?.execute("""
-                CREATE TABLE IF NOT EXISTS autosave_exits (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    room_id TEXT NOT NULL,
-                    direction TEXT NOT NULL,
-                    target_room_id TEXT,
-                    door TEXT,
-                    locked INTEGER DEFAULT 0,
-                    hidden INTEGER DEFAULT 0,
-                    one_way INTEGER DEFAULT 0,
-                    UNIQUE(room_id, direction),
-                    FOREIGN KEY (room_id) REFERENCES autosave_rooms(room_id) ON DELETE CASCADE
-                )
-            """.trimIndent())
-
-            // Индексы
-            statement?.execute("CREATE INDEX IF NOT EXISTS idx_autosave_exits_room ON autosave_exits(room_id)")
-
-            // Таблица заметок по зонам
-            statement?.execute("""
-                CREATE TABLE IF NOT EXISTS zone_notes (
-                    zone_name TEXT PRIMARY KEY,
-                    notes TEXT NOT NULL DEFAULT '',
-                    updated_at INTEGER NOT NULL
-                )
-            """.trimIndent())
-
-            statement?.close()
-        } catch (e: Exception) {
-            logger.error { "Error creating autosave tables: ${e.message}" }
-            e.printStackTrace()
-        }
-    }
-
-    /**
-     * Сохраняет заметки для зоны
-     */
-    fun saveZoneNotes(zoneName: String, notes: String) {
-        if (zoneName.isBlank()) return
-        try {
-            val stmt = connection?.prepareStatement("""
-                INSERT OR REPLACE INTO zone_notes (zone_name, notes, updated_at)
-                VALUES (?, ?, ?)
-            """.trimIndent())
-            stmt?.setString(1, zoneName)
-            stmt?.setString(2, notes)
-            stmt?.setLong(3, Instant.now().epochSecond)
-            stmt?.executeUpdate()
-            stmt?.close()
-        } catch (e: Exception) {
-            logger.error { "Error saving zone notes: ${e.message}" }
-        }
-    }
-
-    /**
-     * Загружает заметки для зоны
-     */
-    fun loadZoneNotes(zoneName: String): String {
-        if (zoneName.isBlank()) return ""
-        return try {
-            val stmt = connection?.prepareStatement(
-                "SELECT notes FROM zone_notes WHERE zone_name = ?"
-            )
-            stmt?.setString(1, zoneName)
-            val rs = stmt?.executeQuery()
-            val notes = if (rs?.next() == true) rs.getString("notes") ?: "" else ""
-            rs?.close()
-            stmt?.close()
-            notes
-        } catch (e: Exception) {
-            logger.error { "Error loading zone notes: ${e.message}" }
-            ""
-        }
-    }
-
-    /**
-     * Загружает все заметки зон
-     */
-    fun loadAllZoneNotes(): Map<String, String> {
-        return try {
-            val result = mutableMapOf<String, String>()
+            val result = mutableMapOf<String, Pair<String?, String>>()
             val stmt = connection?.createStatement()
-            val rs = stmt?.executeQuery("SELECT zone_name, notes FROM zone_notes")
+            val rs = stmt?.executeQuery("SELECT id, name, notes FROM zones")
             while (rs?.next() == true) {
-                val zoneName = rs.getString("zone_name")
+                val id = rs.getString("id")
+                val name = rs.getString("name")
                 val notes = rs.getString("notes") ?: ""
-                if (zoneName.isNotBlank()) {
-                    result[zoneName] = notes
+                if (id.isNotBlank()) {
+                    result[id] = Pair(name, notes)
                 }
             }
             rs?.close()
             stmt?.close()
             result
         } catch (e: Exception) {
-            logger.error { "Error loading all zone notes: ${e.message}" }
+            logger.error { "Error loading zones: ${e.message}" }
             emptyMap()
         }
     }
 
+    // ============================================
+    // Операции с комнатами
+    // ============================================
+
     /**
-     * Сохраняет одну комнату инкрементально (upsert)
+     * Сохраняет одну комнату (upsert)
      */
     @Synchronized
-    fun saveRoomIncremental(room: Room) {
+    fun saveRoom(room: Room) {
         try {
             connection?.autoCommit = false
 
@@ -525,29 +344,26 @@ class MapDatabase {
 
             // UPSERT комнаты
             val roomStmt = connection?.prepareStatement("""
-                INSERT OR REPLACE INTO autosave_rooms
-                (room_id, name, description, x, y, z, visited, color, notes, terrain, zone, tags, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO rooms
+                (id, name, description, zone_id, terrain, color, notes, tags, visited, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent())
             roomStmt?.setString(1, room.id)
             roomStmt?.setString(2, room.name)
             roomStmt?.setString(3, room.description)
-            roomStmt?.setInt(4, 0)  // x - deprecated
-            roomStmt?.setInt(5, 0)  // y - deprecated
-            roomStmt?.setInt(6, 0)  // z - deprecated
-            roomStmt?.setInt(7, if (room.visited) 1 else 0)
-            roomStmt?.setString(8, room.color)
-            roomStmt?.setString(9, room.notes)
-            roomStmt?.setString(10, room.terrain)
-            roomStmt?.setString(11, room.zone)
-            roomStmt?.setString(12, tagsJson)
-            roomStmt?.setLong(13, now)
+            roomStmt?.setString(4, room.zone)
+            roomStmt?.setString(5, room.terrain)
+            roomStmt?.setString(6, room.color)
+            roomStmt?.setString(7, room.notes)
+            roomStmt?.setString(8, tagsJson)
+            roomStmt?.setInt(9, if (room.visited) 1 else 0)
+            roomStmt?.setLong(10, now)
             roomStmt?.executeUpdate()
             roomStmt?.close()
 
             // Удаляем старые выходы
             val deleteExitsStmt = connection?.prepareStatement(
-                "DELETE FROM autosave_exits WHERE room_id = ?"
+                "DELETE FROM exits WHERE room_id = ?"
             )
             deleteExitsStmt?.setString(1, room.id)
             deleteExitsStmt?.executeUpdate()
@@ -556,17 +372,13 @@ class MapDatabase {
             // Добавляем новые выходы
             for ((direction, exit) in room.exits) {
                 val exitStmt = connection?.prepareStatement("""
-                    INSERT INTO autosave_exits
-                    (room_id, direction, target_room_id, door, locked, hidden, one_way)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO exits (room_id, direction, target_room_id, door)
+                    VALUES (?, ?, ?, ?)
                 """.trimIndent())
                 exitStmt?.setString(1, room.id)
                 exitStmt?.setString(2, direction.name)
                 exitStmt?.setString(3, exit.targetRoomId)
                 exitStmt?.setString(4, exit.door)
-                exitStmt?.setInt(5, if (exit.locked) 1 else 0)
-                exitStmt?.setInt(6, if (exit.hidden) 1 else 0)
-                exitStmt?.setInt(7, if (exit.oneWay) 1 else 0)
                 exitStmt?.executeUpdate()
                 exitStmt?.close()
             }
@@ -576,51 +388,48 @@ class MapDatabase {
         } catch (e: Exception) {
             connection?.rollback()
             connection?.autoCommit = true
-            logger.error { "Error saving room incrementally: ${e.message}" }
+            logger.error { "Error saving room: ${e.message}" }
         }
     }
 
     /**
-     * Удаляет комнату из автосохранения
+     * Удаляет комнату
      */
-    fun deleteRoomFromAutoSave(roomId: String) {
+    fun deleteRoom(roomId: String) {
         try {
-            val stmt = connection?.prepareStatement(
-                "DELETE FROM autosave_rooms WHERE room_id = ?"
-            )
+            val stmt = connection?.prepareStatement("DELETE FROM rooms WHERE id = ?")
             stmt?.setString(1, roomId)
             stmt?.executeUpdate()
             stmt?.close()
         } catch (e: Exception) {
-            logger.error { "Error deleting room from autosave: ${e.message}" }
+            logger.error { "Error deleting room: ${e.message}" }
         }
     }
 
     /**
-     * Загружает все комнаты из автосохранения
+     * Загружает все комнаты
      */
-    fun loadAutoSave(): Map<String, Room>? {
+    fun loadAllRooms(): Map<String, Room>? {
         return try {
             val rooms = mutableMapOf<String, Room>()
 
             // Загружаем комнаты
             val roomsStmt = connection?.createStatement()
-            val roomsRs = roomsStmt?.executeQuery("SELECT * FROM autosave_rooms")
+            val roomsRs = roomsStmt?.executeQuery("SELECT * FROM rooms")
 
             while (roomsRs?.next() == true) {
                 val tagsStr = roomsRs.getString("tags") ?: ""
                 val tags = if (tagsStr.isNotEmpty()) tagsStr.split(",").toSet() else emptySet()
 
                 val room = Room(
-                    id = roomsRs.getString("room_id"),
+                    id = roomsRs.getString("id"),
                     name = roomsRs.getString("name"),
                     description = roomsRs.getString("description") ?: "",
-                    // x, y, z - deprecated (coordinates calculated via BFS)
                     visited = roomsRs.getInt("visited") == 1,
                     color = roomsRs.getString("color"),
                     notes = roomsRs.getString("notes") ?: "",
                     terrain = roomsRs.getString("terrain") ?: "",
-                    zone = roomsRs.getString("zone") ?: "",
+                    zone = roomsRs.getString("zone_id") ?: "",
                     tags = tags
                 )
                 rooms[room.id] = room
@@ -630,7 +439,7 @@ class MapDatabase {
 
             // Загружаем выходы
             val exitsStmt = connection?.createStatement()
-            val exitsRs = exitsStmt?.executeQuery("SELECT * FROM autosave_exits")
+            val exitsRs = exitsStmt?.executeQuery("SELECT * FROM exits")
 
             while (exitsRs?.next() == true) {
                 val roomId = exitsRs.getString("room_id")
@@ -645,10 +454,7 @@ class MapDatabase {
 
                 val exit = Exit(
                     targetRoomId = exitsRs.getString("target_room_id") ?: "",
-                    door = exitsRs.getString("door"),
-                    locked = exitsRs.getInt("locked") == 1,
-                    hidden = exitsRs.getInt("hidden") == 1,
-                    oneWay = exitsRs.getInt("one_way") == 1
+                    door = exitsRs.getString("door")
                 )
                 room.exits[direction] = exit
             }
@@ -656,37 +462,37 @@ class MapDatabase {
             exitsStmt?.close()
 
             if (rooms.isNotEmpty()) {
-                logger.info { "AutoSave loaded: ${rooms.size} rooms" }
+                logger.info { "Loaded ${rooms.size} rooms from database" }
             }
             rooms.ifEmpty { null }
         } catch (e: Exception) {
-            logger.error { "Error loading autosave: ${e.message}" }
+            logger.error { "Error loading rooms: ${e.message}" }
             e.printStackTrace()
             null
         }
     }
 
     /**
-     * Очищает автосохранение
+     * Очищает все комнаты
      */
-    fun clearAutoSave() {
+    fun clearAllRooms() {
         try {
             val stmt = connection?.createStatement()
-            stmt?.execute("DELETE FROM autosave_rooms")
+            stmt?.execute("DELETE FROM rooms")
             stmt?.close()
-            logger.info { "AutoSave cleared" }
+            logger.info { "All rooms cleared" }
         } catch (e: Exception) {
-            logger.error { "Error clearing autosave: ${e.message}" }
+            logger.error { "Error clearing rooms: ${e.message}" }
         }
     }
 
     /**
-     * Возвращает количество комнат в автосохранении
+     * Возвращает количество комнат
      */
-    fun getAutoSaveRoomCount(): Int {
+    fun getRoomCount(): Int {
         return try {
             val stmt = connection?.createStatement()
-            val rs = stmt?.executeQuery("SELECT COUNT(*) FROM autosave_rooms")
+            val rs = stmt?.executeQuery("SELECT COUNT(*) FROM rooms")
             val count = if (rs?.next() == true) rs.getInt(1) else 0
             rs?.close()
             stmt?.close()
@@ -695,15 +501,16 @@ class MapDatabase {
             0
         }
     }
-}
 
-/**
- * Информация о карте
- */
-data class MapInfo(
-    val name: String,
-    val description: String,
-    val roomCount: Int,
-    val createdAt: Long,
-    val updatedAt: Long
-)
+    /**
+     * Закрывает соединение с базой данных
+     */
+    fun close() {
+        try {
+            connection?.close()
+            logger.info { "Database connection closed" }
+        } catch (e: Exception) {
+            logger.error { "Error closing database: ${e.message}" }
+        }
+    }
+}

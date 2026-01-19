@@ -35,11 +35,6 @@ import com.bylins.client.ClientState
 import com.bylins.client.mapper.Direction
 import com.bylins.client.mapper.Room
 import com.bylins.client.ui.theme.LocalAppColorScheme
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 @OptIn(ExperimentalComposeUiApi::class)
 private val logger = KotlinLogging.logger("MapPanel")
@@ -55,8 +50,9 @@ fun MapPanel(
     // Path highlighting from scripts
     val pathRoomIds by clientState.pathHighlightRoomIds.collectAsState()
     val pathTargetRoomId by clientState.pathHighlightTargetId.collectAsState()
-    // Zone notes
+    // Zone notes and names
     val zoneNotesMap by clientState.zoneNotes.collectAsState()
+    val zoneNamesMap by clientState.zoneNames.collectAsState()
     // Сохранённый центр обзора карты из MapManager
     val savedViewCenterRoomId by clientState.mapViewCenterRoomId.collectAsState()
 
@@ -65,7 +61,6 @@ fun MapPanel(
     var zoom by remember { mutableStateOf(1f) }
     var selectedRoom by remember { mutableStateOf<Room?>(null) }
     var showRoomDialog by remember { mutableStateOf(false) }
-    var showDatabaseDialog by remember { mutableStateOf(false) }
     var showGoToRoomDialog by remember { mutableStateOf(false) }
     var hoveredRoom by remember { mutableStateOf<Room?>(null) }
     var mousePosition by remember { mutableStateOf(Offset.Zero) }
@@ -141,6 +136,7 @@ fun MapPanel(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Левая группа: управление картой, навигация
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -152,7 +148,7 @@ fun MapPanel(
                     onCheckedChange = { clientState.setMapEnabled(it) }
                 )
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 // Следовать за игроком
                 Text("Следовать", color = if (followPlayer) Color.White else colorScheme.onSurfaceVariant)
@@ -161,7 +157,9 @@ fun MapPanel(
                     onCheckedChange = { followPlayer = it }
                 )
 
-                // Центрировать на текущей комнате
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Навигационные кнопки
                 if (!followPlayer) {
                     Button(
                         onClick = {
@@ -174,7 +172,6 @@ fun MapPanel(
                         Text("К игроку")
                     }
 
-                    // Перейти к комнате по ID
                     Button(
                         onClick = { showGoToRoomDialog = true },
                         contentPadding = PaddingValues(8.dp)
@@ -182,12 +179,20 @@ fun MapPanel(
                         Text("Перейти к...")
                     }
                 }
-            }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                // Центрировать (сброс смещения и зума)
+                Button(
+                    onClick = {
+                        offsetX = 0f
+                        offsetY = 0f
+                        zoom = 1f
+                    },
+                    contentPadding = PaddingValues(8.dp)
+                ) {
+                    Text("Центрировать")
+                }
+
+                // Масштаб
                 Button(
                     onClick = { zoom = (zoom * 1.2f).coerceAtMost(3f) },
                     modifier = Modifier.size(32.dp),
@@ -205,89 +210,23 @@ fun MapPanel(
                 ) {
                     Text("-")
                 }
+            }
 
-                Button(
-                    onClick = {
-                        offsetX = 0f
-                        offsetY = 0f
-                        zoom = 1f
-                    },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("Сброс")
-                }
-
-                Button(
-                    onClick = { clientState.clearMap() },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("Очистить")
-                }
-
-                Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-                        fileChooser.selectedFile = File("map.json")
-
-                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val exportedRooms = clientState.exportMap()
-                                val json = Json {
-                                    prettyPrint = true
-                                    ignoreUnknownKeys = true
-                                }
-                                val jsonString = json.encodeToString(exportedRooms)
-                                fileChooser.selectedFile.writeText(jsonString)
-                                logger.info { "Map exported to ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Export error: ${e.message}" }
-                            }
-                        }
-                    },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("Экспорт")
-                }
-
-                Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val jsonString = fileChooser.selectedFile.readText()
-                                val json = Json {
-                                    prettyPrint = true
-                                    ignoreUnknownKeys = true
-                                }
-                                val importedRooms = json.decodeFromString<Map<String, Room>>(jsonString)
-                                clientState.importMap(importedRooms)
-                                logger.info { "Map imported from ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Import error: ${e.message}" }
-                            }
-                        }
-                    },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("Импорт")
-                }
-
-                Button(
-                    onClick = { showDatabaseDialog = true },
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    Text("База данных")
-                }
+            // Правая группа: очистка
+            Button(
+                onClick = { clientState.clearMap() },
+                contentPadding = PaddingValues(8.dp)
+            ) {
+                Text("Очистить")
             }
         }
 
         // Основная область карты с панелью зоны
         // Получаем текущую зону из комнаты
         val currentZoneId = effectiveCenterRoomId?.let { rooms[it]?.zone } ?: ""
-        val currentAreaName = effectiveCenterRoomId?.let { rooms[it]?.area }
+        // Сначала ищем сохранённое имя зоны, затем area из комнаты
+        val savedZoneName = zoneNamesMap[currentZoneId]
+        val currentAreaName = savedZoneName ?: effectiveCenterRoomId?.let { rooms[it]?.area }
         // Формат: "Area (Zone ID)" или просто Zone ID если нет area
         val currentZoneName = when {
             currentAreaName != null && currentZoneId.isNotEmpty() -> "$currentAreaName ($currentZoneId)"
@@ -700,14 +639,6 @@ fun MapPanel(
                     visited = visited
                 )
             }
-        )
-    }
-
-    // Диалог базы данных карт
-    if (showDatabaseDialog) {
-        MapDatabaseDialog(
-            clientState = clientState,
-            onDismiss = { showDatabaseDialog = false }
         )
     }
 
