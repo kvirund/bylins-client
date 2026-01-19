@@ -14,8 +14,16 @@ private val logger = KotlinLogging.logger("ContextCommandManager")
  */
 class ContextCommandManager(
     private val onCommand: (String) -> Unit,
-    private val getCurrentRoom: () -> Room?
+    private var getCurrentRoom: () -> Room?
 ) {
+    /**
+     * Обновляет функцию получения текущей комнаты
+     * Используется при переключении MapManager
+     */
+    fun updateGetCurrentRoom(getter: () -> Room?) {
+        getCurrentRoom = getter
+    }
+
     // Правила для автоматического добавления команд
     private val _rules = MutableStateFlow<List<ContextCommandRule>>(emptyList())
     val rules: StateFlow<List<ContextCommandRule>> = _rules

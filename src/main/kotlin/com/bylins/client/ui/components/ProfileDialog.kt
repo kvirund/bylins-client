@@ -1,8 +1,12 @@
 package com.bylins.client.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -15,6 +19,7 @@ import com.bylins.client.connection.ConnectionProfile
 @Composable
 fun ProfileDialog(
     profile: ConnectionProfile? = null,
+    existingMapFiles: List<String> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (ConnectionProfile) -> Unit
 ) {
@@ -22,9 +27,21 @@ fun ProfileDialog(
     var host by remember { mutableStateOf(profile?.host ?: "") }
     var port by remember { mutableStateOf(profile?.port?.toString() ?: "4000") }
     var encoding by remember { mutableStateOf(profile?.encoding ?: "UTF-8") }
+    var mapFile by remember { mutableStateOf(profile?.mapFile ?: "maps.db") }
     var encodingMenuExpanded by remember { mutableStateOf(false) }
+    var mapFileMenuExpanded by remember { mutableStateOf(false) }
 
     val availableEncodings = listOf("UTF-8", "windows-1251", "KOI8-R", "ISO-8859-1")
+
+    // Список файлов карт: существующие + текущий (если он не в списке) + maps.db (default)
+    val mapFileOptions = remember(existingMapFiles, mapFile) {
+        val options = mutableSetOf("maps.db")
+        options.addAll(existingMapFiles)
+        if (mapFile.isNotBlank() && mapFile !in options) {
+            options.add(mapFile)
+        }
+        options.toList().sorted()
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -98,6 +115,40 @@ fun ProfileDialog(
                     }
                 }
 
+                // Поле для файла карты с возможностью выбора из существующих или ввода нового
+                Box {
+                    OutlinedTextField(
+                        value = mapFile,
+                        onValueChange = { mapFile = it },
+                        label = { Text("Файл карты") },
+                        supportingText = { Text("Введите имя или выберите из списка") },
+                        trailingIcon = {
+                            IconButton(onClick = { mapFileMenuExpanded = !mapFileMenuExpanded }) {
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = "Выбрать из списка"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    DropdownMenu(
+                        expanded = mapFileMenuExpanded,
+                        onDismissRequest = { mapFileMenuExpanded = false }
+                    ) {
+                        mapFileOptions.forEach { file ->
+                            DropdownMenuItem(
+                                text = { Text(file) },
+                                onClick = {
+                                    mapFile = file
+                                    mapFileMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -112,19 +163,29 @@ fun ProfileDialog(
                     Button(
                         onClick = {
                             val portInt = port.toIntOrNull() ?: 4000
+                            // Добавляем .db если нет расширения
+                            val finalMapFile = if (mapFile.isNotBlank() && !mapFile.endsWith(".db")) {
+                                "$mapFile.db"
+                            } else if (mapFile.isBlank()) {
+                                "maps.db"
+                            } else {
+                                mapFile
+                            }
                             val newProfile = if (profile != null) {
                                 profile.copy(
                                     name = name,
                                     host = host,
                                     port = portInt,
-                                    encoding = encoding
+                                    encoding = encoding,
+                                    mapFile = finalMapFile
                                 )
                             } else {
                                 ConnectionProfile(
                                     name = name,
                                     host = host,
                                     port = portInt,
-                                    encoding = encoding
+                                    encoding = encoding,
+                                    mapFile = finalMapFile
                                 )
                             }
                             onSave(newProfile)

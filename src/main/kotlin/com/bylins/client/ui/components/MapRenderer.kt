@@ -786,6 +786,7 @@ fun RoomTooltip(
     mouseX: Float,
     mouseY: Float,
     zoneNotes: String = "",
+    zoneNames: Map<String, String> = emptyMap(),
     maxWidth: Int = 300,
     canvasWidth: Float = 0f,
     canvasHeight: Float = 0f
@@ -867,16 +868,17 @@ fun RoomTooltip(
                 }
             }
 
-            // Area (Zone) | Terrain
-            val hasArea = !room.area.isNullOrEmpty()
-            val hasZone = !room.zone.isNullOrEmpty()
+            // ZoneName (ZoneID) | Terrain
+            val zoneName = room.zone?.let { zoneNames[it] }
+            val hasZoneName = !zoneName.isNullOrEmpty()
+            val hasZoneId = !room.zone.isNullOrEmpty()
             val hasTerrain = !room.terrain.isNullOrEmpty()
-            if (hasArea || hasZone || hasTerrain) {
+            if (hasZoneName || hasZoneId || hasTerrain) {
                 Spacer(modifier = Modifier.height(2.dp))
                 val parts = mutableListOf<String>()
-                if (hasArea && hasZone) parts.add("${room.area} (${room.zone})")
-                else if (hasArea) parts.add(room.area!!)
-                else if (hasZone) parts.add(room.zone!!)
+                if (hasZoneName && hasZoneId) parts.add("$zoneName (${room.zone})")
+                else if (hasZoneName) parts.add(zoneName!!)
+                else if (hasZoneId) parts.add(room.zone!!)
                 if (hasTerrain) parts.add(room.terrain!!)
 
                 Text(

@@ -203,7 +203,7 @@ var mapper = {
     setCurrentRoom: function(roomId) { api.setCurrentRoom(roomId); },
     // Контекстное меню карты - через хелпер для правильной обработки callback'ов
     registerContextCommand: function(name, callback) {
-        _mapperHelper.registerContextCommand(name, callback);
+        _mapperHelper.registerContextCommand(name, callback, _engine);
     },
     unregisterContextCommand: function(name) {
         _mapperHelper.unregisterContextCommand(name);

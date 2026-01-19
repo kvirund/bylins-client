@@ -49,6 +49,11 @@ dependencies {
     // YAML для plugin.yml
     implementation("org.yaml:snakeyaml:2.0")
 
+    // AI Bot plugin dependencies - compileOnly (not included in client, only for compilation)
+    compileOnly("dev.langchain4j:langchain4j:0.35.0")
+    compileOnly("dev.langchain4j:langchain4j-ollama:0.35.0")
+    compileOnly("com.microsoft.onnxruntime:onnxruntime:1.16.3")
+
     // Testing
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
@@ -99,6 +104,59 @@ compose.desktop {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// === AI Bot Plugin Build (Fat JAR) ===
+
+// Конфигурация для зависимостей AI Bot плагина
+val aibotDeps: Configuration by configurations.creating {
+    isTransitive = true
+}
+
+dependencies {
+    // AI Bot plugin dependencies (packaged into fat JAR)
+    aibotDeps("dev.langchain4j:langchain4j:0.35.0")
+    aibotDeps("dev.langchain4j:langchain4j-ollama:0.35.0")
+    aibotDeps("com.microsoft.onnxruntime:onnxruntime:1.16.3")
+}
+
+val buildAIBotPlugin by tasks.registering(Jar::class) {
+    group = "plugins"
+    description = "Builds the AI Bot plugin as a fat JAR with all dependencies"
+
+    archiveFileName.set("aibot.jar")
+    destinationDirectory.set(file("plugins"))
+
+    // Включаем классы плагина
+    from(sourceSets.main.get().output) {
+        include("com/bylins/client/plugins/aibot/**")
+        include("com/bylins/client/bot/**")
+    }
+
+    // plugin.yml в корень JAR
+    from("src/main/resources/plugins/aibot") {
+        include("plugin.yml")
+    }
+
+    // Включаем все зависимости плагина (fat JAR)
+    from({
+        aibotDeps.filter { it.name.endsWith(".jar") }.map { zipTree(it) }
+    }) {
+        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+        exclude("META-INF/MANIFEST.MF")
+        exclude("META-INF/LICENSE*", "META-INF/NOTICE*")
+        exclude("META-INF/versions/**")  // Исключаем multi-release классы
+    }
+
+    // Для предотвращения дублирования
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    dependsOn("classes")
+
+    doLast {
+        println("AI Bot plugin (fat JAR) built: ${archiveFile.get().asFile.absolutePath}")
+        println("Size: ${archiveFile.get().asFile.length() / 1024 / 1024} MB")
+    }
 }
 
 // === Packaging Tasks ===

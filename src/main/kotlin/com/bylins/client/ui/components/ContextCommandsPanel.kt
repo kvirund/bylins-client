@@ -89,11 +89,15 @@ fun ContextCommandsPanel(
                 Button(
                     onClick = { clientState.contextCommandManager.clearQueue() },
                     colors = ButtonDefaults.buttonColors(
-                        backgroundColor = colorScheme.warning
+                        backgroundColor = colorScheme.warning,
+                        disabledBackgroundColor = colorScheme.surfaceVariant
                     ),
                     enabled = queue.isNotEmpty()
                 ) {
-                    Text("Clear Queue", color = Color.White)
+                    Text(
+                        "Clear Queue",
+                        color = if (queue.isNotEmpty()) Color.White else colorScheme.onSurfaceVariant
+                    )
                 }
 
                 // Add rule button
@@ -539,19 +543,21 @@ private fun ContextRuleDialog(
 ) {
     val isNew = rule == null
     var selectedTargetProfileId by remember { mutableStateOf(initialTargetProfileId) }
+    val colorScheme = LocalAppColorScheme.current
 
     // Получаем данные из маппера для выбора зон и комнат
     val mapRooms by clientState.mapRooms.collectAsState()
-    // Собираем уникальные пары (zoneId, areaName) для отображения "Area (Zone)"
-    val availableZonesWithArea = remember(mapRooms) {
+    val zoneNames by clientState.zoneNames.collectAsState()
+    // Собираем уникальные пары (zoneId, zoneName) для отображения
+    val availableZonesWithNames = remember(mapRooms, zoneNames) {
         mapRooms.values
             .filter { !it.zone.isNullOrEmpty() }
-            .map { it.zone!! to (it.area ?: it.zone!!) }
+            .map { it.zone!! to (zoneNames[it.zone] ?: it.zone!!) }
             .distinct()
-            .sortedBy { it.second } // Сортируем по area name
+            .sortedBy { it.second }
     }
-    val availableRooms = remember(mapRooms) {
-        mapRooms.values.sortedBy { it.name }.take(100) // Ограничиваем для производительности
+    val visitedRooms = remember(mapRooms) {
+        mapRooms.values.filter { it.visited }.sortedBy { it.name }
     }
 
     var command by remember { mutableStateOf(rule?.command ?: "") }
@@ -828,16 +834,10 @@ private fun ContextRuleDialog(
                                     Column(modifier = Modifier.padding(8.dp)) {
                                         selectedRoomIds.forEach { roomId ->
                                             val room = mapRooms[roomId]
-                                            // Формат: "Room (Vnum) • Area (Zone)"
+                                            // Формат: "Room (Vnum) • ZoneName"
                                             val displayName = if (room != null) {
-                                                val zoneStr = room.zone ?: ""
-                                                val areaStr = room.area ?: ""
-                                                val locationPart = when {
-                                                    areaStr.isNotEmpty() && zoneStr.isNotEmpty() -> " • $areaStr ($zoneStr)"
-                                                    areaStr.isNotEmpty() -> " • $areaStr"
-                                                    zoneStr.isNotEmpty() -> " • ($zoneStr)"
-                                                    else -> ""
-                                                }
+                                                val zoneName = room.zone?.let { zoneNames[it] }
+                                                val locationPart = if (!zoneName.isNullOrEmpty()) " • $zoneName" else ""
                                                 "${room.name} (${room.id})$locationPart"
                                             } else {
                                                 roomId
@@ -924,27 +924,66 @@ private fun ContextRuleDialog(
                                                 fontFamily = FontFamily.Monospace,
                                                 modifier = Modifier.padding(bottom = 8.dp)
                                             )
-                                            OutlinedTextField(
-                                                value = roomSearchQuery,
-                                                onValueChange = { roomSearchQuery = it },
+
+                                            // Проверяем, похож ли ввод на VNUM (числовой ID)
+                                            val isVnumInput = roomSearchQuery.trim().all { it.isDigit() } && roomSearchQuery.isNotBlank()
+                                            val vnumAlreadySelected = isVnumInput && roomIds.lines().any { it.trim() == roomSearchQuery.trim() }
+
+                                            Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                placeholder = { Text("Поиск по названию или ID...", color = Color.Gray, fontSize = 12.sp) },
-                                                colors = TextFieldDefaults.outlinedTextFieldColors(
-                                                    textColor = Color.White,
-                                                    backgroundColor = Color(0xFF1E1E1E),
-                                                    cursorColor = Color.White,
-                                                    focusedBorderColor = Color(0xFF4CAF50),
-                                                    unfocusedBorderColor = Color.Gray
-                                                ),
-                                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                                                singleLine = true
-                                            )
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = roomSearchQuery,
+                                                    onValueChange = { roomSearchQuery = it },
+                                                    modifier = Modifier.weight(1f),
+                                                    placeholder = { Text("Поиск или ввод VNUM...", color = Color.Gray, fontSize = 12.sp) },
+                                                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                                                        textColor = Color.White,
+                                                        backgroundColor = Color(0xFF1E1E1E),
+                                                        cursorColor = Color.White,
+                                                        focusedBorderColor = colorScheme.primary,
+                                                        unfocusedBorderColor = Color.Gray
+                                                    ),
+                                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                                                    singleLine = true,
+                                                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                                        onDone = {
+                                                            if (isVnumInput && !vnumAlreadySelected) {
+                                                                val vnum = roomSearchQuery.trim()
+                                                                roomIds = if (roomIds.isBlank()) vnum else roomIds + "\n" + vnum
+                                                                showRoomPicker = false
+                                                            }
+                                                        }
+                                                    )
+                                                )
+                                                Button(
+                                                    onClick = {
+                                                        val vnum = roomSearchQuery.trim()
+                                                        roomIds = if (roomIds.isBlank()) vnum else roomIds + "\n" + vnum
+                                                        showRoomPicker = false
+                                                    },
+                                                    enabled = isVnumInput && !vnumAlreadySelected,
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        backgroundColor = colorScheme.primary,
+                                                        disabledBackgroundColor = colorScheme.surfaceVariant
+                                                    ),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                                ) {
+                                                    Text(
+                                                        "Добавить",
+                                                        color = if (isVnumInput && !vnumAlreadySelected) Color.White else colorScheme.onSurfaceVariant,
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+                                            }
                                             Spacer(modifier = Modifier.height(8.dp))
 
-                                            val filteredRooms = remember(roomSearchQuery, availableRooms) {
+                                            val filteredRooms = remember(roomSearchQuery, visitedRooms) {
                                                 val query = roomSearchQuery.lowercase()
-                                                if (query.isBlank()) availableRooms.take(50)
-                                                else availableRooms.filter {
+                                                if (query.isBlank()) visitedRooms.take(50)
+                                                else visitedRooms.filter {
                                                     it.name.lowercase().contains(query) ||
                                                     it.id.lowercase().contains(query) ||
                                                     it.zone?.lowercase()?.contains(query) == true
@@ -957,10 +996,11 @@ private fun ContextRuleDialog(
                                                 items(filteredRooms.size) { index ->
                                                     val room = filteredRooms[index]
                                                     val alreadySelected = roomIds.lines().any { it.trim() == room.id }
-                                                    // Формируем строку: "Room • Area" или просто "Room"
-                                                    val roomTitle = room.name + (room.area?.let { " • $it" } ?: "")
-                                                    // Формируем вторую строку: "ID: vnum (zone)"
-                                                    val roomSubtitle = "ID: ${room.id}" + (room.zone?.let { " ($it)" } ?: "")
+                                                    // Формируем строку: "Room • ZoneName" или просто "Room"
+                                                    val zoneName = room.zone?.let { zoneNames[it] }
+                                                    val roomTitle = room.name + (if (!zoneName.isNullOrEmpty()) " • $zoneName" else "")
+                                                    // Формируем вторую строку: "ID: vnum"
+                                                    val roomSubtitle = "ID: ${room.id}"
                                                     Surface(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
@@ -1014,9 +1054,9 @@ private fun ContextRuleDialog(
                                 zones.lines().map { it.trim() }.filter { it.isNotEmpty() }
                             }
 
-                            // Создаём map zone ID -> area name для быстрого поиска
-                            val zoneIdToArea = remember(availableZonesWithArea) {
-                                availableZonesWithArea.toMap()
+                            // Создаём map zone ID -> zone name для быстрого поиска
+                            val zoneIdToName = remember(availableZonesWithNames) {
+                                availableZonesWithNames.toMap()
                             }
 
                             Row(
@@ -1051,9 +1091,9 @@ private fun ContextRuleDialog(
                                 ) {
                                     Column(modifier = Modifier.padding(8.dp)) {
                                         selectedZoneIds.forEach { zoneId ->
-                                            val areaName = zoneIdToArea[zoneId]
-                                            val displayName = if (areaName != null && areaName != zoneId) {
-                                                "$areaName ($zoneId)"
+                                            val savedZoneName = zoneIdToName[zoneId]
+                                            val displayName = if (savedZoneName != null && savedZoneName != zoneId) {
+                                                "$savedZoneName ($zoneId)"
                                             } else {
                                                 zoneId
                                             }
@@ -1125,12 +1165,12 @@ private fun ContextRuleDialog(
                                             )
                                             Spacer(modifier = Modifier.height(8.dp))
 
-                                            val filteredZones = remember(zoneSearchQuery, availableZonesWithArea) {
+                                            val filteredZones = remember(zoneSearchQuery, availableZonesWithNames) {
                                                 val query = zoneSearchQuery.lowercase()
-                                                if (query.isBlank()) availableZonesWithArea
-                                                else availableZonesWithArea.filter { (zoneId, areaName) ->
+                                                if (query.isBlank()) availableZonesWithNames
+                                                else availableZonesWithNames.filter { (zoneId, name) ->
                                                     zoneId.lowercase().contains(query) ||
-                                                    areaName.lowercase().contains(query)
+                                                    name.lowercase().contains(query)
                                                 }
                                             }
 
@@ -1138,10 +1178,10 @@ private fun ContextRuleDialog(
                                                 modifier = Modifier.weight(1f).fillMaxWidth()
                                             ) {
                                                 items(filteredZones.size) { index ->
-                                                    val (zoneId, areaName) = filteredZones[index]
+                                                    val (zoneId, name) = filteredZones[index]
                                                     val alreadySelected = zones.lines().any { it.trim() == zoneId }
-                                                    // Показываем "Area (Zone)" формат
-                                                    val displayText = if (areaName != zoneId) "$areaName ($zoneId)" else zoneId
+                                                    // Показываем "ZoneName (ZoneID)" формат
+                                                    val displayText = if (name != zoneId) "$name ($zoneId)" else zoneId
                                                     Surface(
                                                         modifier = Modifier
                                                             .fillMaxWidth()

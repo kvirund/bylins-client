@@ -8,24 +8,39 @@ import mu.KotlinLogging
 import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import javax.script.Bindings
 import javax.script.Invocable
+import javax.script.ScriptContext
 import javax.script.ScriptEngineManager
+import javax.script.SimpleScriptContext
 
 private val logger = KotlinLogging.logger("JavaScript")
 
 /**
  * JavaScript движок (использует Nashorn или GraalVM)
+ * Каждый скрипт выполняется в изолированном контексте
  */
 class JavaScriptEngine : ScriptEngine {
     override val name: String = "javascript"
     override val fileExtensions: List<String> = listOf(".js")
 
-    private var engine: javax.script.ScriptEngine? = null
+    private var engineManager: ScriptEngineManager? = null
     private lateinit var api: ScriptAPI
+
+    // Храним контексты для каждого скрипта (scriptId -> context)
+    private val scriptContexts = ConcurrentHashMap<String, ScriptContext>()
 
     // Реестр callback'ов
     private val triggerCallbacks = ConcurrentHashMap<String, Any>()
     private val timerCallbacks = ConcurrentHashMap<String, Any>()
+
+    // Хелперы - создаются один раз
+    private lateinit var triggerHelper: TriggerHelper
+    private lateinit var timerHelper: TimerHelper
+    private lateinit var mapperHelper: MapperHelper
+
+    // Код хелперов - загружается один раз
+    private var helperCode: String? = null
 
     override fun isAvailable(): Boolean {
         return try {
@@ -43,27 +58,51 @@ class JavaScriptEngine : ScriptEngine {
 
     override fun initialize(api: ScriptAPI) {
         this.api = api
+        this.engineManager = ScriptEngineManager()
 
-        val manager = ScriptEngineManager()
-        engine = manager.getEngineByName("javascript")
-            ?: manager.getEngineByName("nashorn")
-            ?: manager.getEngineByName("graal.js")
-            ?: throw IllegalStateException("No JavaScript engine available")
+        // Создаём хелперы
+        triggerHelper = TriggerHelper()
+        timerHelper = TimerHelper()
+        mapperHelper = MapperHelper()
 
-        // Добавляем API в глобальный контекст
-        engine?.put("api", api)
-
-        // Добавляем хелперы для callback'ов
-        engine?.put("_triggerHelper", TriggerHelper())
-        engine?.put("_timerHelper", TimerHelper())
-        engine?.put("_mapperHelper", MapperHelper())
-
-        // Загружаем вспомогательные функции из ресурсов
-        val helperCode = javaClass.getResourceAsStream("/javascript_helper.js")
+        // Загружаем код хелперов из ресурсов
+        helperCode = javaClass.getResourceAsStream("/javascript_helper.js")
             ?.bufferedReader(Charsets.UTF_8)
             ?.readText()
             ?: throw IllegalStateException("javascript_helper.js not found in resources")
-        engine?.eval(helperCode)
+    }
+
+    /**
+     * Создаёт новый движок с изолированным контекстом для скрипта
+     */
+    private fun createEngineWithContext(scriptId: String): Pair<javax.script.ScriptEngine, ScriptContext> {
+        val engine = engineManager!!.getEngineByName("javascript")
+            ?: engineManager!!.getEngineByName("nashorn")
+            ?: engineManager!!.getEngineByName("graal.js")
+            ?: throw IllegalStateException("No JavaScript engine available")
+
+        // Создаём изолированный контекст
+        val context = SimpleScriptContext()
+        val bindings = engine.createBindings()
+
+        // Добавляем API и хелперы
+        bindings["api"] = api
+        bindings["_triggerHelper"] = triggerHelper
+        bindings["_timerHelper"] = timerHelper
+        bindings["_mapperHelper"] = mapperHelper
+        bindings["_scriptId"] = scriptId
+        bindings["_engine"] = engine  // Для передачи в mapperHelper
+
+        context.setBindings(bindings, ScriptContext.ENGINE_SCOPE)
+        engine.context = context
+
+        // Загружаем хелперы в этот контекст
+        engine.eval(helperCode, context)
+
+        // Сохраняем контекст
+        scriptContexts[scriptId] = context
+
+        return Pair(engine, context)
     }
 
     /**
@@ -157,9 +196,9 @@ class JavaScriptEngine : ScriptEngine {
     /**
      * Converts a Kotlin Map to a JavaScript object via JSON
      */
-    private fun mapToJsObject(map: Map<String, Any>): Any? {
+    private fun mapToJsObject(engine: javax.script.ScriptEngine, map: Map<String, Any>): Any? {
         val json = kotlinMapToJson(map)
-        return engine?.eval("($json)")
+        return engine.eval("($json)")
     }
 
     private fun kotlinMapToJson(map: Map<*, *>): String {
@@ -192,22 +231,20 @@ class JavaScriptEngine : ScriptEngine {
      * Хелпер для регистрации команд контекстного меню карты
      */
     inner class MapperHelper {
-        private val mapCallbacks = ConcurrentHashMap<String, Any>()
+        private val mapCallbacks = ConcurrentHashMap<String, Pair<Any, javax.script.ScriptEngine>>()
 
-        fun registerContextCommand(name: String, callback: Any) {
-            mapCallbacks[name] = callback
+        fun registerContextCommand(name: String, callback: Any, engine: javax.script.ScriptEngine) {
+            mapCallbacks[name] = Pair(callback, engine)
             // Регистрируем обёртку, которая будет вызывать JS callback через движок
             val wrapperCallback: Any = object : Function1<Map<String, Any>, Unit> {
                 override fun invoke(roomData: Map<String, Any>) {
-                    val jsCallback = mapCallbacks[name]
-                    if (jsCallback != null) {
-                        // Convert Kotlin Map to JavaScript object
-                        val jsObject = mapToJsObject(roomData)
-                        if (jsObject != null) {
-                            invokeJsCallback(jsCallback, jsObject)
-                        } else {
-                            logger.error { "Failed to convert room data to JS object" }
-                        }
+                    val (jsCallback, jsEngine) = mapCallbacks[name] ?: return
+                    // Convert Kotlin Map to JavaScript object
+                    val jsObject = mapToJsObject(jsEngine, roomData)
+                    if (jsObject != null) {
+                        invokeJsCallback(jsCallback, jsObject)
+                    } else {
+                        logger.error { "Failed to convert room data to JS object" }
                     }
                 }
             }
@@ -226,14 +263,19 @@ class JavaScriptEngine : ScriptEngine {
             throw IllegalArgumentException("Script not found: $scriptPath")
         }
 
+        val scriptId = UUID.randomUUID().toString()
+
         // Устанавливаем имя скрипта для логирования в API
         (api as? ScriptAPIImpl)?.currentScriptName = file.name
+
+        // Создаём изолированный движок и контекст для этого скрипта
+        val (engine, context) = createEngineWithContext(scriptId)
 
         // Явно читаем скрипт в UTF-8
         val scriptCode = file.readText(Charsets.UTF_8)
 
         try {
-            engine?.eval(scriptCode)
+            engine.eval(scriptCode, context)
         } catch (e: Exception) {
             // Извлекаем понятное сообщение об ошибке
             val message = when (e) {
@@ -243,20 +285,26 @@ class JavaScriptEngine : ScriptEngine {
                 }
                 else -> e.message ?: "Unknown error"
             }
+            scriptContexts.remove(scriptId)
             throw RuntimeException(message, e)
         }
 
         return Script(
-            id = UUID.randomUUID().toString(),
+            id = scriptId,
             name = file.nameWithoutExtension,
             path = scriptPath,
             engine = this,
-            enabled = true
+            enabled = true,
+            context = ScriptContextWrapper(engine, context)
         )
     }
 
     override fun execute(code: String) {
+        // Для выполнения произвольного кода создаём временный контекст
         try {
+            val engine = engineManager!!.getEngineByName("javascript")
+                ?: engineManager!!.getEngineByName("nashorn")
+                ?: engineManager!!.getEngineByName("graal.js")
             engine?.eval(code)
         } catch (e: Exception) {
             logger.error { "Error executing code: ${e.message}" }
@@ -265,8 +313,17 @@ class JavaScriptEngine : ScriptEngine {
     }
 
     override fun callFunction(functionName: String, vararg args: Any?): Any? {
+        // Этот метод вызывается через Script.call() с context
+        // Не используется напрямую
+        return null
+    }
+
+    /**
+     * Вызывает функцию в контексте конкретного скрипта
+     */
+    fun callFunctionInContext(context: ScriptContextWrapper, functionName: String, vararg args: Any?): Any? {
         return try {
-            val invocable = engine as? Invocable
+            val invocable = context.engine as? Invocable
             invocable?.invokeFunction(functionName, *args)
         } catch (e: NoSuchMethodException) {
             // Функция не найдена - это нормально
@@ -278,6 +335,22 @@ class JavaScriptEngine : ScriptEngine {
     }
 
     override fun shutdown() {
-        engine = null
+        scriptContexts.clear()
+        engineManager = null
+    }
+
+    /**
+     * Удаляет контекст скрипта при выгрузке
+     */
+    fun removeScriptContext(scriptId: String) {
+        scriptContexts.remove(scriptId)
     }
 }
+
+/**
+ * Обёртка для хранения движка и контекста скрипта
+ */
+class ScriptContextWrapper(
+    val engine: javax.script.ScriptEngine,
+    val context: ScriptContext
+)

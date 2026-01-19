@@ -80,10 +80,8 @@ fun MapPanel(
     var contextMenuRoom by remember { mutableStateOf<Room?>(null) }
     var contextMenuPosition by remember { mutableStateOf(Offset.Zero) }
 
-    // Zone panel width (resizable)
-    var zonePanelWidth by remember { mutableStateOf(220f) }
-    val density = LocalDensity.current
-    val focusManager = LocalFocusManager.current
+    // Zone panel width (resizable, persisted)
+    val zonePanelWidth by clientState.zonePanelWidth.collectAsState()
 
     // Автоследование за игроком
     LaunchedEffect(currentRoomId, followPlayer) {
@@ -224,14 +222,13 @@ fun MapPanel(
         // Основная область карты с панелью зоны
         // Получаем текущую зону из комнаты
         val currentZoneId = effectiveCenterRoomId?.let { rooms[it]?.zone } ?: ""
-        // Сначала ищем сохранённое имя зоны, затем area из комнаты
+        // Ищем сохранённое имя зоны
         val savedZoneName = zoneNamesMap[currentZoneId]
-        val currentAreaName = savedZoneName ?: effectiveCenterRoomId?.let { rooms[it]?.area }
-        // Формат: "Area (Zone ID)" или просто Zone ID если нет area
+        // Формат: "ZoneName (ZoneID)" или "Зона ID: xxx" если нет имени
         val currentZoneName = when {
-            currentAreaName != null && currentZoneId.isNotEmpty() -> "$currentAreaName ($currentZoneId)"
-            currentAreaName != null -> currentAreaName
-            currentZoneId.isNotEmpty() -> currentZoneId
+            savedZoneName != null && currentZoneId.isNotEmpty() -> "$savedZoneName ($currentZoneId)"
+            savedZoneName != null -> savedZoneName
+            currentZoneId.isNotEmpty() -> "Зона ID: $currentZoneId"
             else -> "Неизвестная зона"
         }
         val currentZoneNotes = zoneNotesMap[currentZoneId] ?: ""
@@ -436,6 +433,7 @@ fun MapPanel(
                     mouseX = mousePosition.x,
                     mouseY = mousePosition.y,
                     zoneNotes = zoneNotesMap[hoveredZoneId] ?: "",
+                    zoneNames = zoneNamesMap,
                     maxWidth = 280,
                     canvasWidth = canvasSize.first,
                     canvasHeight = canvasSize.second
@@ -530,7 +528,7 @@ fun MapPanel(
                                 change.consume()
                                 // Drag to the left = increase panel width, to the right = decrease
                                 val newWidth = zonePanelWidth - dragAmount.x
-                                zonePanelWidth = newWidth.coerceIn(150f, 500f)
+                                clientState.setZonePanelWidth(newWidth.toInt())
                             }
                         }
                 )
@@ -544,7 +542,7 @@ fun MapPanel(
                     onFocusChanged = { focused ->
                         clientState.setSecondaryTextFieldFocused(focused)
                     },
-                    width = with(density) { zonePanelWidth.toDp() }
+                    width = zonePanelWidth.dp
                 )
             }
         } // End of Row

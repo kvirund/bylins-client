@@ -17,18 +17,35 @@ import java.time.Instant
  */
 private val logger = KotlinLogging.logger("MapDatabase")
 
-class MapDatabase {
+class MapDatabase(dbFileName: String = "maps.db") {
     private var connection: Connection? = null
     private val dbPath: String
 
+    companion object {
+        private val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
+
+        /**
+         * Возвращает список существующих файлов карт
+         */
+        fun getExistingMapFiles(): List<String> {
+            if (!Files.exists(mapsDir)) {
+                return emptyList()
+            }
+            return Files.list(mapsDir)
+                .filter { it.toString().endsWith(".db") }
+                .map { it.fileName.toString() }
+                .toList()
+                .sorted()
+        }
+    }
+
     init {
         // Создаем директорию для БД если её нет
-        val mapsDir = Paths.get(System.getProperty("user.home"), ".bylins-client", "maps")
         if (!Files.exists(mapsDir)) {
             Files.createDirectories(mapsDir)
         }
 
-        dbPath = mapsDir.resolve("maps.db").toString()
+        dbPath = mapsDir.resolve(dbFileName).toString()
         connect()
         migrateIfNeeded()
         createTables()

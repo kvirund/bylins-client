@@ -15,7 +15,6 @@ data class Room(
     val exits: MutableMap<Direction, Exit> = mutableMapOf(),
     val terrain: String? = null,
     val zone: String? = null,
-    val area: String? = null,  // Название области (из MSDP AREA)
     val notes: String = "",
     val color: String? = null,
     val visited: Boolean = false,
@@ -105,7 +104,6 @@ data class Room(
             "exits" to exitsMap,
             "terrain" to (terrain ?: ""),
             "zone" to (zone ?: ""),
-            "area" to (area ?: ""),
             "notes" to notes,
             "color" to (color ?: ""),
             "visited" to visited,

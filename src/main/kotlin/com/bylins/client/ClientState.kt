@@ -150,40 +150,45 @@ class ClientState {
 
     // Для throttling звуковых уведомлений
     private var lastLowHpSoundTime = 0L
-    private val mapManager = com.bylins.client.mapper.MapManager(
-        onRoomEnter = { room ->
-            // Запускаем уведомления асинхронно чтобы избежать deadlock при вызове из API
-            scope.launch {
-                // Уведомляем скрипты о входе в комнату
-                if (::scriptManager.isInitialized) {
-                    scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ROOM_ENTER, room)
-                }
 
-                // Уведомляем плагины о входе в комнату
-                if (::pluginManager.isInitialized) {
-                    pluginEventBus.post(com.bylins.client.plugins.events.RoomEnterEvent(
-                        roomId = room.id,
-                        roomName = room.name,
-                        fromDirection = null // TODO: передать направление откуда пришли
-                    ))
-                }
+    // Callback для MapManager
+    private val mapManagerOnRoomEnter: (com.bylins.client.mapper.Room) -> Unit = { room ->
+        // Запускаем уведомления асинхронно чтобы избежать deadlock при вызове из API
+        scope.launch {
+            // Уведомляем скрипты о входе в комнату
+            if (::scriptManager.isInitialized) {
+                scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_ROOM_ENTER, room)
+            }
 
-                // Обрабатываем контекстные команды при входе в комнату
-                if (::contextCommandManager.isInitialized) {
-                    contextCommandManager.onRoomEnter(room)
+            // Уведомляем плагины о входе в комнату
+            if (::pluginManager.isInitialized) {
+                pluginEventBus.post(com.bylins.client.plugins.events.RoomEnterEvent(
+                    roomId = room.id,
+                    roomName = room.name,
+                    fromDirection = null // TODO: передать направление откуда пришли
+                ))
+            }
 
-                    // Обрабатываем правила контекстных команд из профилей
-                    if (::profileManager.isInitialized) {
-                        for (profile in profileManager.getActiveProfiles()) {
-                            if (profile.contextCommandRules.isNotEmpty()) {
-                                logger.debug { "Processing ${profile.contextCommandRules.size} room/zone context rules from profile ${profile.name}" }
-                            }
-                            contextCommandManager.processRoomRules(room, profile.contextCommandRules)
+            // Обрабатываем контекстные команды при входе в комнату
+            if (::contextCommandManager.isInitialized) {
+                contextCommandManager.onRoomEnter(room)
+
+                // Обрабатываем правила контекстных команд из профилей
+                if (::profileManager.isInitialized) {
+                    for (profile in profileManager.getActiveProfiles()) {
+                        if (profile.contextCommandRules.isNotEmpty()) {
+                            logger.debug { "Processing ${profile.contextCommandRules.size} room/zone context rules from profile ${profile.name}" }
                         }
+                        contextCommandManager.processRoomRules(room, profile.contextCommandRules)
                     }
                 }
             }
         }
+    }
+
+    // MapManager - может быть пересоздан при смене профиля
+    private var mapManager = com.bylins.client.mapper.MapManager(
+        onRoomEnter = mapManagerOnRoomEnter
     )
 
     // Менеджер контекстных команд
@@ -205,6 +210,10 @@ class ClientState {
     // Высота миникарты в статус-панели
     private val _miniMapHeight = MutableStateFlow(300)
     val miniMapHeight: StateFlow<Int> = _miniMapHeight
+
+    // Ширина панели заметок зоны на вкладке Карта
+    private val _zonePanelWidth = MutableStateFlow(220)
+    val zonePanelWidth: StateFlow<Int> = _zonePanelWidth
 
     // Тема оформления (DARK, LIGHT, DARK_BLUE, SOLARIZED_DARK, MONOKAI)
     private val _currentTheme = MutableStateFlow("DARK")
@@ -323,23 +332,58 @@ class ClientState {
     val tabs = tabManager.tabs
     val activeTabId = tabManager.activeTabId
 
-    // Доступ к карте
-    val mapRooms = mapManager.rooms
-    val currentRoomId = mapManager.currentRoomId
-    val mapEnabled = mapManager.mapEnabled
-    val activePath = mapManager.activePath
-    val pathTargetRoomId = mapManager.targetRoomId
-    val pathHighlightRoomIds = mapManager.pathHighlightRoomIds
-    val pathHighlightTargetId = mapManager.pathHighlightTargetId
-    val zoneNotes = mapManager.zoneNotes
-    val zoneNames = mapManager.zoneNames
-    val mapViewCenterRoomId = mapManager.viewCenterRoomId
+    // Доступ к карте (используем getters для поддержки переключения mapManager)
+    val mapRooms get() = mapManager.rooms
+    val currentRoomId get() = mapManager.currentRoomId
+    val mapEnabled get() = mapManager.mapEnabled
+    val activePath get() = mapManager.activePath
+    val pathTargetRoomId get() = mapManager.targetRoomId
+    val pathHighlightRoomIds get() = mapManager.pathHighlightRoomIds
+    val pathHighlightTargetId get() = mapManager.pathHighlightTargetId
+    val zoneNotes get() = mapManager.zoneNotes
+    val zoneNames get() = mapManager.zoneNames
+    val mapViewCenterRoomId get() = mapManager.viewCenterRoomId
 
     fun getZoneNotes(zoneName: String): String = mapManager.getZoneNotes(zoneName)
     fun setZoneNotes(zoneName: String, notes: String) = mapManager.setZoneNotes(zoneName, notes)
     fun getZoneName(zoneId: String): String? = mapManager.getZoneName(zoneId)
     fun setZoneName(zoneId: String, areaName: String) = mapManager.setZoneName(zoneId, areaName)
     fun setMapViewCenterRoom(roomId: String?) = mapManager.setViewCenterRoom(roomId)
+
+    /**
+     * Возвращает список существующих файлов карт
+     */
+    fun getExistingMapFiles(): List<String> = com.bylins.client.mapper.MapDatabase.getExistingMapFiles()
+
+    /**
+     * Переключает базу данных карт на указанный файл
+     * Вызывается при смене профиля подключения
+     */
+    fun switchMapDatabase(mapFile: String) {
+        val currentMapFile = mapManager.getDbFileName()
+        if (currentMapFile == mapFile) {
+            logger.debug { "Map database already using $mapFile, skipping switch" }
+            return
+        }
+
+        logger.info { "Switching map database from $currentMapFile to $mapFile" }
+
+        // Закрываем старый MapManager
+        mapManager.shutdown()
+
+        // Создаём новый MapManager с новым файлом БД
+        mapManager = com.bylins.client.mapper.MapManager(
+            dbFileName = mapFile,
+            onRoomEnter = mapManagerOnRoomEnter
+        )
+
+        // Обновляем ссылку на getCurrentRoom в contextCommandManager
+        if (::contextCommandManager.isInitialized) {
+            contextCommandManager.updateGetCurrentRoom { mapManager.getCurrentRoom() }
+        }
+
+        logger.info { "Switched to map database: $mapFile (${mapManager.rooms.value.size} rooms)" }
+    }
 
     init {
         // Инициализируем менеджер контекстных команд
@@ -373,6 +417,7 @@ class ClientState {
         // Загружаем размеры миникарты из конфига
         _miniMapWidth.value = configData.miniMapWidth
         _miniMapHeight.value = configData.miniMapHeight
+        _zonePanelWidth.value = configData.zonePanelWidth
 
         // Загружаем тему из конфига
         _currentTheme.value = configData.theme
@@ -383,7 +428,20 @@ class ClientState {
         _ignoreNumLock.value = configData.ignoreNumLock
         _hiddenTabs.value = configData.hiddenTabs
 
+        // Загружаем профили подключений из конфига (должно быть до lastMapRoomId)
+        _connectionProfiles.value = configData.connectionProfiles
+        _currentProfileId.value = configData.currentProfileId
+
+        // Переключаемся на карту из текущего профиля
+        configData.currentProfileId?.let { profileId ->
+            val profile = _connectionProfiles.value.find { it.id == profileId }
+            profile?.let {
+                switchMapDatabase(it.mapFile)
+            }
+        }
+
         // Загружаем последнюю просмотренную комнату карты из конфига
+        // (делаем ПОСЛЕ переключения на правильную карту)
         logger.info { "Loading lastMapRoomId from config: ${configData.lastMapRoomId}, map has ${mapManager.rooms.value.size} rooms" }
         configData.lastMapRoomId?.let { roomId ->
             // Устанавливаем комнату центра обзора в mapManager, если комната существует на карте
@@ -395,10 +453,6 @@ class ClientState {
                 logger.warn { "Last map room $roomId not found on map" }
             }
         }
-
-        // Загружаем профили подключений из конфига
-        _connectionProfiles.value = configData.connectionProfiles
-        _currentProfileId.value = configData.currentProfileId
 
         if (configData.triggers.isEmpty() && configData.aliases.isEmpty() && configData.hotkeys.isEmpty() && configData.tabs.isEmpty()) {
             // Если конфига нет, загружаем стандартные триггеры, алиасы, хоткеи и вкладки
@@ -1130,6 +1184,12 @@ class ClientState {
                 return true
             }
 
+            // #plugin - управление плагинами
+            command.startsWith("#plugin") -> {
+                processPluginCommand(command)
+                return true
+            }
+
             // Speedwalk: распознаём паттерн типа 5n2e3w
             command.matches(Regex("^[0-9]*[nsewud]{1,2}([0-9]+[nsewud]{1,2})*$", RegexOption.IGNORE_CASE)) -> {
                 val directions = parseSpeedwalk(command)
@@ -1251,10 +1311,173 @@ class ClientState {
             |  Поддержка JavaScript, Python (Jython), Lua (LuaJ)
             |  Размещайте скрипты в директории: scripts/
             |
+            |🔌 ПЛАГИНЫ:
+            |  #plugin               - Список плагинов
+            |  #plugin reload <id>   - Перезагрузить плагин (hot-reload)
+            |  #plugin enable <id>   - Включить плагин
+            |  #plugin disable <id>  - Выключить плагин
+            |  #plugin info <id>     - Информация о плагине
+            |  #plugin help          - Полная справка по плагинам
+            |
             |═══════════════════════════════════════════════════════════════
         """.trimMargin()
 
         telnetClient.addLocalOutput(help)
+    }
+
+    /**
+     * Обрабатывает команды управления плагинами
+     */
+    private fun processPluginCommand(command: String) {
+        if (!::pluginManager.isInitialized) {
+            telnetClient.addLocalOutput("\u001B[1;31m[#plugin] PluginManager не инициализирован\u001B[0m")
+            return
+        }
+
+        val args = command.removePrefix("#plugin").trim()
+        val parts = args.split(" ", limit = 2)
+        val action = parts.getOrNull(0) ?: ""
+        val pluginId = parts.getOrNull(1)?.trim() ?: ""
+
+        when (action) {
+            "", "list" -> {
+                // Список плагинов
+                val plugins = pluginManager.plugins.value
+                if (plugins.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Плагины не загружены\u001B[0m")
+                    telnetClient.addLocalOutput("\u001B[1;33m         Поместите JAR файлы в папку: ${pluginManager.pluginsDirectory.absolutePath}\u001B[0m")
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;36m═══ Загруженные плагины (${plugins.size}) ═══\u001B[0m")
+                    plugins.forEach { plugin ->
+                        val stateColor = when (plugin.state) {
+                            com.bylins.client.plugins.PluginState.ENABLED -> "\u001B[1;32m"
+                            com.bylins.client.plugins.PluginState.DISABLED -> "\u001B[1;33m"
+                            com.bylins.client.plugins.PluginState.ERROR -> "\u001B[1;31m"
+                            else -> "\u001B[0m"
+                        }
+                        telnetClient.addLocalOutput("  ${stateColor}${plugin.metadata.id}\u001B[0m v${plugin.metadata.version} - ${plugin.metadata.name} [${plugin.state}]")
+                        if (plugin.errorMessage != null) {
+                            telnetClient.addLocalOutput("    \u001B[1;31mОшибка: ${plugin.errorMessage}\u001B[0m")
+                        }
+                    }
+                }
+            }
+
+            "reload" -> {
+                if (pluginId.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Использование: #plugin reload <plugin_id>\u001B[0m")
+                    return
+                }
+                telnetClient.addLocalOutput("\u001B[1;36m[#plugin] Перезагрузка плагина '$pluginId'...\u001B[0m")
+                val success = pluginManager.reloadPlugin(pluginId)
+                if (success) {
+                    telnetClient.addLocalOutput("\u001B[1;32m[#plugin] Плагин '$pluginId' успешно перезагружен\u001B[0m")
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Не удалось перезагрузить плагин '$pluginId'\u001B[0m")
+                }
+            }
+
+            "enable" -> {
+                if (pluginId.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Использование: #plugin enable <plugin_id>\u001B[0m")
+                    return
+                }
+                val success = pluginManager.enablePlugin(pluginId)
+                if (success) {
+                    telnetClient.addLocalOutput("\u001B[1;32m[#plugin] Плагин '$pluginId' включен\u001B[0m")
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Не удалось включить плагин '$pluginId'\u001B[0m")
+                }
+            }
+
+            "disable" -> {
+                if (pluginId.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Использование: #plugin disable <plugin_id>\u001B[0m")
+                    return
+                }
+                val success = pluginManager.disablePlugin(pluginId)
+                if (success) {
+                    telnetClient.addLocalOutput("\u001B[1;32m[#plugin] Плагин '$pluginId' выключен\u001B[0m")
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Не удалось выключить плагин '$pluginId'\u001B[0m")
+                }
+            }
+
+            "unload" -> {
+                if (pluginId.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Использование: #plugin unload <plugin_id>\u001B[0m")
+                    return
+                }
+                val success = pluginManager.unloadPlugin(pluginId)
+                if (success) {
+                    telnetClient.addLocalOutput("\u001B[1;32m[#plugin] Плагин '$pluginId' выгружен\u001B[0m")
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Не удалось выгрузить плагин '$pluginId'\u001B[0m")
+                }
+            }
+
+            "load" -> {
+                if (pluginId.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Использование: #plugin load <filename.jar>\u001B[0m")
+                    return
+                }
+                val jarFile = java.io.File(pluginManager.pluginsDirectory, pluginId)
+                if (!jarFile.exists()) {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Файл не найден: ${jarFile.absolutePath}\u001B[0m")
+                    return
+                }
+                telnetClient.addLocalOutput("\u001B[1;36m[#plugin] Загрузка плагина из '$pluginId'...\u001B[0m")
+                val loaded = pluginManager.loadPlugin(jarFile)
+                if (loaded != null) {
+                    pluginManager.enablePlugin(loaded.metadata.id)
+                    telnetClient.addLocalOutput("\u001B[1;32m[#plugin] Плагин '${loaded.metadata.id}' загружен и включен\u001B[0m")
+                } else {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Не удалось загрузить плагин из '$pluginId'\u001B[0m")
+                }
+            }
+
+            "info" -> {
+                if (pluginId.isEmpty()) {
+                    telnetClient.addLocalOutput("\u001B[1;33m[#plugin] Использование: #plugin info <plugin_id>\u001B[0m")
+                    return
+                }
+                val plugin = pluginManager.getPlugin(pluginId)
+                if (plugin == null) {
+                    telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Плагин '$pluginId' не найден\u001B[0m")
+                    return
+                }
+                telnetClient.addLocalOutput("\u001B[1;36m═══ Информация о плагине ═══\u001B[0m")
+                telnetClient.addLocalOutput("  ID:          ${plugin.metadata.id}")
+                telnetClient.addLocalOutput("  Название:    ${plugin.metadata.name}")
+                telnetClient.addLocalOutput("  Версия:      ${plugin.metadata.version}")
+                telnetClient.addLocalOutput("  Автор:       ${plugin.metadata.author ?: "не указан"}")
+                telnetClient.addLocalOutput("  Описание:    ${plugin.metadata.description ?: "нет"}")
+                telnetClient.addLocalOutput("  Состояние:   ${plugin.state}")
+                telnetClient.addLocalOutput("  JAR:         ${plugin.jarFile.name}")
+                if (plugin.metadata.dependencies.isNotEmpty()) {
+                    telnetClient.addLocalOutput("  Зависимости: ${plugin.metadata.dependencies.joinToString { it.id }}")
+                }
+            }
+
+            "help" -> {
+                telnetClient.addLocalOutput("\u001B[1;36m═══ Команды управления плагинами ═══\u001B[0m")
+                telnetClient.addLocalOutput("  #plugin                    - Список плагинов")
+                telnetClient.addLocalOutput("  #plugin list               - Список плагинов")
+                telnetClient.addLocalOutput("  #plugin info <id>          - Информация о плагине")
+                telnetClient.addLocalOutput("  #plugin reload <id>        - Перезагрузить плагин")
+                telnetClient.addLocalOutput("  #plugin enable <id>        - Включить плагин")
+                telnetClient.addLocalOutput("  #plugin disable <id>       - Выключить плагин")
+                telnetClient.addLocalOutput("  #plugin load <file.jar>    - Загрузить плагин из файла")
+                telnetClient.addLocalOutput("  #plugin unload <id>        - Выгрузить плагин")
+                telnetClient.addLocalOutput("")
+                telnetClient.addLocalOutput("  Папка плагинов: ${pluginManager.pluginsDirectory.absolutePath}")
+            }
+
+            else -> {
+                telnetClient.addLocalOutput("\u001B[1;31m[#plugin] Неизвестная команда: $action\u001B[0m")
+                telnetClient.addLocalOutput("\u001B[1;33m         Используйте #plugin help для справки\u001B[0m")
+            }
+        }
     }
 
     /**
@@ -1836,6 +2059,7 @@ class ClientState {
             encoding = _encoding,
             miniMapWidth = _miniMapWidth.value,
             miniMapHeight = _miniMapHeight.value,
+            zonePanelWidth = _zonePanelWidth.value,
             theme = _currentTheme.value,
             fontFamily = _fontFamily.value,
             fontSize = _fontSize.value,
@@ -1872,6 +2096,15 @@ class ClientState {
     fun setMiniMapHeight(height: Int) {
         val clampedHeight = height.coerceIn(100, 800)
         _miniMapHeight.value = clampedHeight
+        saveConfig()
+    }
+
+    /**
+     * Устанавливает ширину панели заметок зоны на вкладке Карта
+     */
+    fun setZonePanelWidth(width: Int) {
+        val clampedWidth = width.coerceIn(150, 500)
+        _zonePanelWidth.value = clampedWidth
         saveConfig()
     }
 
@@ -1951,11 +2184,12 @@ class ClientState {
 
     fun setCurrentProfile(profileId: String?) {
         _currentProfileId.value = profileId
-        // При выборе профиля обновляем кодировку
+        // При выборе профиля обновляем кодировку и карту
         profileId?.let { id ->
             val profile = _connectionProfiles.value.find { it.id == id }
             profile?.let {
                 setEncoding(it.encoding)
+                switchMapDatabase(it.mapFile)
             }
         }
         saveConfig()
@@ -2009,6 +2243,7 @@ class ClientState {
         // Загружаем размеры миникарты
         _miniMapWidth.value = configData.miniMapWidth
         _miniMapHeight.value = configData.miniMapHeight
+        _zonePanelWidth.value = configData.zonePanelWidth
 
         // Загружаем тему
         _currentTheme.value = configData.theme
@@ -2910,8 +3145,13 @@ class ClientState {
             }
             val name = params["name"] as? String ?: ""
             val zone = params["zone"] as? String
-            val area = params["area"] as? String
+            val area = params["area"] as? String  // Только для setZoneName
             val terrain = params["terrain"] as? String
+
+            // Сохраняем имя зоны (area name) по zone_id
+            if (!zone.isNullOrBlank() && !area.isNullOrBlank()) {
+                mapManager.setZoneName(zone, area)
+            }
 
             // Обрабатываем выходы - формат Map<direction, targetVnum>
             val exitsRaw = params["exits"]
@@ -2931,7 +3171,6 @@ class ClientState {
                 existingRoom.copy(
                     name = name,
                     zone = zone ?: existingRoom.zone,
-                    area = area ?: existingRoom.area,
                     terrain = terrain ?: existingRoom.terrain,
                     visited = true
                 )
@@ -2941,7 +3180,6 @@ class ClientState {
                     id = vnum,
                     name = name,
                     zone = zone,
-                    area = area,
                     terrain = terrain,
                     visited = true
                 )
@@ -2964,6 +3202,7 @@ class ClientState {
 
             mapManager.addRoom(room)
             mapManager.setCurrentRoom(vnum)
+
             logger.info { "handleRoom: room added, currentRoomId=${mapManager.currentRoomId.value}" }
 
             return room.toMap()

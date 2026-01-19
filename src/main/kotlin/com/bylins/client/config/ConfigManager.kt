@@ -44,6 +44,7 @@ class ConfigManager {
         encoding: String = "UTF-8",
         miniMapWidth: Int = 250,
         miniMapHeight: Int = 300,
+        zonePanelWidth: Int = 220,
         theme: String = "DARK",
         fontFamily: String = "MONOSPACE",
         fontSize: Int = 14,
@@ -66,6 +67,7 @@ class ConfigManager {
                 encoding = encoding,
                 miniMapWidth = miniMapWidth,
                 miniMapHeight = miniMapHeight,
+                zonePanelWidth = zonePanelWidth,
                 theme = theme,
                 fontFamily = fontFamily,
                 fontSize = fontSize,
@@ -115,6 +117,7 @@ class ConfigManager {
             val encoding = config.encoding
             val miniMapWidth = config.miniMapWidth
             val miniMapHeight = config.miniMapHeight
+            val zonePanelWidth = config.zonePanelWidth
             val theme = config.theme
             val fontFamily = config.fontFamily
             val fontSize = config.fontSize
@@ -142,6 +145,7 @@ class ConfigManager {
                 encoding = encoding,
                 miniMapWidth = miniMapWidth,
                 miniMapHeight = miniMapHeight,
+                zonePanelWidth = zonePanelWidth,
                 theme = theme,
                 fontFamily = fontFamily,
                 fontSize = fontSize,
@@ -212,6 +216,7 @@ class ConfigManager {
             val encoding = config.encoding
             val miniMapWidth = config.miniMapWidth
             val miniMapHeight = config.miniMapHeight
+            val zonePanelWidth = config.zonePanelWidth
             val theme = config.theme
             val fontFamily = config.fontFamily
             val fontSize = config.fontSize
@@ -226,6 +231,7 @@ class ConfigManager {
                 encoding = encoding,
                 miniMapWidth = miniMapWidth,
                 miniMapHeight = miniMapHeight,
+                zonePanelWidth = zonePanelWidth,
                 theme = theme,
                 fontFamily = fontFamily,
                 fontSize = fontSize
@@ -262,6 +268,7 @@ data class ConfigData(
     val encoding: String = "UTF-8",
     val miniMapWidth: Int = 250,
     val miniMapHeight: Int = 300,
+    val zonePanelWidth: Int = 220,
     val theme: String = "DARK",
     val fontFamily: String = "MONOSPACE",
     val fontSize: Int = 14,

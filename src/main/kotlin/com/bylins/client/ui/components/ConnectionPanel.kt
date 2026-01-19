@@ -190,6 +190,7 @@ fun ConnectionPanel(
     if (showProfileDialog) {
         ProfileDialog(
             profile = editingProfile,
+            existingMapFiles = clientState.getExistingMapFiles(),
             onDismiss = {
                 showProfileDialog = false
                 editingProfile = null

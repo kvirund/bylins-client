@@ -171,7 +171,8 @@ data class ConnectionProfileDto(
     val name: String,
     val host: String,
     val port: Int,
-    val encoding: String = "UTF-8"
+    val encoding: String = "UTF-8",
+    val mapFile: String = "maps.db"
 ) {
     fun toConnectionProfile(): ConnectionProfile {
         return ConnectionProfile(
@@ -179,7 +180,8 @@ data class ConnectionProfileDto(
             name = name,
             host = host,
             port = port,
-            encoding = encoding
+            encoding = encoding,
+            mapFile = mapFile
         )
     }
 
@@ -190,7 +192,8 @@ data class ConnectionProfileDto(
                 name = profile.name,
                 host = profile.host,
                 port = profile.port,
-                encoding = profile.encoding
+                encoding = profile.encoding,
+                mapFile = profile.mapFile
             )
         }
     }
@@ -305,6 +308,7 @@ data class ClientConfig(
     val encoding: String = "UTF-8",  // Кодировка для telnet (UTF-8, windows-1251, и т.д.)
     val miniMapWidth: Int = 250,  // Ширина боковой панели с миникартой в dp
     val miniMapHeight: Int = 300,  // Высота миникарты в статус-панели в dp
+    val zonePanelWidth: Int = 220,  // Ширина панели заметок зоны на вкладке Карта в dp
     val theme: String = "DARK",  // Название темы оформления
     val fontFamily: String = "MONOSPACE",  // Семейство шрифтов для вывода игры
     val fontSize: Int = 14,  // Размер шрифта в sp

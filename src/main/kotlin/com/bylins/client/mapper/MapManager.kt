@@ -12,6 +12,7 @@ import java.nio.file.Paths
  */
 private val logger = KotlinLogging.logger("MapManager")
 class MapManager(
+    private val dbFileName: String = "maps.db",
     private val onRoomEnter: ((Room) -> Unit)? = null
 ) {
     private val _rooms = MutableStateFlow<Map<String, Room>>(emptyMap())
@@ -49,7 +50,7 @@ class MapManager(
     val zoneNames: StateFlow<Map<String, String>> = _zoneNames
 
     private val pathfinder = Pathfinder()
-    private val database = MapDatabase()
+    private val database = MapDatabase(dbFileName)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     init {
@@ -223,6 +224,11 @@ class MapManager(
     }
 
     /**
+     * Возвращает имя файла базы данных
+     */
+    fun getDbFileName(): String = dbFileName
+
+    /**
      * Обрабатывает движение в указанном направлении
      * Создает новую комнату если необходимо
      * @param roomId ID комнаты из игры (обязателен для создания новых комнат)
@@ -293,7 +299,7 @@ class MapManager(
     }
 
     /**
-     * Расширенная версия handleMovement с поддержкой zone, area, terrain
+     * Расширенная версия handleMovement с поддержкой zone, terrain
      */
     fun handleMovement(
         direction: Direction,
@@ -301,16 +307,10 @@ class MapManager(
         exits: List<Direction>,
         roomId: String?,
         zone: String?,
-        area: String?,
         terrain: String?
     ): Room? {
-        logger.info { "handleMovement(extended): dir=$direction name='$newRoomName' exits=$exits roomId=$roomId zone=$zone area=$area terrain=$terrain" }
+        logger.info { "handleMovement(extended): dir=$direction name='$newRoomName' exits=$exits roomId=$roomId zone=$zone terrain=$terrain" }
         val currentRoom = getCurrentRoom()
-
-        // Сохраняем имя зоны отдельно (zone_id -> area_name)
-        if (!zone.isNullOrBlank() && !area.isNullOrBlank()) {
-            setZoneName(zone, area)
-        }
 
         if (!_mapEnabled.value) {
             return null
@@ -325,7 +325,6 @@ class MapManager(
                 name = newRoomName,
                 visited = true,
                 zone = zone ?: existingRoom.zone,
-                area = area ?: existingRoom.area,
                 terrain = terrain ?: existingRoom.terrain
             )
             addRoom(updated)
@@ -341,7 +340,6 @@ class MapManager(
                 name = newRoomName,
                 visited = true,
                 zone = zone,
-                area = area,
                 terrain = terrain
             )
 

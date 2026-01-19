@@ -40,8 +40,9 @@ fun MiniMapPanel(
     // Path highlighting from scripts
     val pathRoomIds by clientState.pathHighlightRoomIds.collectAsState()
     val pathTargetRoomId by clientState.pathHighlightTargetId.collectAsState()
-    // Zone notes
+    // Zone notes and names
     val zoneNotesMap by clientState.zoneNotes.collectAsState()
+    val zoneNamesMap by clientState.zoneNames.collectAsState()
 
     // Состояние для тултипа
     var hoveredRoom by remember { mutableStateOf<Room?>(null) }
@@ -240,6 +241,7 @@ fun MiniMapPanel(
                     mouseX = mousePosition.x,
                     mouseY = mousePosition.y,
                     zoneNotes = zoneNotesMap[hoveredZoneId] ?: "",
+                    zoneNames = zoneNamesMap,
                     maxWidth = 220,
                     canvasWidth = canvasSize.first,
                     canvasHeight = canvasSize.second

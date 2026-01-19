@@ -235,8 +235,9 @@ private fun StatusMiniMapElement(
     // Path highlighting from scripts
     val pathRoomIds by clientState.pathHighlightRoomIds.collectAsState()
     val pathTargetRoomId by clientState.pathHighlightTargetId.collectAsState()
-    // Zone notes
+    // Zone notes and names
     val zoneNotesMap by clientState.zoneNotes.collectAsState()
+    val zoneNamesMap by clientState.zoneNames.collectAsState()
 
     var hoveredRoom by remember { mutableStateOf<Room?>(null) }
     var mousePosition by remember { mutableStateOf(Offset.Zero) }
@@ -383,6 +384,7 @@ private fun StatusMiniMapElement(
                         mouseX = mousePosition.x,
                         mouseY = mousePosition.y,
                         zoneNotes = zoneNotesMap[hoveredZoneId] ?: "",
+                        zoneNames = zoneNamesMap,
                         maxWidth = 250,
                         canvasWidth = canvasSize.first,
                         canvasHeight = canvasSize.second

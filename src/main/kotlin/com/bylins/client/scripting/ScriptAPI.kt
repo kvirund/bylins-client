@@ -317,6 +317,118 @@ interface ScriptAPI {
 
     // Фокус
     fun requestInputFocus()
+
+    // ============================================
+    // Bot API - боевая информация
+    // ============================================
+
+    /** Получить список мобов в текущей комнате */
+    fun getMobsInRoom(): List<Map<String, Any>>
+
+    /** Получить список игроков в текущей комнате */
+    fun getPlayersInRoom(): List<Map<String, Any>>
+
+    /** Получить информацию о текущей цели в бою */
+    fun getMyTarget(): Map<String, Any>?
+
+    /** Проверить, в бою ли персонаж */
+    fun isInCombat(): Boolean
+
+    /** Получить лог последних боевых событий */
+    fun getCombatLog(limit: Int = 50): List<Map<String, Any>>
+
+    // ============================================
+    // Bot API - инвентарь
+    // ============================================
+
+    /** Получить содержимое инвентаря */
+    fun getInventory(): List<Map<String, Any>>
+
+    /** Получить экипировку персонажа */
+    fun getEquipment(): Map<String, Map<String, Any>>
+
+    /** Найти предмет по паттерну */
+    fun findItem(pattern: String): Map<String, Any>?
+
+    // ============================================
+    // Bot API - состояние персонажа
+    // ============================================
+
+    /** Получить список активных аффектов */
+    fun getAffects(): List<Map<String, Any>>
+
+    /** Получить информацию о навыках */
+    fun getSkills(): Map<String, Map<String, Any>>
+
+    /** Получить позицию персонажа (стоит/сидит/сражается) */
+    fun getPosition(): String
+
+    /** Получить полное состояние персонажа для ML */
+    fun getCharacterState(): Map<String, Any>
+
+    // ============================================
+    // Bot API - управление ботом
+    // ============================================
+
+    /** Запустить бота в указанном режиме */
+    fun botStart(mode: String, config: Map<String, Any>? = null)
+
+    /** Остановить бота */
+    fun botStop()
+
+    /** Получить статус бота */
+    fun getBotStatus(): Map<String, Any>
+
+    /** Установить конфигурацию бота */
+    fun setBotConfig(config: Map<String, Any>)
+
+    /** Получить конфигурацию бота */
+    fun getBotConfig(): Map<String, Any>
+
+    // ============================================
+    // Bot API - база данных бота
+    // ============================================
+
+    /** Сохранить данные о мобе */
+    fun saveMobData(mobId: String, data: Map<String, Any>)
+
+    /** Получить данные о мобе */
+    fun getMobData(mobId: String): Map<String, Any>?
+
+    /** Найти мобов по имени */
+    fun findMobsByName(pattern: String): List<Map<String, Any>>
+
+    /** Получить статистику зоны */
+    fun getZoneStats(zoneId: String): Map<String, Any>?
+
+    /** Получить рекомендуемые зоны для уровня */
+    fun getZonesForLevel(level: Int): List<Map<String, Any>>
+
+    // ============================================
+    // Bot API - LLM парсинг
+    // ============================================
+
+    /** Распарсить описание комнаты через LLM */
+    fun parseRoomDescription(text: String): Map<String, Any>
+
+    /** Распарсить боевое сообщение через LLM */
+    fun parseCombatMessage(text: String): Map<String, Any>?
+
+    /** Распарсить результат команды "осмотреть" через LLM */
+    fun parseInspectResult(text: String): Map<String, Any>?
+
+    // ============================================
+    // Bot API - ML интерфейс
+    // ============================================
+
+    /** Загрузить ML модель */
+    fun loadModel(name: String, path: String): Boolean
+
+    /** Получить предсказание от модели */
+    fun predict(modelName: String, input: List<Double>): List<Double>?
+
+    /** Сохранить опыт для обучения */
+    fun saveExperience(type: String, data: Map<String, Any>)
 }
 
 /**
@@ -334,7 +446,8 @@ class ScriptAPIImpl(
     private val msdpActions: MsdpActions,
     private val gmcpActions: GmcpActions,
     private val mapperActions: MapperActions,
-    private val statusActions: StatusActions
+    private val statusActions: StatusActions,
+    private val botActions: BotActions? = null
 ) : ScriptAPI {
 
     /** Имя текущего выполняемого скрипта (для логирования) */
@@ -483,6 +596,102 @@ class ScriptAPIImpl(
     }
     override fun print(message: String) = echoText(message)
     override fun requestInputFocus() = requestFocus()
+
+    // ============================================
+    // Bot API реализация
+    // ============================================
+
+    override fun getMobsInRoom(): List<Map<String, Any>> =
+        botActions?.getMobsInRoom() ?: emptyList()
+
+    override fun getPlayersInRoom(): List<Map<String, Any>> =
+        botActions?.getPlayersInRoom() ?: emptyList()
+
+    override fun getMyTarget(): Map<String, Any>? =
+        botActions?.getMyTarget()
+
+    override fun isInCombat(): Boolean =
+        botActions?.isInCombat() ?: false
+
+    override fun getCombatLog(limit: Int): List<Map<String, Any>> =
+        botActions?.getCombatLog(limit) ?: emptyList()
+
+    override fun getInventory(): List<Map<String, Any>> =
+        botActions?.getInventory() ?: emptyList()
+
+    override fun getEquipment(): Map<String, Map<String, Any>> =
+        botActions?.getEquipment() ?: emptyMap()
+
+    override fun findItem(pattern: String): Map<String, Any>? =
+        botActions?.findItem(pattern)
+
+    override fun getAffects(): List<Map<String, Any>> =
+        botActions?.getAffects() ?: emptyList()
+
+    override fun getSkills(): Map<String, Map<String, Any>> =
+        botActions?.getSkills() ?: emptyMap()
+
+    override fun getPosition(): String =
+        botActions?.getPosition() ?: "UNKNOWN"
+
+    override fun getCharacterState(): Map<String, Any> =
+        botActions?.getCharacterState() ?: emptyMap()
+
+    override fun botStart(mode: String, config: Map<String, Any>?) =
+        botActions?.botStart(mode, config) ?: Unit
+
+    override fun botStop() =
+        botActions?.botStop() ?: Unit
+
+    override fun getBotStatus(): Map<String, Any> =
+        botActions?.getBotStatus() ?: mapOf("running" to false, "error" to "Bot not initialized")
+
+    override fun setBotConfig(config: Map<String, Any>) {
+        val convertedConfig = ScriptObjectConverter.toMap(config)
+        botActions?.setBotConfig(convertedConfig)
+    }
+
+    override fun getBotConfig(): Map<String, Any> =
+        botActions?.getBotConfig() ?: emptyMap()
+
+    override fun saveMobData(mobId: String, data: Map<String, Any>) {
+        val convertedData = ScriptObjectConverter.toMap(data)
+        botActions?.saveMobData(mobId, convertedData)
+    }
+
+    override fun getMobData(mobId: String): Map<String, Any>? =
+        botActions?.getMobData(mobId)
+
+    override fun findMobsByName(pattern: String): List<Map<String, Any>> =
+        botActions?.findMobsByName(pattern) ?: emptyList()
+
+    override fun getZoneStats(zoneId: String): Map<String, Any>? =
+        botActions?.getZoneStats(zoneId)
+
+    override fun getZonesForLevel(level: Int): List<Map<String, Any>> =
+        botActions?.getZonesForLevel(level) ?: emptyList()
+
+    override fun parseRoomDescription(text: String): Map<String, Any> =
+        botActions?.parseRoomDescription(text) ?: emptyMap()
+
+    override fun parseCombatMessage(text: String): Map<String, Any>? =
+        botActions?.parseCombatMessage(text)
+
+    override fun parseInspectResult(text: String): Map<String, Any>? =
+        botActions?.parseInspectResult(text)
+
+    override fun loadModel(name: String, path: String): Boolean =
+        botActions?.loadModel(name, path) ?: false
+
+    override fun predict(modelName: String, input: List<Double>): List<Double>? {
+        val convertedInput: List<Double> = ScriptObjectConverter.toList(input)
+        return botActions?.predict(modelName, convertedInput)
+    }
+
+    override fun saveExperience(type: String, data: Map<String, Any>) {
+        val convertedData = ScriptObjectConverter.toMap(data)
+        botActions?.saveExperience(type, convertedData)
+    }
 }
 
 // Интерфейсы для действий
@@ -578,4 +787,51 @@ interface StatusActions {
     fun get(id: String): Map<String, Any>?
     fun exists(id: String): Boolean
     fun invokeJsCallback(callback: Any)
+}
+
+/**
+ * Интерфейс действий для AI-бота
+ */
+interface BotActions {
+    // Боевая информация
+    fun getMobsInRoom(): List<Map<String, Any>>
+    fun getPlayersInRoom(): List<Map<String, Any>>
+    fun getMyTarget(): Map<String, Any>?
+    fun isInCombat(): Boolean
+    fun getCombatLog(limit: Int): List<Map<String, Any>>
+
+    // Инвентарь
+    fun getInventory(): List<Map<String, Any>>
+    fun getEquipment(): Map<String, Map<String, Any>>
+    fun findItem(pattern: String): Map<String, Any>?
+
+    // Состояние персонажа
+    fun getAffects(): List<Map<String, Any>>
+    fun getSkills(): Map<String, Map<String, Any>>
+    fun getPosition(): String
+    fun getCharacterState(): Map<String, Any>
+
+    // Управление ботом
+    fun botStart(mode: String, config: Map<String, Any>?)
+    fun botStop()
+    fun getBotStatus(): Map<String, Any>
+    fun setBotConfig(config: Map<String, Any>)
+    fun getBotConfig(): Map<String, Any>
+
+    // База данных бота
+    fun saveMobData(mobId: String, data: Map<String, Any>)
+    fun getMobData(mobId: String): Map<String, Any>?
+    fun findMobsByName(pattern: String): List<Map<String, Any>>
+    fun getZoneStats(zoneId: String): Map<String, Any>?
+    fun getZonesForLevel(level: Int): List<Map<String, Any>>
+
+    // LLM парсинг
+    fun parseRoomDescription(text: String): Map<String, Any>
+    fun parseCombatMessage(text: String): Map<String, Any>?
+    fun parseInspectResult(text: String): Map<String, Any>?
+
+    // ML интерфейс
+    fun loadModel(name: String, path: String): Boolean
+    fun predict(modelName: String, input: List<Double>): List<Double>?
+    fun saveExperience(type: String, data: Map<String, Any>)
 }

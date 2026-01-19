@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
  * @param host Адрес сервера
  * @param port Порт сервера
  * @param encoding Кодировка (UTF-8, windows-1251, KOI8-R, ISO-8859-1)
+ * @param mapFile Имя файла карты (относительно ~/.bylins-client/maps/)
  */
 @Serializable
 data class ConnectionProfile(
@@ -17,7 +18,8 @@ data class ConnectionProfile(
     val name: String,
     val host: String,
     val port: Int,
-    val encoding: String = "UTF-8"
+    val encoding: String = "UTF-8",
+    val mapFile: String = "maps.db"
 ) {
     companion object {
         /**

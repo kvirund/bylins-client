@@ -349,6 +349,22 @@ class ScriptManager(
             ScriptEvent.ON_TRIGGER -> "on_trigger"
             ScriptEvent.ON_ALIAS -> "on_alias"
             ScriptEvent.ON_ROOM_ENTER -> "on_room_enter"
+            // Боевые события для AI-бота
+            ScriptEvent.ON_COMBAT_START -> "on_combat_start"
+            ScriptEvent.ON_COMBAT_END -> "on_combat_end"
+            ScriptEvent.ON_DAMAGE_DEALT -> "on_damage_dealt"
+            ScriptEvent.ON_DAMAGE_RECEIVED -> "on_damage_received"
+            ScriptEvent.ON_MOB_KILLED -> "on_mob_killed"
+            ScriptEvent.ON_PLAYER_DEATH -> "on_player_death"
+            ScriptEvent.ON_AFFECT_APPLIED -> "on_affect_applied"
+            ScriptEvent.ON_AFFECT_EXPIRED -> "on_affect_expired"
+            ScriptEvent.ON_LEVEL_UP -> "on_level_up"
+            ScriptEvent.ON_ITEM_PICKED -> "on_item_picked"
+            ScriptEvent.ON_ZONE_CHANGED -> "on_zone_changed"
+            ScriptEvent.ON_LOW_HP -> "on_low_hp"
+            ScriptEvent.ON_LOW_MANA -> "on_low_mana"
+            ScriptEvent.ON_SKILL_READY -> "on_skill_ready"
+            ScriptEvent.ON_TARGET_CHANGED -> "on_target_changed"
         }
 
         val enabledScripts = _scripts.value.filter { it.enabled }
