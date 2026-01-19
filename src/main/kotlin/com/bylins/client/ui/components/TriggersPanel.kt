@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
+import androidx.compose.material.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,7 +42,7 @@ fun TriggersPanel(
     var showDialog by remember { mutableStateOf(false) }
     var editingTrigger by remember { mutableStateOf<Trigger?>(null) }
     var editingTriggerSource by remember { mutableStateOf<String?>(null) }
-    val targetProfileId by clientState.panelTargetProfileId.collectAsState()  // null = база
+    var lastTargetProfileId by remember { mutableStateOf<String?>(null) }  // Запоминаем последний выбор
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -134,60 +135,6 @@ fun TriggersPanel(
             }
         }
 
-        // Селектор цели добавления
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Добавлять в:",
-                color = colorScheme.onSurface,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
-            )
-
-            var targetExpanded by remember { mutableStateOf(false) }
-            Box {
-                Button(
-                    onClick = { targetExpanded = true },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
-                        color = colorScheme.onSurface,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
-                }
-
-                DropdownMenu(
-                    expanded = targetExpanded,
-                    onDismissRequest = { targetExpanded = false }
-                ) {
-                    DropdownMenuItem(onClick = {
-                        clientState.setPanelTargetProfileId(null)
-                        targetExpanded = false
-                    }) {
-                        Text("База", fontFamily = FontFamily.Monospace)
-                    }
-                    activeStack.forEach { profileId ->
-                        val profile = profiles.find { it.id == profileId }
-                        if (profile != null) {
-                            DropdownMenuItem(onClick = {
-                                clientState.setPanelTargetProfileId(profileId)
-                                targetExpanded = false
-                            }) {
-                                Text(profile.name, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Список триггеров (все из базы + профилей)
@@ -273,20 +220,31 @@ fun TriggersPanel(
 
     // Диалог добавления/редактирования
     if (showDialog) {
+        // Формируем список доступных профилей для добавления
+        val availableProfiles = mutableListOf<Pair<String?, String>>(null to "База")
+        activeStack.forEach { profileId ->
+            profiles.find { it.id == profileId }?.let { profile ->
+                availableProfiles.add(profileId to profile.name)
+            }
+        }
+
         TriggerDialog(
             trigger = editingTrigger,
+            availableProfiles = if (editingTrigger == null) availableProfiles else emptyList(),
+            initialTargetProfileId = lastTargetProfileId,
             onDismiss = {
                 showDialog = false
                 editingTrigger = null
                 editingTriggerSource = null
             },
-            onSave = { trigger ->
+            onSave = { trigger, targetProfileId ->
                 if (editingTrigger == null) {
                     // Новый триггер - добавляем в выбранную цель
+                    lastTargetProfileId = targetProfileId  // Запоминаем выбор
                     if (targetProfileId == null) {
                         clientState.addTrigger(trigger)
                     } else {
-                        clientState.profileManager.addTriggerToProfile(targetProfileId!!, trigger)
+                        clientState.profileManager.addTriggerToProfile(targetProfileId, trigger)
                     }
                 } else {
                     // Редактирование - обновляем в исходном месте
@@ -315,226 +273,156 @@ private fun TriggerItem(
     onDelete: (String) -> Unit,
     onMove: (targetProfileId: String?) -> Unit  // null = переместить в базу
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val colorScheme = LocalAppColorScheme.current
+    var showMoveMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = colorScheme.surface,
+        backgroundColor = if (trigger.enabled) colorScheme.surface else colorScheme.surfaceVariant,
         elevation = 2.dp
     ) {
         Column(
             modifier = Modifier.padding(8.dp)
         ) {
-            // Основная строка
+            // Первая строка: бейдж источника, имя триггера, флаги, кнопки
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Название, ID и источник
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Бейдж источника с dropdown для перемещения (цветной, как в ContextCommands)
+                Box {
+                    Surface(
+                        modifier = Modifier.clickable {
+                            if (availableTargets.isNotEmpty()) showMoveMenu = true
+                        },
+                        color = if (source == null) colorScheme.primary.copy(alpha = 0.2f)
+                                else colorScheme.secondary.copy(alpha = 0.2f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                     ) {
-                        Text(
-                            text = trigger.name,
-                            color = if (trigger.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        // Бейдж источника с dropdown для перемещения
-                        var showMoveMenu by remember { mutableStateOf(false) }
-                        Box {
-                            Card(
-                                backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
-                                elevation = 0.dp,
-                                modifier = Modifier.clickable {
-                                    if (availableTargets.isNotEmpty()) showMoveMenu = true
-                                }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = sourceName,
-                                        color = colorScheme.onSurface,
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    if (availableTargets.isNotEmpty()) {
-                                        Text(
-                                            text = " ▼",
-                                            color = colorScheme.onSurface,
-                                            fontSize = 7.sp
-                                        )
-                                    }
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showMoveMenu,
-                                onDismissRequest = { showMoveMenu = false }
-                            ) {
-                                availableTargets.forEach { (targetId, targetName) ->
-                                    DropdownMenuItem(onClick = {
-                                        onMove(targetId)
-                                        showMoveMenu = false
-                                    }) {
-                                        Text("→ $targetName", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                                    }
-                                }
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = sourceName,
+                                color = if (source == null) colorScheme.primary else colorScheme.secondary,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            if (availableTargets.isNotEmpty()) {
+                                Text(
+                                    text = " ▼",
+                                    color = if (source == null) colorScheme.primary else colorScheme.secondary,
+                                    fontSize = 8.sp
+                                )
                             }
                         }
                     }
-                    Text(
-                        text = "ID: ${trigger.id}",
-                        color = colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    DropdownMenu(
+                        expanded = showMoveMenu,
+                        onDismissRequest = { showMoveMenu = false }
+                    ) {
+                        availableTargets.forEach { (targetId, targetName) ->
+                            DropdownMenuItem(onClick = {
+                                onMove(targetId)
+                                showMoveMenu = false
+                            }) {
+                                Text("→ $targetName", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                // Имя триггера
+                Text(
+                    text = trigger.name,
+                    color = if (trigger.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Флаги как карточки
+                if (trigger.gag) {
+                    Surface(
+                        color = colorScheme.warning.copy(alpha = 0.2f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    ) {
+                        Text("GAG", color = colorScheme.warning, fontSize = 10.sp,
+                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                }
+                if (trigger.once) {
+                    Surface(
+                        color = colorScheme.secondary.copy(alpha = 0.2f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    ) {
+                        Text("1x", color = colorScheme.secondary, fontSize = 10.sp,
+                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                }
+                if (trigger.colorize != null) {
+                    Surface(
+                        color = colorScheme.success.copy(alpha = 0.2f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                    ) {
+                        Text("CLR", color = colorScheme.success, fontSize = 10.sp,
+                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
                 }
 
                 // Кнопки управления
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Switch(
+                    checked = trigger.enabled,
+                    onCheckedChange = { enabled -> onToggle(trigger.id, enabled) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = colorScheme.success,
+                        uncheckedThumbColor = colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.size(width = 40.dp, height = 24.dp)
+                )
+
+                Button(
+                    onClick = { onEdit(trigger) },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
+                    modifier = Modifier.size(28.dp),
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    // Кнопка включения/выключения
-                    Switch(
-                        checked = trigger.enabled,
-                        onCheckedChange = { enabled ->
-                            onToggle(trigger.id, enabled)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = colorScheme.success,
-                            uncheckedThumbColor = colorScheme.onSurfaceVariant
-                        )
-                    )
+                    Text("✎", color = Color.White, fontSize = 12.sp)
+                }
 
-                    // Кнопка редактирования
-                    Button(
-                        onClick = { onEdit(trigger) },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.primary
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = "✎",
-                            color = colorScheme.onBackground,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    // Кнопка информации
-                    Button(
-                        onClick = { expanded = !expanded },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.surfaceVariant
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = if (expanded) "▲" else "▼",
-                            color = colorScheme.onBackground,
-                            fontSize = 10.sp
-                        )
-                    }
-
-                    // Кнопка удаления
-                    Button(
-                        onClick = { onDelete(trigger.id) },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.error
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = "✕",
-                            color = colorScheme.onBackground,
-                            fontSize = 14.sp
-                        )
-                    }
+                Button(
+                    onClick = { onDelete(trigger.id) },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.error),
+                    modifier = Modifier.size(28.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("✕", color = Color.White, fontSize = 12.sp)
                 }
             }
 
-            // Развернутая информация
-            if (expanded) {
-                Divider(
-                    color = colorScheme.divider,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(vertical = 8.dp)
+            // Вторая строка: паттерн (всегда видим)
+            Text(
+                text = trigger.pattern.pattern,
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            // Третья строка: команды (если есть)
+            if (trigger.commands.isNotEmpty()) {
+                Text(
+                    text = "→ ${trigger.commands.joinToString("; ")}",
+                    color = colorScheme.secondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
                 )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Pattern
-                    InfoRow("Pattern:", trigger.pattern.pattern)
-
-                    // Commands
-                    if (trigger.commands.isNotEmpty()) {
-                        InfoRow("Commands:", trigger.commands.joinToString("; "))
-                    }
-
-                    // Priority
-                    InfoRow("Priority:", trigger.priority.toString())
-
-                    // Flags
-                    val flags = mutableListOf<String>()
-                    if (trigger.gag) flags.add("GAG")
-                    if (trigger.once) flags.add("ONCE")
-                    if (trigger.colorize != null) flags.add("COLOR")
-                    if (flags.isNotEmpty()) {
-                        InfoRow("Flags:", flags.joinToString(", "))
-                    }
-
-                    // Colorize info
-                    if (trigger.colorize != null) {
-                        val colorInfo = buildString {
-                            append("FG: ${trigger.colorize.foreground ?: "default"}")
-                            if (trigger.colorize.background != null) {
-                                append(", BG: ${trigger.colorize.background}")
-                            }
-                            if (trigger.colorize.bold) append(", BOLD")
-                        }
-                        InfoRow("Color:", colorInfo)
-                    }
-                }
             }
         }
     }
 }
 
-@Composable
-private fun InfoRow(label: String, value: String) {
-    val colorScheme = LocalAppColorScheme.current
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = label,
-            color = colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(80.dp)
-        )
-        Text(
-            text = value,
-            color = colorScheme.onBackground,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}

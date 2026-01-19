@@ -46,7 +46,7 @@ fun HotkeysPanel(
     var showAddDialog by remember { mutableStateOf(false) }
     var editingHotkey by remember { mutableStateOf<Hotkey?>(null) }
     var editingHotkeySource by remember { mutableStateOf<String?>(null) }
-    val targetProfileId by clientState.panelTargetProfileId.collectAsState()  // null = база
+    var lastTargetProfileId by remember { mutableStateOf<String?>(null) }  // Запоминаем последний выбор
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -195,70 +195,27 @@ fun HotkeysPanel(
             )
         }
 
-        // Селектор цели добавления
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Добавлять в:",
-                color = colorScheme.onSurface,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
-            )
-
-            var targetExpanded by remember { mutableStateOf(false) }
-            Box {
-                Button(
-                    onClick = { targetExpanded = true },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
-                        color = colorScheme.onSurface,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
-                }
-
-                DropdownMenu(
-                    expanded = targetExpanded,
-                    onDismissRequest = { targetExpanded = false }
-                ) {
-                    DropdownMenuItem(onClick = {
-                        clientState.setPanelTargetProfileId(null)
-                        targetExpanded = false
-                    }) {
-                        Text("База", fontFamily = FontFamily.Monospace)
-                    }
-                    activeStack.forEach { profileId ->
-                        val profile = profiles.find { it.id == profileId }
-                        if (profile != null) {
-                            DropdownMenuItem(onClick = {
-                                clientState.setPanelTargetProfileId(profileId)
-                                targetExpanded = false
-                            }) {
-                                Text(profile.name, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // Диалог добавления хоткея
         if (showAddDialog) {
+            // Формируем список доступных профилей для добавления
+            val availableProfiles = mutableListOf<Pair<String?, String>>(null to "База")
+            activeStack.forEach { profileId ->
+                profiles.find { it.id == profileId }?.let { profile ->
+                    availableProfiles.add(profileId to profile.name)
+                }
+            }
+
             HotkeyDialog(
+                availableProfiles = availableProfiles,
+                initialTargetProfileId = lastTargetProfileId,
                 onDismiss = { showAddDialog = false },
-                onSave = { hotkey ->
+                onSave = { hotkey, targetProfileId ->
                     // Новый хоткей - добавляем в выбранную цель
+                    lastTargetProfileId = targetProfileId  // Запоминаем выбор
                     if (targetProfileId == null) {
                         clientState.addHotkey(hotkey)
                     } else {
-                        clientState.profileManager.addHotkeyToProfile(targetProfileId!!, hotkey)
+                        clientState.profileManager.addHotkeyToProfile(targetProfileId, hotkey)
                     }
                     showAddDialog = false
                 }
@@ -273,7 +230,7 @@ fun HotkeysPanel(
                     editingHotkey = null
                     editingHotkeySource = null
                 },
-                onSave = { hotkey ->
+                onSave = { hotkey, _ ->
                     // Редактирование - обновляем в исходном месте
                     if (editingHotkeySource == null) {
                         clientState.updateHotkey(hotkey)
@@ -419,42 +376,25 @@ private fun HotkeyRow(
 ) {
     val colorScheme = LocalAppColorScheme.current
 
+    var showMoveMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(colorScheme.surface)
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Комбинация клавиш
-        Text(
-            text = hotkey.getKeyCombo(),
-            color = if (hotkey.enabled) colorScheme.success else colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(120.dp)
-        )
-
-        // Команды
-        Text(
-            text = hotkey.commands.joinToString("; "),
-            color = if (hotkey.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-
-        // Бейдж источника с dropdown для перемещения
-        var showMoveMenu by remember { mutableStateOf(false) }
-        Box(modifier = Modifier.padding(end = 8.dp)) {
-            Card(
-                backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
-                elevation = 0.dp,
+        // Бейдж источника с dropdown для перемещения (цветной) - СЛЕВА
+        Box {
+            Surface(
                 modifier = Modifier.clickable {
                     if (availableTargets.isNotEmpty()) showMoveMenu = true
-                }
+                },
+                color = if (source == null) colorScheme.primary.copy(alpha = 0.2f)
+                        else colorScheme.secondary.copy(alpha = 0.2f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -462,15 +402,15 @@ private fun HotkeyRow(
                 ) {
                     Text(
                         text = sourceName,
-                        color = colorScheme.onSurface,
-                        fontSize = 9.sp,
+                        color = if (source == null) colorScheme.primary else colorScheme.secondary,
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
                     )
                     if (availableTargets.isNotEmpty()) {
                         Text(
                             text = " ▼",
-                            color = colorScheme.onSurface,
-                            fontSize = 7.sp
+                            color = if (source == null) colorScheme.primary else colorScheme.secondary,
+                            fontSize = 8.sp
                         )
                     }
                 }
@@ -489,6 +429,26 @@ private fun HotkeyRow(
                 }
             }
         }
+
+        // Комбинация клавиш
+        Text(
+            text = hotkey.getKeyCombo(),
+            color = if (hotkey.enabled) colorScheme.success else colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(100.dp)
+        )
+
+        // Команды
+        Text(
+            text = hotkey.commands.joinToString("; "),
+            color = if (hotkey.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
 
         // Кнопки управления
         Row(

@@ -29,11 +29,14 @@ import java.util.UUID
 @Composable
 fun HotkeyDialog(
     hotkey: Hotkey? = null,
+    availableProfiles: List<Pair<String?, String>> = emptyList(), // (id или null для базы, имя)
+    initialTargetProfileId: String? = null, // Последний использованный профиль
     onDismiss: () -> Unit,
-    onSave: (Hotkey) -> Unit
+    onSave: (Hotkey, String?) -> Unit // Hotkey + targetProfileId
 ) {
     val colorScheme = LocalAppColorScheme.current
     val isNewHotkey = hotkey == null
+    var selectedTargetProfileId by remember { mutableStateOf(initialTargetProfileId) }
 
     // Состояние клавиши
     var selectedKey by remember { mutableStateOf(hotkey?.key ?: Key.F1) }
@@ -85,6 +88,53 @@ fun HotkeyDialog(
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
+
+                // Выбор целевого профиля (только для нового)
+                if (isNewHotkey && availableProfiles.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Добавить в:",
+                            color = colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        var targetExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { targetExpanded = true },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    backgroundColor = colorScheme.background,
+                                    contentColor = colorScheme.onSurface
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = availableProfiles.find { it.first == selectedTargetProfileId }?.second ?: "База",
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(" ▼", fontSize = 10.sp)
+                            }
+                            DropdownMenu(
+                                expanded = targetExpanded,
+                                onDismissRequest = { targetExpanded = false }
+                            ) {
+                                availableProfiles.forEach { (profileId, profileName) ->
+                                    DropdownMenuItem(onClick = {
+                                        selectedTargetProfileId = profileId
+                                        targetExpanded = false
+                                    }) {
+                                        Text(profileName, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Поле захвата клавиш
                 Text(
@@ -297,7 +347,7 @@ fun HotkeyDialog(
                                 ignoreNumLock = hotkey?.ignoreNumLock ?: false
                             )
 
-                            onSave(newHotkey)
+                            onSave(newHotkey, selectedTargetProfileId)
                         },
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = colorScheme.success

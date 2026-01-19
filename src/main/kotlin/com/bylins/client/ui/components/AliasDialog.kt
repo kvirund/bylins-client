@@ -15,10 +15,13 @@ import com.bylins.client.aliases.Alias
 @Composable
 fun AliasDialog(
     alias: Alias? = null, // null для создания нового, не-null для редактирования
+    availableProfiles: List<Pair<String?, String>> = emptyList(), // (id или null для базы, имя)
+    initialTargetProfileId: String? = null, // Последний использованный профиль
     onDismiss: () -> Unit,
-    onSave: (Alias) -> Unit
+    onSave: (Alias, String?) -> Unit // Alias + targetProfileId
 ) {
     val isNewAlias = alias == null
+    var selectedTargetProfileId by remember { mutableStateOf(initialTargetProfileId) }
 
     var id by remember { mutableStateOf(alias?.id ?: "") }
     var name by remember { mutableStateOf(alias?.name ?: "") }
@@ -58,6 +61,53 @@ fun AliasDialog(
                         .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Выбор целевого профиля (только для нового)
+                    if (isNewAlias && availableProfiles.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Добавить в:",
+                                color = Color(0xFFBBBBBB),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            var targetExpanded by remember { mutableStateOf(false) }
+                            Box {
+                                OutlinedButton(
+                                    onClick = { targetExpanded = true },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        backgroundColor = Color(0xFF3D3D3D),
+                                        contentColor = Color.White
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = availableProfiles.find { it.first == selectedTargetProfileId }?.second ?: "База",
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(" ▼", fontSize = 10.sp)
+                                }
+                                DropdownMenu(
+                                    expanded = targetExpanded,
+                                    onDismissRequest = { targetExpanded = false }
+                                ) {
+                                    availableProfiles.forEach { (profileId, profileName) ->
+                                        DropdownMenuItem(onClick = {
+                                            selectedTargetProfileId = profileId
+                                            targetExpanded = false
+                                        }) {
+                                            Text(profileName, fontFamily = FontFamily.Monospace)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // ID - только для редактирования (показываем readonly)
                     if (!isNewAlias) {
                         Text(
@@ -221,7 +271,7 @@ fun AliasDialog(
                                             priority = priorityInt
                                         )
 
-                                        onSave(newAlias)
+                                        onSave(newAlias, selectedTargetProfileId)
                                     } catch (e: Exception) {
                                         errorMessage = "Ошибка: ${e.message}"
                                     }

@@ -41,7 +41,7 @@ fun AliasesPanel(
     var showDialog by remember { mutableStateOf(false) }
     var editingAlias by remember { mutableStateOf<Alias?>(null) }
     var editingAliasSource by remember { mutableStateOf<String?>(null) }
-    val targetProfileId by clientState.panelTargetProfileId.collectAsState()  // null = база
+    var lastTargetProfileId by remember { mutableStateOf<String?>(null) }  // Запоминаем последний выбор
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -134,60 +134,6 @@ fun AliasesPanel(
             }
         }
 
-        // Селектор цели добавления
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Добавлять в:",
-                color = colorScheme.onSurface,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
-            )
-
-            var targetExpanded by remember { mutableStateOf(false) }
-            Box {
-                Button(
-                    onClick = { targetExpanded = true },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
-                        color = colorScheme.onSurface,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
-                }
-
-                DropdownMenu(
-                    expanded = targetExpanded,
-                    onDismissRequest = { targetExpanded = false }
-                ) {
-                    DropdownMenuItem(onClick = {
-                        clientState.setPanelTargetProfileId(null)
-                        targetExpanded = false
-                    }) {
-                        Text("База", fontFamily = FontFamily.Monospace)
-                    }
-                    activeStack.forEach { profileId ->
-                        val profile = profiles.find { it.id == profileId }
-                        if (profile != null) {
-                            DropdownMenuItem(onClick = {
-                                clientState.setPanelTargetProfileId(profileId)
-                                targetExpanded = false
-                            }) {
-                                Text(profile.name, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         Divider(color = colorScheme.divider, thickness = 1.dp)
 
         // Список алиасов (все из базы + профилей)
@@ -273,20 +219,31 @@ fun AliasesPanel(
 
     // Диалог добавления/редактирования
     if (showDialog) {
+        // Формируем список доступных профилей для добавления
+        val availableProfiles = mutableListOf<Pair<String?, String>>(null to "База")
+        activeStack.forEach { profileId ->
+            profiles.find { it.id == profileId }?.let { profile ->
+                availableProfiles.add(profileId to profile.name)
+            }
+        }
+
         AliasDialog(
             alias = editingAlias,
+            availableProfiles = if (editingAlias == null) availableProfiles else emptyList(),
+            initialTargetProfileId = lastTargetProfileId,
             onDismiss = {
                 showDialog = false
                 editingAlias = null
                 editingAliasSource = null
             },
-            onSave = { alias ->
+            onSave = { alias, targetProfileId ->
                 if (editingAlias == null) {
                     // Новый алиас - добавляем в выбранную цель
+                    lastTargetProfileId = targetProfileId  // Запоминаем выбор
                     if (targetProfileId == null) {
                         clientState.addAlias(alias)
                     } else {
-                        clientState.profileManager.addAliasToProfile(targetProfileId!!, alias)
+                        clientState.profileManager.addAliasToProfile(targetProfileId, alias)
                     }
                 } else {
                     // Редактирование - обновляем в исходном месте
@@ -315,205 +272,127 @@ private fun AliasItem(
     onDelete: (String) -> Unit,
     onMove: (targetProfileId: String?) -> Unit  // null = переместить в базу
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val colorScheme = LocalAppColorScheme.current
+    var showMoveMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp),
-        backgroundColor = colorScheme.surface,
+        backgroundColor = if (alias.enabled) colorScheme.surface else colorScheme.surfaceVariant,
         elevation = 2.dp
     ) {
         Column(
             modifier = Modifier.padding(8.dp)
         ) {
-            // Основная строка
+            // Первая строка: бейдж источника, имя, кнопки
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Название, ID и источник
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Бейдж источника с dropdown для перемещения (цветной)
+                Box {
+                    Surface(
+                        modifier = Modifier.clickable {
+                            if (availableTargets.isNotEmpty()) showMoveMenu = true
+                        },
+                        color = if (source == null) colorScheme.primary.copy(alpha = 0.2f)
+                                else colorScheme.secondary.copy(alpha = 0.2f),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                     ) {
-                        Text(
-                            text = alias.name,
-                            color = if (alias.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        // Бейдж источника с dropdown для перемещения
-                        var showMoveMenu by remember { mutableStateOf(false) }
-                        Box {
-                            Card(
-                                backgroundColor = if (source == null) colorScheme.surfaceVariant else colorScheme.secondary.copy(alpha = 0.3f),
-                                elevation = 0.dp,
-                                modifier = Modifier.clickable {
-                                    if (availableTargets.isNotEmpty()) showMoveMenu = true
-                                }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = sourceName,
-                                        color = colorScheme.onSurface,
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    if (availableTargets.isNotEmpty()) {
-                                        Text(
-                                            text = " ▼",
-                                            color = colorScheme.onSurface,
-                                            fontSize = 7.sp
-                                        )
-                                    }
-                                }
-                            }
-                            DropdownMenu(
-                                expanded = showMoveMenu,
-                                onDismissRequest = { showMoveMenu = false }
-                            ) {
-                                availableTargets.forEach { (targetId, targetName) ->
-                                    DropdownMenuItem(onClick = {
-                                        onMove(targetId)
-                                        showMoveMenu = false
-                                    }) {
-                                        Text("→ $targetName", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                                    }
-                                }
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = sourceName,
+                                color = if (source == null) colorScheme.primary else colorScheme.secondary,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            if (availableTargets.isNotEmpty()) {
+                                Text(
+                                    text = " ▼",
+                                    color = if (source == null) colorScheme.primary else colorScheme.secondary,
+                                    fontSize = 8.sp
+                                )
                             }
                         }
                     }
-                    Text(
-                        text = "ID: ${alias.id}",
-                        color = colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    DropdownMenu(
+                        expanded = showMoveMenu,
+                        onDismissRequest = { showMoveMenu = false }
+                    ) {
+                        availableTargets.forEach { (targetId, targetName) ->
+                            DropdownMenuItem(onClick = {
+                                onMove(targetId)
+                                showMoveMenu = false
+                            }) {
+                                Text("→ $targetName", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
 
+                // Имя алиаса
+                Text(
+                    text = alias.name,
+                    color = if (alias.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.weight(1f)
+                )
+
                 // Кнопки управления
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Switch(
+                    checked = alias.enabled,
+                    onCheckedChange = { enabled -> onToggle(alias.id, enabled) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = colorScheme.success,
+                        uncheckedThumbColor = colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.size(width = 40.dp, height = 24.dp)
+                )
+
+                Button(
+                    onClick = { onEdit(alias) },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
+                    modifier = Modifier.size(28.dp),
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    // Кнопка включения/выключения
-                    Switch(
-                        checked = alias.enabled,
-                        onCheckedChange = { enabled ->
-                            onToggle(alias.id, enabled)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = colorScheme.success,
-                            uncheckedThumbColor = colorScheme.onSurfaceVariant
-                        )
-                    )
+                    Text("✎", color = Color.White, fontSize = 12.sp)
+                }
 
-                    // Кнопка редактирования
-                    Button(
-                        onClick = { onEdit(alias) },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.primary
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = "✎",
-                            color = colorScheme.onSurface,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    // Кнопка информации
-                    Button(
-                        onClick = { expanded = !expanded },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.surfaceVariant
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = if (expanded) "▲" else "▼",
-                            color = colorScheme.onSurface,
-                            fontSize = 10.sp
-                        )
-                    }
-
-                    // Кнопка удаления
-                    Button(
-                        onClick = { onDelete(alias.id) },
-                        colors = ButtonDefaults.buttonColors(
-                            backgroundColor = colorScheme.error
-                        ),
-                        modifier = Modifier.size(32.dp),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(
-                            text = "✕",
-                            color = Color.White,
-                            fontSize = 14.sp
-                        )
-                    }
+                Button(
+                    onClick = { onDelete(alias.id) },
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.error),
+                    modifier = Modifier.size(28.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("✕", color = Color.White, fontSize = 12.sp)
                 }
             }
 
-            // Развернутая информация
-            if (expanded) {
-                Divider(
-                    color = colorScheme.divider,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(vertical = 8.dp)
+            // Вторая строка: паттерн (всегда видим)
+            Text(
+                text = alias.pattern.pattern,
+                color = colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            // Третья строка: команды (если есть)
+            if (alias.commands.isNotEmpty()) {
+                Text(
+                    text = "→ ${alias.commands.joinToString("; ")}",
+                    color = colorScheme.secondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
                 )
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Pattern
-                    InfoRow("Pattern:", alias.pattern.pattern)
-
-                    // Commands
-                    if (alias.commands.isNotEmpty()) {
-                        InfoRow("Commands:", alias.commands.joinToString("; "))
-                    }
-
-                    // Priority
-                    InfoRow("Priority:", alias.priority.toString())
-                }
             }
         }
     }
 }
 
-@Composable
-private fun InfoRow(label: String, value: String) {
-    val colorScheme = LocalAppColorScheme.current
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = label,
-            color = colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(80.dp)
-        )
-        Text(
-            text = value,
-            color = colorScheme.onSurface,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}

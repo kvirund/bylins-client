@@ -45,7 +45,7 @@ fun ContextCommandsPanel(
     val queue by clientState.contextCommandManager.commandQueue.collectAsState()
     val maxQueueSize by clientState.contextCommandManager.maxQueueSize.collectAsState()
     val colorScheme = LocalAppColorScheme.current
-    val targetProfileId by clientState.panelTargetProfileId.collectAsState()
+    var lastTargetProfileId by remember { mutableStateOf<String?>(null) }  // Запоминаем последний выбор
 
     var showDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<ContextCommandRule?>(null) }
@@ -108,62 +108,6 @@ fun ContextCommandsPanel(
                     )
                 ) {
                     Text("+ Add Rule", color = Color.White)
-                }
-            }
-        }
-
-        // Profile selector row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Добавлять в:",
-                color = colorScheme.onSurface,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
-            )
-
-            var targetExpanded by remember { mutableStateOf(false) }
-            Box {
-                Button(
-                    onClick = { targetExpanded = true },
-                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.surfaceVariant),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = targetProfileId?.let { id -> profiles.find { it.id == id }?.name } ?: "База",
-                        color = colorScheme.onSurface,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(" ▼", color = colorScheme.onSurface, fontSize = 10.sp)
-                }
-
-                DropdownMenu(
-                    expanded = targetExpanded,
-                    onDismissRequest = { targetExpanded = false }
-                ) {
-                    DropdownMenuItem(onClick = {
-                        clientState.setPanelTargetProfileId(null)
-                        targetExpanded = false
-                    }) {
-                        Text("База", fontFamily = FontFamily.Monospace)
-                    }
-                    activeStack.forEach { profileId ->
-                        val profile = profiles.find { it.id == profileId }
-                        if (profile != null) {
-                            DropdownMenuItem(onClick = {
-                                clientState.setPanelTargetProfileId(profileId)
-                                targetExpanded = false
-                            }) {
-                                Text(profile.name, fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -258,11 +202,21 @@ fun ContextCommandsPanel(
 
     // Edit/Create dialog
     if (showDialog) {
+        // Формируем список доступных профилей для добавления
+        val availableProfiles = mutableListOf<Pair<String?, String>>(null to "База")
+        activeStack.forEach { profileId ->
+            profiles.find { it.id == profileId }?.let { profile ->
+                availableProfiles.add(profileId to profile.name)
+            }
+        }
+
         ContextRuleDialog(
             rule = editingRule,
             clientState = clientState,
+            availableProfiles = if (editingRule == null) availableProfiles else emptyList(),
+            initialTargetProfileId = lastTargetProfileId,
             onDismiss = { showDialog = false },
-            onSave = { rule ->
+            onSave = { rule, targetProfileId ->
                 if (editingRule != null) {
                     // Editing existing rule
                     if (editingRuleSource == null) {
@@ -273,11 +227,12 @@ fun ContextCommandsPanel(
                     }
                 } else {
                     // Creating new rule
+                    lastTargetProfileId = targetProfileId  // Запоминаем выбор
                     if (targetProfileId == null) {
                         clientState.contextCommandManager.addRule(rule)
                         clientState.saveConfig()
                     } else {
-                        clientState.profileManager.addContextRuleToProfile(targetProfileId!!, rule)
+                        clientState.profileManager.addContextRuleToProfile(targetProfileId, rule)
                     }
                 }
                 rulesWithSource.value = clientState.getAllContextRulesWithSource()
@@ -396,54 +351,102 @@ private fun ContextRuleItem(
                     )
                 }
 
-                // Показываем scope если не World
+                // Показываем scope если не World - теги как цветные карточки
                 when (scope) {
                     is ContextScope.Room -> {
-                        val parts = mutableListOf<String>()
-                        if (scope.roomIds.isNotEmpty()) {
-                            parts.add("IDs: ${scope.roomIds.take(2).joinToString()}${if (scope.roomIds.size > 2) "..." else ""}")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (scope.roomIds.isNotEmpty()) {
+                                Text(
+                                    text = "IDs: ${scope.roomIds.take(2).joinToString()}${if (scope.roomIds.size > 2) "..." else ""}",
+                                    color = colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            // Теги как цветные карточки
+                            scope.roomTags.take(3).forEach { tag ->
+                                Surface(
+                                    color = colorScheme.warning.copy(alpha = 0.2f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        color = colorScheme.warning,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (scope.roomTags.size > 3) {
+                                Text(
+                                    text = "+${scope.roomTags.size - 3}",
+                                    color = colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
-                        if (scope.roomTags.isNotEmpty()) {
-                            parts.add("Tags: ${scope.roomTags.take(2).joinToString()}${if (scope.roomTags.size > 2) "..." else ""}")
-                        }
-                        Text(
-                            text = parts.joinToString(" | "),
-                            color = colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
                     }
                     is ContextScope.Zone -> {
-                        Text(
-                            text = "Zones: ${scope.zones.take(3).joinToString()}${if (scope.zones.size > 3) "..." else ""}",
-                            color = colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Zones:",
+                                color = colorScheme.onSurfaceVariant,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            scope.zones.take(3).forEach { zone ->
+                                Surface(
+                                    color = colorScheme.secondary.copy(alpha = 0.2f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = zone,
+                                        color = colorScheme.secondary,
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (scope.zones.size > 3) {
+                                Text(
+                                    text = "+${scope.zones.size - 3}",
+                                    color = colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
                     }
                     is ContextScope.World -> { /* Nothing to show */ }
                 }
             }
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Checkbox(
+                Switch(
                     checked = rule.enabled,
                     onCheckedChange = onToggle,
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = colorScheme.success,
-                        uncheckedColor = colorScheme.onSurfaceVariant
-                    )
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = colorScheme.success,
+                        uncheckedThumbColor = colorScheme.onSurfaceVariant
+                    ),
+                    modifier = Modifier.size(width = 40.dp, height = 24.dp)
                 )
 
-                IconButton(onClick = onDelete) {
-                    Text(
-                        text = "X",
-                        color = colorScheme.error,
-                        fontWeight = FontWeight.Bold
-                    )
+                Button(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.error),
+                    modifier = Modifier.size(28.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("✕", color = Color.White, fontSize = 12.sp)
                 }
             }
         }
@@ -456,44 +459,48 @@ private fun RuleTypeBadge(
     scope: ContextScope,
     colorScheme: com.bylins.client.ui.theme.ColorScheme
 ) {
-    // Показываем тип триггера
-    val (triggerText, triggerColor) = when (triggerType) {
-        is ContextTriggerType.Pattern -> "Pattern" to colorScheme.primary
-        is ContextTriggerType.Permanent -> "Permanent" to colorScheme.success
-    }
-
-    Surface(
-        color = triggerColor.copy(alpha = 0.2f),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+    // Используем Row со spacedBy для консистентного спейсинга
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = triggerText,
-            color = triggerColor,
-            fontSize = 10.sp,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
-
-    // Показываем scope если не World
-    if (scope !is ContextScope.World) {
-        val (scopeText, scopeColor) = when (scope) {
-            is ContextScope.Room -> "Room" to colorScheme.secondary
-            is ContextScope.Zone -> "Zone" to colorScheme.warning
-            is ContextScope.World -> "" to colorScheme.onSurfaceVariant // never reached
+        // Показываем тип триггера
+        val (triggerText, triggerColor) = when (triggerType) {
+            is ContextTriggerType.Pattern -> "Pattern" to colorScheme.primary
+            is ContextTriggerType.Permanent -> "Permanent" to colorScheme.success
         }
 
-        Spacer(modifier = Modifier.width(4.dp))
-
         Surface(
-            color = scopeColor.copy(alpha = 0.2f),
+            color = triggerColor.copy(alpha = 0.2f),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
         ) {
             Text(
-                text = scopeText,
-                color = scopeColor,
+                text = triggerText,
+                color = triggerColor,
                 fontSize = 10.sp,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
+        }
+
+        // Показываем scope если не World
+        if (scope !is ContextScope.World) {
+            val (scopeText, scopeColor) = when (scope) {
+                is ContextScope.Room -> "Room" to colorScheme.secondary
+                is ContextScope.Zone -> "Zone" to colorScheme.warning
+                is ContextScope.World -> "" to colorScheme.onSurfaceVariant // never reached
+            }
+
+            Surface(
+                color = scopeColor.copy(alpha = 0.2f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = scopeText,
+                    color = scopeColor,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
         }
     }
 }
@@ -525,10 +532,13 @@ private fun TtlBadge(ttl: ContextCommandTTL, colorScheme: com.bylins.client.ui.t
 private fun ContextRuleDialog(
     rule: ContextCommandRule?,
     clientState: ClientState,
+    availableProfiles: List<Pair<String?, String>> = emptyList(),
+    initialTargetProfileId: String? = null,
     onDismiss: () -> Unit,
-    onSave: (ContextCommandRule) -> Unit
+    onSave: (ContextCommandRule, String?) -> Unit
 ) {
     val isNew = rule == null
+    var selectedTargetProfileId by remember { mutableStateOf(initialTargetProfileId) }
 
     // Получаем данные из маппера для выбора зон и комнат
     val mapRooms by clientState.mapRooms.collectAsState()
@@ -640,6 +650,53 @@ private fun ContextRuleDialog(
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
+
+                // Profile selector (only for new)
+                if (isNew && availableProfiles.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Добавить в:",
+                            color = Color(0xFFBBBBBB),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        var targetExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { targetExpanded = true },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    backgroundColor = Color(0xFF3D3D3D),
+                                    contentColor = Color.White
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = availableProfiles.find { it.first == selectedTargetProfileId }?.second ?: "База",
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(" ▼", fontSize = 10.sp)
+                            }
+                            DropdownMenu(
+                                expanded = targetExpanded,
+                                onDismissRequest = { targetExpanded = false }
+                            ) {
+                                availableProfiles.forEach { (profileId, profileName) ->
+                                    DropdownMenuItem(onClick = {
+                                        selectedTargetProfileId = profileId
+                                        targetExpanded = false
+                                    }) {
+                                        Text(profileName, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Error message - вынесен наверх, чтобы всегда был виден
                 if (errorMessage != null) {
@@ -1304,7 +1361,7 @@ private fun ContextRuleDialog(
                                 priority = priority.toIntOrNull() ?: 0
                             )
 
-                            onSave(newRule)
+                            onSave(newRule, selectedTargetProfileId)
                         },
                         colors = ButtonDefaults.buttonColors(
                             backgroundColor = Color(0xFF4CAF50)
