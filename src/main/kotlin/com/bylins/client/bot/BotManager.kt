@@ -289,16 +289,16 @@ class BotManager(
             "hp" to state.hp,
             "maxHp" to state.maxHp,
             "hpPercent" to state.hpPercent,
-            "mana" to state.mana,
-            "maxMana" to state.maxMana,
-            "manaPercent" to state.manaPercent,
             "move" to state.move,
             "maxMove" to state.maxMove,
+            "movePercent" to state.movePercent,
             "level" to state.level,
             "experience" to state.experience,
             "position" to state.position.name,
             "roomId" to (state.roomId ?: ""),
             "zoneId" to (state.zoneId ?: ""),
+            "terrain" to (state.terrain ?: ""),
+            "exits" to state.exits,
             "isInCombat" to state.isInCombat,
             "targetName" to (state.targetName ?: ""),
             "gold" to state.gold
@@ -488,5 +488,76 @@ class BotManager(
             success = data["success"] as? Boolean
         )
         botCore.database.saveTrainingData(trainingData)
+    }
+
+    // ============================================
+    // Combat profile methods
+    // ============================================
+
+    override fun getCombatProfiles(limit: Int, filter: Map<String, Any>?): List<Map<String, Any>> {
+        val profiles = botCore.database.getCombatProfiles(
+            limit = limit,
+            zoneId = filter?.get("zoneId")?.toString(),
+            minKills = (filter?.get("minKills") as? Number)?.toInt(),
+            result = filter?.get("result")?.toString(),
+            fromTime = (filter?.get("fromTime") as? Number)?.toLong(),
+            toTime = (filter?.get("toTime") as? Number)?.toLong()
+        )
+        return profiles.map { profile ->
+            mutableMapOf<String, Any>(
+                "id" to (profile.id ?: -1),
+                "startedAt" to profile.startedAt,
+                "endedAt" to (profile.endedAt ?: 0),
+                "zoneId" to (profile.zoneId ?: ""),
+                "roomId" to (profile.roomId ?: ""),
+                "killsCount" to profile.killsCount,
+                "mobsKilled" to (profile.mobsKilled ?: "[]"),
+                "hpBefore" to (profile.hpBefore ?: 0),
+                "hpAfter" to (profile.hpAfter ?: 0),
+                "moveBefore" to (profile.moveBefore ?: 0),
+                "moveAfter" to (profile.moveAfter ?: 0),
+                "expGained" to profile.expGained,
+                "goldGained" to profile.goldGained,
+                "result" to (profile.result ?: ""),
+                "durationMs" to (profile.durationMs ?: 0),
+                "rawData" to (profile.rawData ?: "{}")
+            )
+        }
+    }
+
+    override fun getCombatProfile(id: Int): Map<String, Any>? {
+        val profile = botCore.database.getCombatProfile(id.toLong()) ?: return null
+        return mapOf(
+            "id" to (profile.id ?: -1),
+            "startedAt" to profile.startedAt,
+            "endedAt" to (profile.endedAt ?: 0),
+            "zoneId" to (profile.zoneId ?: ""),
+            "roomId" to (profile.roomId ?: ""),
+            "killsCount" to profile.killsCount,
+            "mobsKilled" to (profile.mobsKilled ?: "[]"),
+            "hpBefore" to (profile.hpBefore ?: 0),
+            "hpAfter" to (profile.hpAfter ?: 0),
+            "moveBefore" to (profile.moveBefore ?: 0),
+            "moveAfter" to (profile.moveAfter ?: 0),
+            "expGained" to profile.expGained,
+            "goldGained" to profile.goldGained,
+            "result" to (profile.result ?: ""),
+            "durationMs" to (profile.durationMs ?: 0),
+            "rawData" to (profile.rawData ?: "{}")
+        )
+    }
+
+    override fun getCombatStats(): Map<String, Any> {
+        val stats = botCore.database.getCombatStats()
+        return mapOf(
+            "totalFights" to stats.totalFights,
+            "totalKills" to stats.totalKills,
+            "totalExp" to stats.totalExp,
+            "totalGold" to stats.totalGold,
+            "wins" to stats.wins,
+            "flees" to stats.flees,
+            "deaths" to stats.deaths,
+            "avgDurationMs" to stats.avgDurationMs
+        )
     }
 }

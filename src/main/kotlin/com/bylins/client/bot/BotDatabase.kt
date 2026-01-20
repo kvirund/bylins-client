@@ -168,7 +168,58 @@ class BotDatabase {
                 )
             """.trimIndent())
 
+            // Таблица выученных боевых паттернов
+            statement?.execute("""
+                CREATE TABLE IF NOT EXISTS combat_patterns (
+                    message TEXT PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    hit_count INTEGER DEFAULT 1,
+                    last_seen INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            // Таблица эмпирической статистики ударов (для обучения силы удара по exp)
+            statement?.execute("""
+                CREATE TABLE IF NOT EXISTS hit_exp_stats (
+                    hit_text TEXT PRIMARY KEY,
+                    total_exp INTEGER NOT NULL DEFAULT 0,
+                    sample_count INTEGER NOT NULL DEFAULT 0,
+                    min_exp INTEGER,
+                    max_exp INTEGER,
+                    avg_exp REAL NOT NULL DEFAULT 0.0,
+                    last_updated INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            // Combat profiles table for detailed combat recording
+            statement?.execute("""
+                CREATE TABLE IF NOT EXISTS combat_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    started_at INTEGER NOT NULL,
+                    ended_at INTEGER,
+                    zone_id TEXT,
+                    room_id TEXT,
+                    kills_count INTEGER DEFAULT 0,
+                    mobs_killed TEXT,
+                    hp_before INTEGER,
+                    hp_after INTEGER,
+                    move_before INTEGER,
+                    move_after INTEGER,
+                    exp_gained INTEGER DEFAULT 0,
+                    gold_gained INTEGER DEFAULT 0,
+                    result TEXT,
+                    duration_ms INTEGER,
+                    raw_data TEXT
+                )
+            """.trimIndent())
+
             // Индексы
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_combat_profiles_zone ON combat_profiles(zone_id)")
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_combat_profiles_time ON combat_profiles(started_at)")
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_combat_profiles_kills ON combat_profiles(kills_count)")
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_mobs_zone ON mobs(zone_id)")
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_mobs_level ON mobs(level)")
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_mob_spawns_room ON mob_spawns(room_id)")
@@ -178,6 +229,7 @@ class BotDatabase {
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_combat_mob ON combat_log(mob_id)")
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_items_type ON items(type)")
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_items_dropped_by ON items(dropped_by)")
+            statement?.execute("CREATE INDEX IF NOT EXISTS idx_combat_patterns_type ON combat_patterns(type)")
 
             statement?.close()
             logger.info { "Bot database tables created/verified successfully" }
@@ -593,6 +645,239 @@ class BotDatabase {
     }
 
     // ============================================
+    // Операции с выученными боевыми паттернами
+    // ============================================
+
+    /**
+     * Получить все выученные боевые паттерны
+     * @return Map<message, type>
+     */
+    fun getLearnedCombatPatterns(): Map<String, String> {
+        return try {
+            val result = mutableMapOf<String, String>()
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("SELECT message, type FROM combat_patterns")
+            while (rs?.next() == true) {
+                result[rs.getString("message")] = rs.getString("type")
+            }
+            rs?.close()
+            stmt?.close()
+            result
+        } catch (e: Exception) {
+            logger.error { "Error getting learned combat patterns: ${e.message}" }
+            emptyMap()
+        }
+    }
+
+    /**
+     * Сохранить выученный боевой паттерн
+     */
+    fun saveCombatPattern(message: String, type: String, confidence: Double) {
+        try {
+            val now = Instant.now().epochSecond
+            val stmt = connection?.prepareStatement("""
+                INSERT INTO combat_patterns (message, type, confidence, hit_count, last_seen, created_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(message) DO UPDATE SET
+                    type = excluded.type,
+                    confidence = excluded.confidence,
+                    hit_count = hit_count + 1,
+                    last_seen = excluded.last_seen
+            """.trimIndent())
+            stmt?.setString(1, message)
+            stmt?.setString(2, type)
+            stmt?.setDouble(3, confidence)
+            stmt?.setLong(4, now)
+            stmt?.setLong(5, now)
+            stmt?.executeUpdate()
+            stmt?.close()
+        } catch (e: Exception) {
+            logger.error { "Error saving combat pattern: ${e.message}" }
+        }
+    }
+
+    /**
+     * Удалить боевой паттерн (помечен как ошибочный)
+     */
+    fun removeCombatPattern(message: String) {
+        try {
+            val stmt = connection?.prepareStatement("DELETE FROM combat_patterns WHERE message = ?")
+            stmt?.setString(1, message)
+            stmt?.executeUpdate()
+            stmt?.close()
+        } catch (e: Exception) {
+            logger.error { "Error removing combat pattern: ${e.message}" }
+        }
+    }
+
+    // ============================================
+    // Операции со статистикой ударов (эмпирическое обучение)
+    // ============================================
+
+    /**
+     * Записать статистику урона по тексту удара
+     * @param hitText текст сообщения об ударе (например, "Вы легонько ударили волка.")
+     * @param expGained опыт, полученный за этот удар
+     */
+    fun recordHitExp(hitText: String, expGained: Int) {
+        if (expGained <= 0) return
+
+        try {
+            val now = Instant.now().epochSecond
+            val stmt = connection?.prepareStatement("""
+                INSERT INTO hit_exp_stats (hit_text, total_exp, sample_count, min_exp, max_exp, avg_exp, last_updated, created_at)
+                VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+                ON CONFLICT(hit_text) DO UPDATE SET
+                    total_exp = total_exp + excluded.total_exp,
+                    sample_count = sample_count + 1,
+                    min_exp = MIN(min_exp, excluded.min_exp),
+                    max_exp = MAX(max_exp, excluded.max_exp),
+                    avg_exp = (total_exp + excluded.total_exp) * 1.0 / (sample_count + 1),
+                    last_updated = excluded.last_updated
+            """.trimIndent())
+            stmt?.setString(1, hitText)
+            stmt?.setInt(2, expGained)
+            stmt?.setInt(3, expGained)
+            stmt?.setInt(4, expGained)
+            stmt?.setDouble(5, expGained.toDouble())
+            stmt?.setLong(6, now)
+            stmt?.setLong(7, now)
+            stmt?.executeUpdate()
+            stmt?.close()
+            logger.debug { "Recorded hit exp: '$hitText' -> $expGained exp" }
+        } catch (e: Exception) {
+            logger.error { "Error recording hit exp: ${e.message}" }
+        }
+    }
+
+    /**
+     * Получить среднее значение опыта для текста удара
+     * @return средний опыт или null если нет данных
+     */
+    fun getAvgExpForHit(hitText: String): Double? {
+        return try {
+            val stmt = connection?.prepareStatement(
+                "SELECT avg_exp FROM hit_exp_stats WHERE hit_text = ?"
+            )
+            stmt?.setString(1, hitText)
+            val rs = stmt?.executeQuery()
+            val avgExp = if (rs?.next() == true) rs.getDouble("avg_exp") else null
+            rs?.close()
+            stmt?.close()
+            avgExp
+        } catch (e: Exception) {
+            logger.error { "Error getting avg exp for hit: ${e.message}" }
+            null
+        }
+    }
+
+    /**
+     * Получить полную статистику по тексту удара
+     */
+    fun getHitExpStats(hitText: String): HitExpStats? {
+        return try {
+            val stmt = connection?.prepareStatement(
+                "SELECT * FROM hit_exp_stats WHERE hit_text = ?"
+            )
+            stmt?.setString(1, hitText)
+            val rs = stmt?.executeQuery()
+            val stats = if (rs?.next() == true) {
+                HitExpStats(
+                    hitText = rs.getString("hit_text"),
+                    totalExp = rs.getLong("total_exp"),
+                    sampleCount = rs.getInt("sample_count"),
+                    minExp = rs.getInt("min_exp"),
+                    maxExp = rs.getInt("max_exp"),
+                    avgExp = rs.getDouble("avg_exp"),
+                    lastUpdated = rs.getLong("last_updated")
+                )
+            } else null
+            rs?.close()
+            stmt?.close()
+            stats
+        } catch (e: Exception) {
+            logger.error { "Error getting hit exp stats: ${e.message}" }
+            null
+        }
+    }
+
+    /**
+     * Получить всю статистику ударов (для аналитики и отображения)
+     */
+    fun getAllHitExpStats(): List<HitExpStats> {
+        return try {
+            val result = mutableListOf<HitExpStats>()
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("SELECT * FROM hit_exp_stats ORDER BY avg_exp DESC")
+            while (rs?.next() == true) {
+                result.add(HitExpStats(
+                    hitText = rs.getString("hit_text"),
+                    totalExp = rs.getLong("total_exp"),
+                    sampleCount = rs.getInt("sample_count"),
+                    minExp = rs.getInt("min_exp"),
+                    maxExp = rs.getInt("max_exp"),
+                    avgExp = rs.getDouble("avg_exp"),
+                    lastUpdated = rs.getLong("last_updated")
+                ))
+            }
+            rs?.close()
+            stmt?.close()
+            result
+        } catch (e: Exception) {
+            logger.error { "Error getting all hit exp stats: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * Получить статистику по категориям качества ударов
+     * Возвращает отсортированный список уникальных "качеств" удара с их средним exp
+     */
+    fun getHitQualityStats(): List<HitQualityStat> {
+        return try {
+            // Извлекаем качество удара из текста (слово перед "ударили" или аналогичным)
+            val allStats = getAllHitExpStats()
+            val qualityMap = mutableMapOf<String, MutableList<HitExpStats>>()
+
+            for (stat in allStats) {
+                val quality = extractHitQuality(stat.hitText)
+                qualityMap.getOrPut(quality) { mutableListOf() }.add(stat)
+            }
+
+            qualityMap.map { (quality, stats) ->
+                HitQualityStat(
+                    quality = quality,
+                    avgExp = stats.map { it.avgExp }.average(),
+                    totalSamples = stats.sumOf { it.sampleCount },
+                    hitCount = stats.size
+                )
+            }.sortedBy { it.avgExp }
+        } catch (e: Exception) {
+            logger.error { "Error getting hit quality stats: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * Извлечь качество удара из текста сообщения
+     */
+    private fun extractHitQuality(hitText: String): String {
+        val text = hitText.lowercase()
+        return when {
+            text.contains("прекрасн") -> "прекрасный"
+            text.contains("меткое попадание") -> "меткое"
+            text.contains("великолепн") -> "великолепный"
+            text.contains("очень хорошо") -> "очень хорошо"
+            text.contains("хорошо") -> "хорошо"
+            text.contains("сильно") -> "сильно"
+            text.contains("слегка") -> "слегка"
+            text.contains("легонько") -> "легонько"
+            text.contains("оцарапал") -> "оцарапал"
+            else -> "прочее"
+        }
+    }
+
+    // ============================================
     // Операции с сессиями бота
     // ============================================
 
@@ -711,6 +996,232 @@ class BotDatabase {
         } catch (e: Exception) {
             logger.error { "Error getting item: ${e.message}" }
             null
+        }
+    }
+
+    // ============================================
+    // Combat profile operations
+    // ============================================
+
+    /**
+     * Create a new combat profile (at combat start)
+     * @return ID of the created profile
+     */
+    fun createCombatProfile(profile: CombatProfile): Long {
+        return try {
+            val stmt = connection?.prepareStatement("""
+                INSERT INTO combat_profiles
+                (started_at, zone_id, room_id, hp_before, move_before, mobs_killed, raw_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(), java.sql.Statement.RETURN_GENERATED_KEYS)
+            stmt?.setLong(1, profile.startedAt)
+            stmt?.setString(2, profile.zoneId)
+            stmt?.setString(3, profile.roomId)
+            stmt?.setInt(4, profile.hpBefore ?: 0)
+            stmt?.setInt(5, profile.moveBefore ?: 0)
+            stmt?.setString(6, "[]") // Empty mobs_killed list
+            stmt?.setString(7, profile.rawData ?: "{}")
+            stmt?.executeUpdate()
+
+            val generatedKeys = stmt?.generatedKeys
+            val id = if (generatedKeys?.next() == true) generatedKeys.getLong(1) else -1L
+            generatedKeys?.close()
+            stmt?.close()
+
+            logger.debug { "Created combat profile #$id" }
+            id
+        } catch (e: Exception) {
+            logger.error { "Error creating combat profile: ${e.message}" }
+            -1L
+        }
+    }
+
+    /**
+     * Update combat profile (at combat end)
+     */
+    fun updateCombatProfile(profile: CombatProfile) {
+        try {
+            val stmt = connection?.prepareStatement("""
+                UPDATE combat_profiles SET
+                    ended_at = ?,
+                    kills_count = ?,
+                    mobs_killed = ?,
+                    hp_after = ?,
+                    move_after = ?,
+                    exp_gained = ?,
+                    gold_gained = ?,
+                    result = ?,
+                    duration_ms = ?,
+                    raw_data = ?
+                WHERE id = ?
+            """.trimIndent())
+            stmt?.setLong(1, profile.endedAt ?: Instant.now().epochSecond)
+            stmt?.setInt(2, profile.killsCount)
+            stmt?.setString(3, profile.mobsKilled)
+            stmt?.setInt(4, profile.hpAfter ?: 0)
+            stmt?.setInt(5, profile.moveAfter ?: 0)
+            stmt?.setLong(6, profile.expGained)
+            stmt?.setLong(7, profile.goldGained)
+            stmt?.setString(8, profile.result)
+            stmt?.setLong(9, profile.durationMs ?: 0)
+            stmt?.setString(10, profile.rawData)
+            stmt?.setLong(11, profile.id ?: return)
+            stmt?.executeUpdate()
+            stmt?.close()
+
+            logger.debug { "Updated combat profile #${profile.id}" }
+        } catch (e: Exception) {
+            logger.error { "Error updating combat profile: ${e.message}" }
+        }
+    }
+
+    /**
+     * Get combat profile by ID
+     */
+    fun getCombatProfile(id: Long): CombatProfile? {
+        return try {
+            val stmt = connection?.prepareStatement("SELECT * FROM combat_profiles WHERE id = ?")
+            stmt?.setLong(1, id)
+            val rs = stmt?.executeQuery()
+            val profile = if (rs?.next() == true) {
+                CombatProfile(
+                    id = rs.getLong("id"),
+                    startedAt = rs.getLong("started_at"),
+                    endedAt = rs.getLong("ended_at").takeIf { it > 0 },
+                    zoneId = rs.getString("zone_id"),
+                    roomId = rs.getString("room_id"),
+                    killsCount = rs.getInt("kills_count"),
+                    mobsKilled = rs.getString("mobs_killed"),
+                    hpBefore = rs.getInt("hp_before").takeIf { it > 0 },
+                    hpAfter = rs.getInt("hp_after").takeIf { it > 0 },
+                    moveBefore = rs.getInt("move_before").takeIf { it > 0 },
+                    moveAfter = rs.getInt("move_after").takeIf { it > 0 },
+                    expGained = rs.getLong("exp_gained"),
+                    goldGained = rs.getLong("gold_gained"),
+                    result = rs.getString("result"),
+                    durationMs = rs.getLong("duration_ms").takeIf { it > 0 },
+                    rawData = rs.getString("raw_data")
+                )
+            } else null
+            rs?.close()
+            stmt?.close()
+            profile
+        } catch (e: Exception) {
+            logger.error { "Error getting combat profile: ${e.message}" }
+            null
+        }
+    }
+
+    /**
+     * Get combat profiles with optional filtering
+     * @param limit Maximum number of profiles to return
+     * @param zoneId Filter by zone (optional)
+     * @param minKills Filter by minimum kills count (optional)
+     * @param result Filter by result (optional): 'win', 'flee', 'death'
+     * @param fromTime Filter by start time (optional)
+     * @param toTime Filter by end time (optional)
+     */
+    fun getCombatProfiles(
+        limit: Int = 100,
+        zoneId: String? = null,
+        minKills: Int? = null,
+        result: String? = null,
+        fromTime: Long? = null,
+        toTime: Long? = null
+    ): List<CombatProfile> {
+        return try {
+            val conditions = mutableListOf<String>()
+            if (zoneId != null) conditions.add("zone_id = ?")
+            if (minKills != null) conditions.add("kills_count >= ?")
+            if (result != null) conditions.add("result = ?")
+            if (fromTime != null) conditions.add("started_at >= ?")
+            if (toTime != null) conditions.add("started_at <= ?")
+
+            val whereClause = if (conditions.isNotEmpty()) "WHERE ${conditions.joinToString(" AND ")}" else ""
+            val sql = "SELECT * FROM combat_profiles $whereClause ORDER BY started_at DESC LIMIT ?"
+
+            val stmt = connection?.prepareStatement(sql)
+            var paramIndex = 1
+            if (zoneId != null) stmt?.setString(paramIndex++, zoneId)
+            if (minKills != null) stmt?.setInt(paramIndex++, minKills)
+            if (result != null) stmt?.setString(paramIndex++, result)
+            if (fromTime != null) stmt?.setLong(paramIndex++, fromTime)
+            if (toTime != null) stmt?.setLong(paramIndex++, toTime)
+            stmt?.setInt(paramIndex, limit)
+
+            val rs = stmt?.executeQuery()
+            val profiles = mutableListOf<CombatProfile>()
+            while (rs?.next() == true) {
+                profiles.add(CombatProfile(
+                    id = rs.getLong("id"),
+                    startedAt = rs.getLong("started_at"),
+                    endedAt = rs.getLong("ended_at").takeIf { it > 0 },
+                    zoneId = rs.getString("zone_id"),
+                    roomId = rs.getString("room_id"),
+                    killsCount = rs.getInt("kills_count"),
+                    mobsKilled = rs.getString("mobs_killed"),
+                    hpBefore = rs.getInt("hp_before").takeIf { it > 0 },
+                    hpAfter = rs.getInt("hp_after").takeIf { it > 0 },
+                    moveBefore = rs.getInt("move_before").takeIf { it > 0 },
+                    moveAfter = rs.getInt("move_after").takeIf { it > 0 },
+                    expGained = rs.getLong("exp_gained"),
+                    goldGained = rs.getLong("gold_gained"),
+                    result = rs.getString("result"),
+                    durationMs = rs.getLong("duration_ms").takeIf { it > 0 },
+                    rawData = rs.getString("raw_data")
+                ))
+            }
+            rs?.close()
+            stmt?.close()
+
+            logger.debug { "Retrieved ${profiles.size} combat profiles" }
+            profiles
+        } catch (e: Exception) {
+            logger.error { "Error getting combat profiles: ${e.message}" }
+            emptyList()
+        }
+    }
+
+    /**
+     * Get combat statistics summary
+     */
+    fun getCombatStats(): CombatStatsSummary {
+        return try {
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("""
+                SELECT
+                    COUNT(*) as total_fights,
+                    SUM(kills_count) as total_kills,
+                    SUM(exp_gained) as total_exp,
+                    SUM(gold_gained) as total_gold,
+                    SUM(CASE WHEN result = 'win' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN result = 'flee' THEN 1 ELSE 0 END) as flees,
+                    SUM(CASE WHEN result = 'death' THEN 1 ELSE 0 END) as deaths,
+                    AVG(duration_ms) as avg_duration
+                FROM combat_profiles
+            """.trimIndent())
+
+            val summary = if (rs?.next() == true) {
+                CombatStatsSummary(
+                    totalFights = rs.getInt("total_fights"),
+                    totalKills = rs.getInt("total_kills"),
+                    totalExp = rs.getLong("total_exp"),
+                    totalGold = rs.getLong("total_gold"),
+                    wins = rs.getInt("wins"),
+                    flees = rs.getInt("flees"),
+                    deaths = rs.getInt("deaths"),
+                    avgDurationMs = rs.getLong("avg_duration")
+                )
+            } else {
+                CombatStatsSummary()
+            }
+            rs?.close()
+            stmt?.close()
+
+            summary
+        } catch (e: Exception) {
+            logger.error { "Error getting combat stats: ${e.message}" }
+            CombatStatsSummary()
         }
     }
 
@@ -848,4 +1359,63 @@ data class ItemData(
     val dropCount: Int = 0,
     val lastSeen: Long? = null,
     val notes: String = ""
+)
+
+/**
+ * Статистика опыта за конкретный текст удара
+ */
+data class HitExpStats(
+    val hitText: String,
+    val totalExp: Long,
+    val sampleCount: Int,
+    val minExp: Int,
+    val maxExp: Int,
+    val avgExp: Double,
+    val lastUpdated: Long
+)
+
+/**
+ * Агрегированная статистика по качеству ударов
+ */
+data class HitQualityStat(
+    val quality: String,
+    val avgExp: Double,
+    val totalSamples: Int,
+    val hitCount: Int
+)
+
+/**
+ * Combat profile - detailed record of a single combat (may include multiple mobs)
+ */
+data class CombatProfile(
+    val id: Long? = null,
+    val startedAt: Long,
+    val endedAt: Long? = null,
+    val zoneId: String? = null,
+    val roomId: String? = null,
+    val killsCount: Int = 0,
+    val mobsKilled: String? = null, // JSON array: ["mob1", "mob2"]
+    val hpBefore: Int? = null,
+    val hpAfter: Int? = null,
+    val moveBefore: Int? = null,
+    val moveAfter: Int? = null,
+    val expGained: Long = 0,
+    val goldGained: Long = 0,
+    val result: String? = null, // 'win', 'flee', 'death'
+    val durationMs: Long? = null,
+    val rawData: String? = null // JSON with detailed combat data
+)
+
+/**
+ * Combat statistics summary
+ */
+data class CombatStatsSummary(
+    val totalFights: Int = 0,
+    val totalKills: Int = 0,
+    val totalExp: Long = 0,
+    val totalGold: Long = 0,
+    val wins: Int = 0,
+    val flees: Int = 0,
+    val deaths: Int = 0,
+    val avgDurationMs: Long = 0
 )

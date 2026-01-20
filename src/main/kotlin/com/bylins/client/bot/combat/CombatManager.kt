@@ -1,7 +1,11 @@
 package com.bylins.client.bot.combat
 
 import com.bylins.client.bot.*
+import com.bylins.client.bot.perception.CombatEndReason
+import com.bylins.client.bot.perception.DamageIntensity
 import com.bylins.client.scripting.ScriptEvent
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import mu.KotlinLogging
 
 /**
@@ -35,6 +39,28 @@ class CombatManager(private val bot: BotCore) {
 
     // Кулдауны скиллов (skill -> timestamp когда будет готов)
     private val skillCooldowns = mutableMapOf<String, Long>()
+
+    // ============================================
+    // Combat Profile tracking
+    // ============================================
+
+    private val objectMapper = ObjectMapper().registerKotlinModule()
+
+    // Current combat profile being recorded
+    private var currentProfileId: Long? = null
+    private var profileMobsKilled = mutableListOf<String>()
+    private var profileExpGained: Long = 0
+    private var profileGoldGained: Long = 0
+    private var profileHpBefore: Int? = null
+    private var profileMoveBefore: Int? = null
+    private var profileZoneId: String? = null
+    private var profileRoomId: String? = null
+
+    // Raw data for detailed combat analysis
+    private var profileHits = mutableListOf<Map<String, Any>>()
+    private var profileHpTimeline = mutableListOf<Map<String, Any>>()
+    private var profileExpTimeline = mutableListOf<Map<String, Any>>()
+    private var profileSkillsUsed = mutableSetOf<String>()
 
     /**
      * Проверить, в бою ли персонаж
@@ -137,6 +163,9 @@ class CombatManager(private val bot: BotCore) {
     fun onDamageDealt(damage: Int, target: String?, skill: String? = null) {
         damageDealt += damage
 
+        // Record hit in combat profile
+        recordHit("dealt", damage, skill, target = target)
+
         // Логируем в БД
         bot.database.saveCombatEvent(CombatLogEntry(
             sessionId = null,
@@ -155,6 +184,9 @@ class CombatManager(private val bot: BotCore) {
      */
     fun onDamageReceived(damage: Int, source: String?) {
         damageReceived += damage
+
+        // Record hit in combat profile
+        recordHit("received", damage, null, source = source)
 
         // Логируем в БД
         bot.database.saveCombatEvent(CombatLogEntry(
@@ -176,7 +208,6 @@ class CombatManager(private val bot: BotCore) {
 
         lastKilledMob = currentTarget
         currentTarget = null
-        _isInCombat = false
 
         bot.log("Mob killed: $mobName (duration: ${duration}ms, dealt: $damageDealt, received: $damageReceived)")
 
@@ -196,6 +227,12 @@ class CombatManager(private val bot: BotCore) {
             damageReceived = damageReceived,
             outcome = "victory"
         ))
+
+        // Add mob to combat profile
+        profileMobsKilled.add(mobName)
+
+        // Note: combat doesn't end here - player might switch to another target
+        // Combat ends when onCombatEnded is called (from PromptParser detecting no combat)
     }
 
     /**
@@ -219,10 +256,295 @@ class CombatManager(private val bot: BotCore) {
             outcome = outcome
         ))
 
+        // Finalize combat profile
+        finalizeCombatProfile(outcome, duration)
+
         currentTarget = null
         _isInCombat = false
         damageDealt = 0
         damageReceived = 0
+    }
+
+    /**
+     * Finalize and save the combat profile
+     */
+    private fun finalizeCombatProfile(outcome: String, duration: Long) {
+        val profileId = currentProfileId ?: return
+
+        val charState = bot.characterState.value
+
+        // Record final HP point
+        charState?.let {
+            profileHpTimeline.add(mapOf(
+                "t" to System.currentTimeMillis(),
+                "hp" to it.hp,
+                "max" to it.maxHp
+            ))
+        }
+
+        // Build raw data JSON
+        val rawData = try {
+            objectMapper.writeValueAsString(mapOf(
+                "hits" to profileHits,
+                "hp_timeline" to profileHpTimeline,
+                "exp_timeline" to profileExpTimeline,
+                "skills_used" to profileSkillsUsed.toList(),
+                "damage_dealt" to damageDealt,
+                "damage_received" to damageReceived
+            ))
+        } catch (e: Exception) {
+            logger.error { "Error serializing combat raw data: ${e.message}" }
+            "{}"
+        }
+
+        // Build mobs killed JSON
+        val mobsKilledJson = try {
+            objectMapper.writeValueAsString(profileMobsKilled)
+        } catch (e: Exception) {
+            "[]"
+        }
+
+        // Determine result based on outcome
+        val result = when {
+            outcome.contains("VICTORY", ignoreCase = true) || profileMobsKilled.isNotEmpty() -> "win"
+            outcome.contains("FLEE", ignoreCase = true) || outcome.contains("ESCAPED", ignoreCase = true) -> "flee"
+            outcome.contains("DEATH", ignoreCase = true) -> "death"
+            else -> outcome.lowercase()
+        }
+
+        // Update profile in database
+        val profile = CombatProfile(
+            id = profileId,
+            startedAt = combatStartTime / 1000,
+            endedAt = System.currentTimeMillis() / 1000,
+            zoneId = profileZoneId,
+            roomId = profileRoomId,
+            killsCount = profileMobsKilled.size,
+            mobsKilled = mobsKilledJson,
+            hpBefore = profileHpBefore,
+            hpAfter = charState?.hp,
+            moveBefore = profileMoveBefore,
+            moveAfter = charState?.move,
+            expGained = profileExpGained,
+            goldGained = profileGoldGained,
+            result = result,
+            durationMs = duration,
+            rawData = rawData
+        )
+
+        bot.database.updateCombatProfile(profile)
+
+        logger.info { "Finalized combat profile #$profileId: ${profileMobsKilled.size} kills, ${profileExpGained} exp, $result" }
+
+        // Reset profile tracking
+        currentProfileId = null
+    }
+
+    /**
+     * Record experience gain during combat
+     */
+    fun onExpGain(amount: Int) {
+        profileExpGained += amount
+
+        profileExpTimeline.add(mapOf(
+            "t" to System.currentTimeMillis(),
+            "exp" to (bot.characterState.value?.experience ?: 0),
+            "delta" to amount
+        ))
+
+        logger.debug { "Combat exp gain: $amount (total: $profileExpGained)" }
+    }
+
+    /**
+     * Record gold gain during combat
+     */
+    fun onGoldGain(amount: Int) {
+        profileGoldGained += amount
+        logger.debug { "Combat gold gain: $amount (total: $profileGoldGained)" }
+    }
+
+    /**
+     * Record a hit in combat profile
+     */
+    fun recordHit(type: String, damage: Int?, skill: String?, source: String? = null, target: String? = null) {
+        val hit = mutableMapOf<String, Any>(
+            "t" to System.currentTimeMillis(),
+            "type" to type
+        )
+        damage?.let { hit["dmg"] = it }
+        skill?.let {
+            hit["skill"] = it
+            profileSkillsUsed.add(it)
+        }
+        source?.let { hit["source"] = it }
+        target?.let { hit["target"] = it }
+
+        profileHits.add(hit)
+    }
+
+    /**
+     * Record HP change in timeline
+     */
+    fun recordHpChange(hp: Int, maxHp: Int) {
+        profileHpTimeline.add(mapOf(
+            "t" to System.currentTimeMillis(),
+            "hp" to hp,
+            "max" to maxHp
+        ))
+    }
+
+    // ============================================
+    // Методы для интеграции с PromptParser
+    // ============================================
+
+    /**
+     * Обработать начало боя (из PromptParser)
+     */
+    fun onCombatStarted(targetName: String, targetCondition: String?) {
+        _isInCombat = true
+        combatStartTime = System.currentTimeMillis()
+        damageDealt = 0
+        damageReceived = 0
+
+        currentTarget = MobInfo(
+            name = targetName,
+            hpPercent = conditionToHpPercent(targetCondition)
+        )
+
+        bot.log("Combat started with: $targetName ($targetCondition)")
+
+        // Логируем в БД
+        bot.database.saveCombatEvent(CombatLogEntry(
+            sessionId = null,
+            timestamp = System.currentTimeMillis(),
+            roomId = bot.characterState.value?.roomId,
+            mobId = targetName,
+            mobName = targetName,
+            eventType = CombatEventType.COMBAT_START
+        ))
+
+        // Start combat profile recording
+        startCombatProfile()
+    }
+
+    /**
+     * Start recording a new combat profile
+     */
+    private fun startCombatProfile() {
+        val charState = bot.characterState.value
+
+        // Initialize profile data
+        profileMobsKilled.clear()
+        profileExpGained = 0
+        profileGoldGained = 0
+        profileHpBefore = charState?.hp
+        profileMoveBefore = charState?.move
+        profileZoneId = charState?.zoneId
+        profileRoomId = charState?.roomId
+        profileHits.clear()
+        profileHpTimeline.clear()
+        profileExpTimeline.clear()
+        profileSkillsUsed.clear()
+
+        // Record initial HP point
+        charState?.let {
+            profileHpTimeline.add(mapOf(
+                "t" to System.currentTimeMillis(),
+                "hp" to it.hp,
+                "max" to it.maxHp
+            ))
+        }
+
+        // Create profile in database
+        val profile = CombatProfile(
+            startedAt = combatStartTime / 1000, // Convert to seconds
+            zoneId = profileZoneId,
+            roomId = profileRoomId,
+            hpBefore = profileHpBefore,
+            moveBefore = profileMoveBefore
+        )
+        currentProfileId = bot.database.createCombatProfile(profile)
+
+        logger.debug { "Started combat profile #$currentProfileId" }
+    }
+
+    /**
+     * Обработать окончание боя (из PromptParser)
+     */
+    fun onCombatEnded(reason: CombatEndReason) {
+        val outcome = reason.name
+        onCombatEnd(outcome)
+    }
+
+    /**
+     * Обработать смену цели в бою
+     */
+    fun onTargetChanged(newTarget: String, newCondition: String?) {
+        currentTarget = MobInfo(
+            name = newTarget,
+            hpPercent = conditionToHpPercent(newCondition)
+        )
+    }
+
+    /**
+     * Обработать изменение состояния цели
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun onTargetConditionChanged(_targetName: String, newCondition: String) {
+        currentTarget = currentTarget?.copy(
+            hpPercent = conditionToHpPercent(newCondition)
+        )
+    }
+
+    /**
+     * Обработать нанесённый урон (с интенсивностью)
+     */
+    fun onDamageDealt(target: String?, intensity: DamageIntensity) {
+        val estimatedDamage = intensityToDamage(intensity)
+        damageDealt += estimatedDamage
+
+        // Record hit in combat profile
+        recordHit("dealt", estimatedDamage, null, target = target)
+    }
+
+    /**
+     * Обработать полученный урон (с интенсивностью)
+     */
+    fun onDamageReceived(source: String?, intensity: DamageIntensity) {
+        val estimatedDamage = intensityToDamage(intensity)
+        damageReceived += estimatedDamage
+
+        // Record hit in combat profile
+        recordHit("received", estimatedDamage, null, source = source)
+    }
+
+    /**
+     * Преобразовать состояние в процент HP
+     */
+    private fun conditionToHpPercent(condition: String?): Int? {
+        if (condition == null) return null
+        return when {
+            condition.contains("Невредим", ignoreCase = true) -> 100
+            condition.contains("Слегка ранен", ignoreCase = true) -> 90
+            condition.contains("Легко ранен", ignoreCase = true) -> 75
+            condition.contains("Ранен", ignoreCase = true) && !condition.contains("тяжело", ignoreCase = true) -> 55
+            condition.contains("Тяжело ранен", ignoreCase = true) -> 35
+            condition.contains("О.тяжело ранен", ignoreCase = true) -> 20
+            condition.contains("Смертельно ранен", ignoreCase = true) -> 5
+            else -> null
+        }
+    }
+
+    /**
+     * Преобразовать интенсивность в примерный урон
+     */
+    private fun intensityToDamage(intensity: DamageIntensity): Int {
+        return when (intensity) {
+            DamageIntensity.LIGHT -> 5
+            DamageIntensity.MEDIUM -> 15
+            DamageIntensity.HEAVY -> 30
+            DamageIntensity.CRITICAL -> 50
+        }
     }
 
     /**

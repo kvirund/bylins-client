@@ -319,6 +319,34 @@ interface ScriptAPI {
     fun requestInputFocus()
 
     // ============================================
+    // Динамические графики
+    // ============================================
+
+    /** Создать график */
+    fun createChart(id: String, options: Map<String, Any>)
+
+    /** Удалить график */
+    fun removeChart(id: String)
+
+    /** Очистить данные графика */
+    fun clearChart(id: String)
+
+    /** Добавить серию данных на график */
+    fun addSeries(chartId: String, seriesId: String, options: Map<String, Any>)
+
+    /** Удалить серию с графика */
+    fun removeSeries(chartId: String, seriesId: String)
+
+    /** Добавить точку данных в серию */
+    fun addDataPoint(chartId: String, seriesId: String, value: Double)
+
+    /** Добавить точку данных в серию с отдельным значением для хинта */
+    fun addDataPointExt(chartId: String, seriesId: String, value: Double, displayValue: Double)
+
+    /** Добавить событие/метку на график */
+    fun addChartEvent(chartId: String, label: String, color: String? = null)
+
+    // ============================================
     // Bot API - боевая информация
     // ============================================
 
@@ -429,6 +457,65 @@ interface ScriptAPI {
 
     /** Сохранить опыт для обучения */
     fun saveExperience(type: String, data: Map<String, Any>)
+
+    // ============================================
+    // Universal script data storage
+    // ============================================
+
+    /**
+     * Save data with a key.
+     * Data is stored as JSON and persisted to SQLite.
+     * @param key Data key
+     * @param value Any value that can be serialized to JSON (primitives, maps, lists)
+     * @return true if successful
+     */
+    fun setData(key: String, value: Any): Boolean
+
+    /**
+     * Get data by key.
+     * @param key Data key
+     * @return Value or null if not found
+     */
+    fun getData(key: String): Any?
+
+    /**
+     * Delete data by key.
+     * @param key Data key
+     * @return true if deleted
+     */
+    fun deleteData(key: String): Boolean
+
+    /**
+     * List all keys for the current script.
+     * @param prefix Optional prefix to filter keys
+     * @return List of keys
+     */
+    fun listDataKeys(prefix: String? = null): List<String>
+
+    // ============================================
+    // Combat profiles (read-only for scripts)
+    // ============================================
+
+    /**
+     * Get combat profiles with optional filtering.
+     * @param limit Maximum number of profiles to return (default 100)
+     * @param filter Optional filter map with keys: zoneId, minKills, result, fromTime, toTime
+     * @return List of combat profiles as maps
+     */
+    fun getCombatProfiles(limit: Int = 100, filter: Map<String, Any>? = null): List<Map<String, Any>>
+
+    /**
+     * Get a specific combat profile by ID.
+     * @param id Profile ID
+     * @return Profile as map or null if not found
+     */
+    fun getCombatProfile(id: Int): Map<String, Any>?
+
+    /**
+     * Get combat statistics summary.
+     * @return Map with totalFights, totalKills, totalExp, wins, flees, deaths, avgDurationMs
+     */
+    fun getCombatStats(): Map<String, Any>
 }
 
 /**
@@ -447,7 +534,9 @@ class ScriptAPIImpl(
     private val gmcpActions: GmcpActions,
     private val mapperActions: MapperActions,
     private val statusActions: StatusActions,
-    private val botActions: BotActions? = null
+    private val chartActions: ChartActions? = null,
+    private val botActions: BotActions? = null,
+    private val storageActions: StorageActions? = null
 ) : ScriptAPI {
 
     /** Имя текущего выполняемого скрипта (для логирования) */
@@ -598,6 +687,36 @@ class ScriptAPIImpl(
     override fun requestInputFocus() = requestFocus()
 
     // ============================================
+    // Динамические графики реализация
+    // ============================================
+
+    override fun createChart(id: String, options: Map<String, Any>) {
+        val convertedOptions = ScriptObjectConverter.toMap(options)
+        chartActions?.createChart(id, convertedOptions)
+    }
+
+    override fun removeChart(id: String) = chartActions?.removeChart(id) ?: Unit
+
+    override fun clearChart(id: String) = chartActions?.clearChart(id) ?: Unit
+
+    override fun addSeries(chartId: String, seriesId: String, options: Map<String, Any>) {
+        val convertedOptions = ScriptObjectConverter.toMap(options)
+        chartActions?.addSeries(chartId, seriesId, convertedOptions)
+    }
+
+    override fun removeSeries(chartId: String, seriesId: String) =
+        chartActions?.removeSeries(chartId, seriesId) ?: Unit
+
+    override fun addDataPoint(chartId: String, seriesId: String, value: Double) =
+        chartActions?.addDataPoint(chartId, seriesId, value) ?: Unit
+
+    override fun addDataPointExt(chartId: String, seriesId: String, value: Double, displayValue: Double) =
+        chartActions?.addDataPointExt(chartId, seriesId, value, displayValue) ?: Unit
+
+    override fun addChartEvent(chartId: String, label: String, color: String?) =
+        chartActions?.addChartEvent(chartId, label, color) ?: Unit
+
+    // ============================================
     // Bot API реализация
     // ============================================
 
@@ -692,6 +811,39 @@ class ScriptAPIImpl(
         val convertedData = ScriptObjectConverter.toMap(data)
         botActions?.saveExperience(type, convertedData)
     }
+
+    // ============================================
+    // Universal script data storage implementation
+    // ============================================
+
+    override fun setData(key: String, value: Any): Boolean {
+        val convertedValue = ScriptObjectConverter.toJava(value) ?: value
+        return storageActions?.setData(key, convertedValue) ?: false
+    }
+
+    override fun getData(key: String): Any? =
+        storageActions?.getData(key)
+
+    override fun deleteData(key: String): Boolean =
+        storageActions?.deleteData(key) ?: false
+
+    override fun listDataKeys(prefix: String?): List<String> =
+        storageActions?.listDataKeys(prefix) ?: emptyList()
+
+    // ============================================
+    // Combat profiles implementation
+    // ============================================
+
+    override fun getCombatProfiles(limit: Int, filter: Map<String, Any>?): List<Map<String, Any>> {
+        val convertedFilter = if (filter != null) ScriptObjectConverter.toMap(filter) else null
+        return botActions?.getCombatProfiles(limit, convertedFilter) ?: emptyList()
+    }
+
+    override fun getCombatProfile(id: Int): Map<String, Any>? =
+        botActions?.getCombatProfile(id)
+
+    override fun getCombatStats(): Map<String, Any> =
+        botActions?.getCombatStats() ?: emptyMap()
 }
 
 // Интерфейсы для действий
@@ -744,6 +896,26 @@ interface MapperActions {
     fun searchRooms(query: String): List<Map<String, Any>>
     fun findPath(targetRoomId: String): List<String>?
 
+    // Поиск с произвольным фильтром (для JS: принимает callback)
+    /**
+     * Ищет комнаты с произвольным callback-фильтром.
+     * В JS: api.searchRoomsWithFilter(function(room) { return room.tags.indexOf("shop") >= 0; })
+     *
+     * @param filter JS-функция (room) -> Boolean
+     * @param maxResults Максимальное количество результатов
+     * @return Список комнат, удовлетворяющих условию
+     */
+    fun searchRoomsWithFilter(filter: Any, maxResults: Int = 100): List<Map<String, Any>>
+
+    /**
+     * Находит ближайшую комнату, удовлетворяющую условию.
+     * В JS: api.findNearestRoomMatching(function(room) { return room.zone === "midgaard"; })
+     *
+     * @param filter JS-функция (room) -> Boolean
+     * @return {room: {...}, path: [...]} или null
+     */
+    fun findNearestRoomMatching(filter: Any): Map<String, Any>?
+
     // Модификация
     fun setRoomNote(roomId: String, note: String)
     fun setRoomColor(roomId: String, color: String?)
@@ -787,6 +959,20 @@ interface StatusActions {
     fun get(id: String): Map<String, Any>?
     fun exists(id: String): Boolean
     fun invokeJsCallback(callback: Any)
+}
+
+/**
+ * Интерфейс для работы с динамическими графиками
+ */
+interface ChartActions {
+    fun createChart(id: String, options: Map<String, Any>)
+    fun removeChart(id: String)
+    fun clearChart(id: String)
+    fun addSeries(chartId: String, seriesId: String, options: Map<String, Any>)
+    fun removeSeries(chartId: String, seriesId: String)
+    fun addDataPoint(chartId: String, seriesId: String, value: Double)
+    fun addDataPointExt(chartId: String, seriesId: String, value: Double, displayValue: Double)
+    fun addChartEvent(chartId: String, label: String, color: String?)
 }
 
 /**
@@ -834,4 +1020,19 @@ interface BotActions {
     fun loadModel(name: String, path: String): Boolean
     fun predict(modelName: String, input: List<Double>): List<Double>?
     fun saveExperience(type: String, data: Map<String, Any>)
+
+    // Combat profiles
+    fun getCombatProfiles(limit: Int, filter: Map<String, Any>?): List<Map<String, Any>>
+    fun getCombatProfile(id: Int): Map<String, Any>?
+    fun getCombatStats(): Map<String, Any>
+}
+
+/**
+ * Interface for universal script data storage
+ */
+interface StorageActions {
+    fun setData(key: String, value: Any): Boolean
+    fun getData(key: String): Any?
+    fun deleteData(key: String): Boolean
+    fun listDataKeys(prefix: String?): List<String>
 }

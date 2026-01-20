@@ -216,3 +216,99 @@ var mapper = {
         api.clearPathHighlight();
     }
 };
+
+// ============================================
+// Universal Script Data Storage
+// ============================================
+
+var storage = {
+    /**
+     * Save data with a key.
+     * @param {string} key - Data key
+     * @param {*} value - Any value that can be serialized to JSON
+     * @returns {boolean} true if successful
+     */
+    set: function(key, value) {
+        return api.setData(key, value);
+    },
+
+    /**
+     * Get data by key.
+     * @param {string} key - Data key
+     * @returns {*} Value or null if not found
+     */
+    get: function(key) {
+        var result = api.getData(key);
+        // Convert Java collections to JS
+        if (result != null && typeof result.keySet === 'function') {
+            return _javaMapToJs(result);
+        } else if (result != null && typeof result.toArray === 'function') {
+            return Java.from(result);
+        }
+        return result;
+    },
+
+    /**
+     * Delete data by key.
+     * @param {string} key - Data key
+     * @returns {boolean} true if deleted
+     */
+    delete: function(key) {
+        return api.deleteData(key);
+    },
+
+    /**
+     * List all keys for the current script.
+     * @param {string} [prefix] - Optional prefix to filter keys
+     * @returns {string[]} List of keys
+     */
+    keys: function(prefix) {
+        var result = api.listDataKeys(prefix || null);
+        return result ? Java.from(result) : [];
+    }
+};
+
+// Shorthand functions
+function setData(key, value) { return storage.set(key, value); }
+function getData(key) { return storage.get(key); }
+function deleteData(key) { return storage.delete(key); }
+
+// ============================================
+// Combat Profiles API (read-only)
+// ============================================
+
+var combat = {
+    /**
+     * Get combat profiles with optional filtering.
+     * @param {number} [limit=100] - Maximum number of profiles to return
+     * @param {Object} [filter] - Optional filter: {zoneId, minKills, result, fromTime, toTime}
+     * @returns {Object[]} List of combat profiles
+     */
+    getProfiles: function(limit, filter) {
+        var profiles = api.getCombatProfiles(limit || 100, filter || null);
+        var jsProfiles = [];
+        for (var i = 0; i < profiles.size(); i++) {
+            jsProfiles.push(_javaMapToJs(profiles.get(i)));
+        }
+        return jsProfiles;
+    },
+
+    /**
+     * Get a specific combat profile by ID.
+     * @param {number} id - Profile ID
+     * @returns {Object|null} Profile or null if not found
+     */
+    getProfile: function(id) {
+        var profile = api.getCombatProfile(id);
+        return profile ? _javaMapToJs(profile) : null;
+    },
+
+    /**
+     * Get combat statistics summary.
+     * @returns {Object} Stats: totalFights, totalKills, totalExp, wins, flees, deaths, avgDurationMs
+     */
+    getStats: function() {
+        var stats = api.getCombatStats();
+        return stats ? _javaMapToJs(stats) : {};
+    }
+};

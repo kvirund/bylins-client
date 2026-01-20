@@ -5,6 +5,7 @@ import com.bylins.client.aliases.AliasManager
 import com.bylins.client.config.ConfigManager
 import com.bylins.client.hotkeys.HotkeyManager
 import com.bylins.client.logging.LogManager
+import com.bylins.client.logging.UiLogBuffer
 import com.bylins.client.network.TelnetClient
 import com.bylins.client.stats.SessionStats
 import com.bylins.client.tabs.TabManager
@@ -102,6 +103,8 @@ class ClientState {
     private val logManager = LogManager()
     private val sessionStats = SessionStats()
     private val statsHistory = com.bylins.client.stats.StatsHistory()
+    private val chartManager = com.bylins.client.stats.ChartManager()
+    private val scriptStorage = com.bylins.client.scripting.ScriptStorage()
     private val soundManager = com.bylins.client.audio.SoundManager()
     private val variableManager = VariableManager()
     val statusManager = StatusManager(variableManager)
@@ -198,18 +201,14 @@ class ClientState {
             }
 
             // Обрабатываем контекстные команды при входе в комнату
-            if (::contextCommandManager.isInitialized) {
-                contextCommandManager.onRoomEnter(room)
+            contextCommandManager.onRoomEnter(room)
 
-                // Обрабатываем правила контекстных команд из профилей
-                if (::profileManager.isInitialized) {
-                    for (profile in profileManager.getActiveProfiles()) {
-                        if (profile.contextCommandRules.isNotEmpty()) {
-                            logger.debug { "Processing ${profile.contextCommandRules.size} room/zone context rules from profile ${profile.name}" }
-                        }
-                        contextCommandManager.processRoomRules(room, profile.contextCommandRules)
-                    }
+            // Обрабатываем правила контекстных команд из профилей
+            for (profile in profileManager.getActiveProfiles()) {
+                if (profile.contextCommandRules.isNotEmpty()) {
+                    logger.debug { "Processing ${profile.contextCommandRules.size} room/zone context rules from profile ${profile.name}" }
                 }
+                contextCommandManager.processRoomRules(room, profile.contextCommandRules)
             }
 
             // Уведомляем AI-бота о входе в комнату
@@ -228,8 +227,12 @@ class ClientState {
         onRoomEnter = mapManagerOnRoomEnter
     )
 
-    // Менеджер контекстных команд
-    lateinit var contextCommandManager: com.bylins.client.contextcommands.ContextCommandManager
+    // Менеджер контекстных команд (инициализируется в init)
+    var contextCommandManager: com.bylins.client.contextcommands.ContextCommandManager =
+        com.bylins.client.contextcommands.ContextCommandManager(
+            onCommand = { command -> send(command) },
+            getCurrentRoom = { mapManager.getCurrentRoom() }
+        )
         private set
     private val roomParser = com.bylins.client.mapper.RoomParser()
 
@@ -287,6 +290,7 @@ class ClientState {
     // Плагины - инициализируются после скриптинга
     private lateinit var pluginManager: com.bylins.client.plugins.PluginManager
     private val pluginEventBus = com.bylins.client.plugins.events.EventBus()
+    val pluginTabManager = com.bylins.client.plugins.ui.PluginTabManager()
 
     // Профили персонажей - инициализируется после скриптинга
     lateinit var profileManager: com.bylins.client.profiles.ProfileManager
@@ -358,6 +362,9 @@ class ClientState {
     val manaHistory = statsHistory.manaHistory
     val movementHistory = statsHistory.movementHistory
 
+    // Доступ к динамическим графикам
+    val dynamicCharts = chartManager.charts
+
     // Доступ к звукам
     val soundEnabled = soundManager.soundEnabled
     val soundVolume = soundManager.volume
@@ -415,20 +422,12 @@ class ClientState {
         )
 
         // Обновляем ссылку на getCurrentRoom в contextCommandManager
-        if (::contextCommandManager.isInitialized) {
-            contextCommandManager.updateGetCurrentRoom { mapManager.getCurrentRoom() }
-        }
+        contextCommandManager.updateGetCurrentRoom { mapManager.getCurrentRoom() }
 
         logger.info { "Switched to map database: $mapFile (${mapManager.rooms.value.size} rooms)" }
     }
 
     init {
-        // Инициализируем менеджер контекстных команд
-        contextCommandManager = com.bylins.client.contextcommands.ContextCommandManager(
-            onCommand = { command -> send(command) },
-            getCurrentRoom = { mapManager.getCurrentRoom() }
-        )
-
         // Регистрируем shutdown hook для корректного завершения
         Runtime.getRuntime().addShutdownHook(Thread {
             shutdown()
@@ -514,6 +513,21 @@ class ClientState {
         // Восстанавливаем стек профилей персонажей
         if (::profileManager.isInitialized && configData.activeProfileStack.isNotEmpty()) {
             profileManager.restoreStack(configData.activeProfileStack)
+        }
+
+        // Подписываемся на системные логи и пересылаем их в вкладку "Логи"
+        scope.launch {
+            var lastSize = 0
+            UiLogBuffer.entries.collect { entries ->
+                if (entries.size > lastSize) {
+                    // Добавляем только новые записи
+                    val newEntries = entries.drop(lastSize)
+                    newEntries.forEach { entry ->
+                        tabManager.addToLogsTab(entry.formatted())
+                    }
+                    lastSize = entries.size
+                }
+            }
         }
 
         // Завершаем инициализацию и сохраняем конфиг один раз
@@ -1493,8 +1507,8 @@ class ClientState {
                 telnetClient.addLocalOutput("  ID:          ${plugin.metadata.id}")
                 telnetClient.addLocalOutput("  Название:    ${plugin.metadata.name}")
                 telnetClient.addLocalOutput("  Версия:      ${plugin.metadata.version}")
-                telnetClient.addLocalOutput("  Автор:       ${plugin.metadata.author ?: "не указан"}")
-                telnetClient.addLocalOutput("  Описание:    ${plugin.metadata.description ?: "нет"}")
+                telnetClient.addLocalOutput("  Автор:       ${plugin.metadata.author.ifEmpty { "не указан" }}")
+                telnetClient.addLocalOutput("  Описание:    ${plugin.metadata.description.ifEmpty { "нет" }}")
                 telnetClient.addLocalOutput("  Состояние:   ${plugin.state}")
                 telnetClient.addLocalOutput("  JAR:         ${plugin.jarFile.name}")
                 if (plugin.metadata.dependencies.isNotEmpty()) {
@@ -2091,6 +2105,11 @@ class ClientState {
     }
 
     private fun doSaveConfig() {
+        // Синхронизируем стек профилей с текущим профилем подключения перед сохранением
+        if (::profileManager.isInitialized) {
+            saveActiveProfileStackToCurrentConnectionProfile()
+        }
+
         // Сохраняем комнату, на которую центрирована карта (или текущую комнату игрока как fallback)
         val lastMapRoomId = mapManager.viewCenterRoomId.value ?: mapManager.currentRoomId.value
         logger.info { "Saving config, lastMapRoomId: $lastMapRoomId" }
@@ -2229,17 +2248,56 @@ class ClientState {
     }
 
     fun setCurrentProfile(profileId: String?) {
+        // Сохраняем текущий стек профилей в старый профиль подключения
+        saveActiveProfileStackToCurrentConnectionProfile()
+
         _currentProfileId.value = profileId
-        // При выборе профиля обновляем кодировку и карту
+
+        // При выборе профиля обновляем кодировку, карту и стек профилей
         profileId?.let { id ->
             val profile = _connectionProfiles.value.find { it.id == id }
             profile?.let {
                 setEncoding(it.encoding)
                 switchMapDatabase(it.mapFile)
+                // Переключаем стек профилей персонажей
+                switchProfileStack(it.activeProfileStack)
             }
+        } ?: run {
+            // Если профиль не выбран - очищаем стек
+            profileManager.clearStack()
         }
+
         saveConfig()
         logger.info { "Set current profile: $profileId" }
+    }
+
+    /**
+     * Сохраняет текущий стек профилей персонажей в текущий профиль подключения
+     */
+    fun saveActiveProfileStackToCurrentConnectionProfile() {
+        val currentConnProfileId = _currentProfileId.value ?: return
+        val currentStack = profileManager.activeStack.value
+
+        _connectionProfiles.value = _connectionProfiles.value.map { connProfile ->
+            if (connProfile.id == currentConnProfileId) {
+                connProfile.copy(activeProfileStack = currentStack)
+            } else {
+                connProfile
+            }
+        }
+    }
+
+    /**
+     * Переключает стек профилей персонажей
+     */
+    private fun switchProfileStack(newStack: List<String>) {
+        // Очищаем текущий стек
+        profileManager.clearStack()
+
+        // Восстанавливаем новый стек
+        profileManager.restoreStack(newStack)
+
+        logger.info { "Switched profile stack to: $newStack" }
     }
 
     fun getCurrentProfile(): com.bylins.client.connection.ConnectionProfile? {
@@ -2543,7 +2601,9 @@ class ClientState {
                 msdpActions = createMsdpActions(),
                 gmcpActions = createGmcpActions(),
                 mapperActions = createMapperActions(),
-                statusActions = createStatusActions()
+                statusActions = createStatusActions(),
+                chartActions = createChartActions(),
+                storageActions = createStorageActions()
             )
 
             // Создаем ScriptManager
@@ -2911,6 +2971,16 @@ class ClientState {
             clearMapFunc = { mapManager.clearMap() },
             setCurrentRoomFunc = { roomId -> mapManager.setCurrentRoom(roomId) },
             isPluginLoadedFunc = { id -> pluginManager.isPluginLoaded(id) },
+            // Вкладки плагинов
+            registerPluginTabFunc = { tab -> pluginTabManager.registerTab(tab) },
+            unregisterPluginTabFunc = { tabId -> pluginTabManager.unregisterTab(tabId) },
+            // Callback-поиск комнат
+            findRoomsMatchingFunc = { predicate, maxResults ->
+                mapManager.findRoomsMatching(predicate, maxResults)
+            },
+            findNearestMatchingFunc = { predicate ->
+                mapManager.findNearestMatching(predicate)
+            },
             dataFolder = dataFolder
         )
     }
@@ -3305,6 +3375,54 @@ class ClientState {
             mapManager.clearPathHighlight()
         }
 
+        override fun searchRoomsWithFilter(filter: Any, maxResults: Int): List<Map<String, Any>> {
+            // Convert JS callback to Kotlin predicate
+            val predicate: (Map<String, Any>) -> Boolean = { roomMap ->
+                invokeJsCallbackWithResult(filter, roomMap) as? Boolean ?: false
+            }
+            return mapManager.findRoomsMatching(predicate, maxResults)
+        }
+
+        override fun findNearestRoomMatching(filter: Any): Map<String, Any>? {
+            // Convert JS callback to Kotlin predicate
+            val predicate: (Map<String, Any>) -> Boolean = { roomMap ->
+                invokeJsCallbackWithResult(filter, roomMap) as? Boolean ?: false
+            }
+            val result = mapManager.findNearestMatching(predicate) ?: return null
+            return mapOf(
+                "room" to result.first,
+                "path" to result.second
+            )
+        }
+
+        /**
+         * Invokes JavaScript callback and returns the result.
+         */
+        private fun invokeJsCallbackWithResult(callback: Any, vararg args: Any?): Any? {
+            return try {
+                // Try call method with return value
+                val methods = callback.javaClass.methods.filter { it.name == "call" }
+                for (method in methods) {
+                    try {
+                        if (method.parameterCount == 2) {
+                            return method.invoke(callback, null, args)
+                        }
+                    } catch (_: Exception) { }
+                }
+                // Fallback: try invoke
+                val invokeMethods = callback.javaClass.methods.filter { it.name == "invoke" }
+                for (method in invokeMethods) {
+                    try {
+                        return method.invoke(callback, *args)
+                    } catch (_: Exception) { }
+                }
+                null
+            } catch (e: Exception) {
+                logger.error { "Error invoking callback with result: ${e.message}" }
+                null
+            }
+        }
+
         /**
          * Invokes JavaScript callback using reflection (works with Nashorn and GraalVM)
          */
@@ -3486,6 +3604,69 @@ class ClientState {
 
         override fun exists(id: String): Boolean {
             return statusManager.exists(id)
+        }
+    }
+
+    private fun createChartActions() = object : com.bylins.client.scripting.ChartActions {
+        override fun createChart(id: String, options: Map<String, Any>) {
+            chartManager.createChart(id, options)
+        }
+
+        override fun removeChart(id: String) {
+            chartManager.removeChart(id)
+        }
+
+        override fun clearChart(id: String) {
+            chartManager.clearChart(id)
+        }
+
+        override fun addSeries(chartId: String, seriesId: String, options: Map<String, Any>) {
+            chartManager.addSeries(chartId, seriesId, options)
+        }
+
+        override fun removeSeries(chartId: String, seriesId: String) {
+            chartManager.removeSeries(chartId, seriesId)
+        }
+
+        override fun addDataPoint(chartId: String, seriesId: String, value: Double) {
+            chartManager.addDataPoint(chartId, seriesId, value)
+        }
+
+        override fun addDataPointExt(chartId: String, seriesId: String, value: Double, displayValue: Double) {
+            chartManager.addDataPoint(chartId, seriesId, value, displayValue)
+        }
+
+        override fun addChartEvent(chartId: String, label: String, color: String?) {
+            chartManager.addChartEvent(chartId, label, color)
+        }
+    }
+
+    /**
+     * Creates storage actions for script data persistence.
+     * Uses the script name as the script ID for storage isolation.
+     */
+    private fun createStorageActions() = object : com.bylins.client.scripting.StorageActions {
+        // Get current script ID from the API (set by ScriptManager when loading scripts)
+        private fun getCurrentScriptId(): String {
+            // Access the scriptManager to get current script name from API
+            // If not available, use "global" as fallback
+            return "global"  // Scripts can override this by passing their name
+        }
+
+        override fun setData(key: String, value: Any): Boolean {
+            return scriptStorage.setData(getCurrentScriptId(), key, value)
+        }
+
+        override fun getData(key: String): Any? {
+            return scriptStorage.getData(getCurrentScriptId(), key)
+        }
+
+        override fun deleteData(key: String): Boolean {
+            return scriptStorage.deleteData(getCurrentScriptId(), key)
+        }
+
+        override fun listDataKeys(prefix: String?): List<String> {
+            return scriptStorage.listDataKeys(getCurrentScriptId(), prefix)
         }
     }
 
