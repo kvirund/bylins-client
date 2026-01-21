@@ -10,6 +10,7 @@ import androidx.compose.ui.text.style.TextDecoration
 
 class AnsiParser {
     private val ESC = '\u001B'
+    private val TAB_WIDTH = 8 // Стандартная ширина табуляции
 
     // Кеш для переиспользования SpanStyle объектов (КРИТИЧНО для производительности)
     private val spanStyleCache = mutableMapOf<String, SpanStyle>()
@@ -57,7 +58,39 @@ class AnsiParser {
         }
     }
 
+    /**
+     * Заменяет табуляции на пробелы с учётом позиции в строке (tab stops)
+     */
+    private fun expandTabs(text: String): String {
+        if (!text.contains('\t')) return text
+
+        val result = StringBuilder()
+        var column = 0
+
+        for (char in text) {
+            when (char) {
+                '\t' -> {
+                    // Добавляем пробелы до следующего tab stop
+                    val spacesToAdd = TAB_WIDTH - (column % TAB_WIDTH)
+                    repeat(spacesToAdd) { result.append(' ') }
+                    column += spacesToAdd
+                }
+                '\n' -> {
+                    result.append(char)
+                    column = 0 // Сброс позиции в начале новой строки
+                }
+                else -> {
+                    result.append(char)
+                    column++
+                }
+            }
+        }
+
+        return result.toString()
+    }
+
     fun parse(text: String): AnnotatedString = buildAnnotatedString {
+        val expandedText = expandTabs(text)
         var currentPos = 0
         var currentFgColor: Color? = null
         var currentBgColor: Color? = null
@@ -65,12 +98,12 @@ class AnsiParser {
         var isItalic = false
         var isUnderline = false
 
-        while (currentPos < text.length) {
-            val escPos = text.indexOf(ESC, currentPos)
+        while (currentPos < expandedText.length) {
+            val escPos = expandedText.indexOf(ESC, currentPos)
 
             if (escPos == -1) {
                 // Нет больше escape последовательностей - применяем текущий стиль к оставшемуся тексту
-                val remaining = text.substring(currentPos)
+                val remaining = expandedText.substring(currentPos)
                 if (remaining.isNotEmpty()) {
                     pushStyle(createSpanStyle(currentFgColor, currentBgColor, isBold, isItalic, isUnderline))
                     append(remaining)
@@ -81,17 +114,17 @@ class AnsiParser {
 
             // Добавляем текст до escape последовательности
             if (escPos > currentPos) {
-                val span = text.substring(currentPos, escPos)
+                val span = expandedText.substring(currentPos, escPos)
                 pushStyle(createSpanStyle(currentFgColor, currentBgColor, isBold, isItalic, isUnderline))
                 append(span)
                 pop()
             }
 
             // Парсим escape последовательность
-            if (escPos + 1 < text.length && text[escPos + 1] == '[') {
-                val mPos = text.indexOf('m', escPos + 2)
+            if (escPos + 1 < expandedText.length && expandedText[escPos + 1] == '[') {
+                val mPos = expandedText.indexOf('m', escPos + 2)
                 if (mPos != -1) {
-                    val codes = text.substring(escPos + 2, mPos)
+                    val codes = expandedText.substring(escPos + 2, mPos)
                         .split(';')
                         .mapNotNull { it.toIntOrNull() }
 
