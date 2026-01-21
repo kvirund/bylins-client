@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,7 +35,8 @@ fun PluginsPanel(
     val pluginTabs by clientState.pluginTabManager.tabsState.collectAsState()
 
     // Текущая выбранная подвкладка: "config" или id вкладки плагина
-    var selectedSubTab by remember { mutableStateOf("config") }
+    // rememberSaveable сохраняет состояние между переключениями главных вкладок
+    var selectedSubTab by rememberSaveable { mutableStateOf("config") }
 
     // Если выбранная вкладка плагина была удалена, переключаемся на конфигурацию
     LaunchedEffect(pluginTabs) {
@@ -367,18 +369,21 @@ private fun PluginItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Кнопка вкл/выкл
-                    Switch(
-                        checked = plugin.state == PluginState.ENABLED,
-                        onCheckedChange = { enabled ->
-                            onToggle(plugin.metadata.id, enabled)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF4CAF50),
-                            checkedTrackColor = Color(0xFF81C784),
-                            uncheckedThumbColor = Color.Gray,
-                            uncheckedTrackColor = Color.DarkGray
+                    val isEnabled = plugin.state == PluginState.ENABLED
+                    Button(
+                        onClick = { onToggle(plugin.metadata.id, !isEnabled) },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = if (isEnabled) Color(0xFF4CAF50) else Color(0xFF757575)
+                        ),
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Text(
+                            text = if (isEnabled) "Стоп" else "Старт",
+                            color = Color.White,
+                            fontSize = 12.sp
                         )
-                    )
+                    }
 
                     // Кнопка перезагрузки
                     Button(
