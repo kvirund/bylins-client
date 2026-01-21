@@ -1,0 +1,306 @@
+package com.bylins.client.plugins.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+// SelectionContainer removed - it interferes with button clicks
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bylins.client.ui.theme.LocalAppColorScheme
+
+/**
+ * Renders a PluginUINode tree to Compose UI.
+ * This allows plugins to define their UI using universal primitives,
+ * and the client renders them consistently with the app theme.
+ */
+@Composable
+fun RenderPluginUI(
+    node: PluginUINode,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = LocalAppColorScheme.current
+
+    when (node) {
+        is PluginUINode.Empty -> {
+            // Empty - render nothing
+        }
+
+        is PluginUINode.Column -> {
+            Column(
+                modifier = modifier,
+                verticalArrangement = Arrangement.spacedBy(node.spacing.dp)
+            ) {
+                node.children.forEach { child ->
+                    RenderPluginUI(child)
+                }
+            }
+        }
+
+        is PluginUINode.Row -> {
+            Row(
+                modifier = modifier,
+                horizontalArrangement = Arrangement.spacedBy(node.spacing.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                node.children.forEach { child ->
+                    RenderPluginUI(child)
+                }
+            }
+        }
+
+        is PluginUINode.Box -> {
+            Box(
+                modifier = modifier.padding(node.padding.dp)
+            ) {
+                RenderPluginUI(node.child)
+            }
+        }
+
+        is PluginUINode.Scrollable -> {
+            val scrollState = rememberScrollState()
+            val scrollModifier = if (node.maxHeight != null) {
+                modifier.heightIn(max = node.maxHeight.dp)
+            } else {
+                modifier
+            }
+            Column(
+                modifier = scrollModifier.verticalScroll(scrollState)
+            ) {
+                RenderPluginUI(node.child)
+            }
+        }
+
+        is PluginUINode.Text -> {
+            val (fontSize, fontWeight) = when (node.style) {
+                PluginUINode.TextStyle.TITLE -> 16.sp to FontWeight.Bold
+                PluginUINode.TextStyle.SUBTITLE -> 14.sp to FontWeight.SemiBold
+                PluginUINode.TextStyle.BODY -> 12.sp to FontWeight.Normal
+                PluginUINode.TextStyle.CAPTION -> 10.sp to FontWeight.Normal
+                PluginUINode.TextStyle.MONOSPACE -> 12.sp to FontWeight.Normal
+            }
+            val fontFamily = when (node.style) {
+                PluginUINode.TextStyle.MONOSPACE -> FontFamily.Monospace
+                else -> FontFamily.Default
+            }
+            val textColor = when (node.style) {
+                PluginUINode.TextStyle.CAPTION -> colorScheme.onSurfaceVariant
+                else -> colorScheme.onSurface
+            }
+
+            Text(
+                text = node.text,
+                color = textColor,
+                fontSize = fontSize,
+                fontWeight = fontWeight,
+                fontFamily = fontFamily,
+                modifier = modifier
+            )
+        }
+
+        is PluginUINode.Button -> {
+            Button(
+                onClick = node.onClick,
+                enabled = node.enabled,
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = colorScheme.primary,
+                    disabledBackgroundColor = colorScheme.surface
+                ),
+                modifier = modifier
+            ) {
+                Text(
+                    text = node.text,
+                    color = if (node.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        is PluginUINode.TextField -> {
+            OutlinedTextField(
+                value = node.value,
+                onValueChange = node.onValueChange,
+                label = node.label?.let { { Text(it, color = colorScheme.onSurfaceVariant) } },
+                placeholder = node.placeholder?.let { { Text(it, color = colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) } },
+                colors = TextFieldDefaults.outlinedTextFieldColors(
+                    textColor = colorScheme.onSurface,
+                    focusedBorderColor = colorScheme.success,
+                    unfocusedBorderColor = colorScheme.border,
+                    backgroundColor = colorScheme.surface
+                ),
+                modifier = modifier
+            )
+        }
+
+        is PluginUINode.Checkbox -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = modifier
+            ) {
+                Checkbox(
+                    checked = node.checked,
+                    onCheckedChange = node.onCheckedChange,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = colorScheme.success,
+                        uncheckedColor = colorScheme.onSurfaceVariant
+                    )
+                )
+                Text(
+                    text = node.label,
+                    color = colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+        }
+
+        is PluginUINode.Slider -> {
+            Column(modifier = modifier) {
+                if (node.label != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = node.label,
+                            color = colorScheme.onSurface,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "${(node.value * 100).toInt()}%",
+                            color = colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+                Slider(
+                    value = node.value,
+                    onValueChange = node.onValueChange,
+                    valueRange = node.range,
+                    colors = SliderDefaults.colors(
+                        thumbColor = colorScheme.success,
+                        activeTrackColor = colorScheme.success,
+                        inactiveTrackColor = colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    )
+                )
+            }
+        }
+
+        is PluginUINode.ProgressBar -> {
+            Column(modifier = modifier) {
+                if (node.label != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = node.label,
+                            color = colorScheme.onSurface,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "${(node.progress * 100).toInt()}%",
+                            color = colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+                LinearProgressIndicator(
+                    progress = node.progress.coerceIn(0f, 1f),
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                    color = colorScheme.success,
+                    backgroundColor = colorScheme.surface
+                )
+            }
+        }
+
+        is PluginUINode.Dropdown -> {
+            var expanded by remember { mutableStateOf(false) }
+
+            Column(modifier = modifier) {
+                if (node.label != null) {
+                    Text(
+                        text = node.label,
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = node.options.getOrElse(node.selectedIndex) { "" },
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = colorScheme.onSurface,
+                            focusedBorderColor = colorScheme.success,
+                            unfocusedBorderColor = colorScheme.border
+                        )
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        modifier = Modifier.background(colorScheme.surface)
+                    ) {
+                        node.options.forEachIndexed { index, option ->
+                            DropdownMenuItem(
+                                onClick = {
+                                    node.onSelect(index)
+                                    expanded = false
+                                },
+                                modifier = Modifier.background(colorScheme.surface)
+                            ) {
+                                Text(option, color = colorScheme.onSurface)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        is PluginUINode.Divider -> {
+            Divider(
+                color = colorScheme.divider,
+                thickness = node.thickness.dp,
+                modifier = modifier
+            )
+        }
+
+        is PluginUINode.Spacer -> {
+            Spacer(modifier = modifier.height(node.height.dp))
+        }
+    }
+}
+
+/**
+ * Convenience Composable for rendering a PluginTab's content.
+ * Automatically observes the content StateFlow and re-renders on changes.
+ */
+@Composable
+fun RenderPluginTab(
+    tab: PluginTab,
+    modifier: Modifier = Modifier
+) {
+    val content by tab.content.collectAsState()
+    val colorScheme = LocalAppColorScheme.current
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colorScheme.background)
+            .padding(16.dp)
+    ) {
+        // SelectionContainer убран - он мешает кликам по кнопкам
+        RenderPluginUI(content)
+    }
+}

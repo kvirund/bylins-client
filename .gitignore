@@ -25,7 +25,7 @@ logs/
 
 ### User data ###
 config/*.json
-plugins/
+/plugins/
 
 ### User scripts (but keep README and examples) ###
 scripts/*

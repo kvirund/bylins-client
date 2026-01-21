@@ -1,0 +1,20 @@
+id: aibot
+name: AI Bot
+version: 1.0.0
+main: com.bylins.client.plugins.aibot.AIBotPlugin
+author: Bylins Client
+description: |
+  Интеллектуальный бот с возможностями:
+  - Автобой с выбором целей по приоритету
+  - Автолут золота и предметов
+  - Навигация по карте маппера
+  - Автобаффы
+  - LLM парсинг текста (Ollama/LangChain4j)
+  - Сбор данных для машинного обучения
+
+  Команды:
+  - #bot start [mode] - запуск (LEVELING, FARMING, EXPLORING)
+  - #bot stop - остановка
+  - #bot status - статус
+  - #bot config - конфигурация
+  - #bot llm init - инициализация LLM
