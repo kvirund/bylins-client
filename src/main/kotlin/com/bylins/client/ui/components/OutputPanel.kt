@@ -5,7 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -231,21 +232,21 @@ fun TabContent(
             .background(Color.Black)
             .padding(8.dp)
     ) {
-        // key() пересоздаёт SelectionContainer при изменении текста,
-        // предотвращая ошибку "layouts are not part of the same hierarchy"
-        key(limitedText.hashCode()) {
-            SelectionContainer {
-                Text(
-                    text = outputText,
-                    color = Color(0xFFBBBBBB),
-                    fontFamily = fontFamily,
-                    fontSize = fontSize.sp,
-                    lineHeight = (fontSize + 4).sp,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                )
-            }
-        }
+        // BasicTextField с readOnly для поддержки выделения текста
+        // без бага SelectionContainer "layouts are not part of the same hierarchy"
+        BasicTextField(
+            value = TextFieldValue(outputText),
+            onValueChange = {},
+            readOnly = true,
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = Color(0xFFBBBBBB),
+                fontFamily = fontFamily,
+                fontSize = fontSize.sp,
+                lineHeight = (fontSize + 4).sp
+            ),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+        )
     }
 }
