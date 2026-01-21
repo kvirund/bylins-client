@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,8 +34,13 @@ fun PluginsPanel(
     val pluginTabs by clientState.pluginTabManager.tabsState.collectAsState()
 
     // Текущая выбранная подвкладка: "config" или id вкладки плагина
-    // rememberSaveable сохраняет состояние между переключениями главных вкладок
-    var selectedSubTab by rememberSaveable { mutableStateOf("config") }
+    // Хранится в ClientState чтобы сохраняться между переключениями главных вкладок
+    var selectedSubTab by remember { mutableStateOf(clientState.selectedPluginSubTab) }
+
+    // Синхронизируем с ClientState при изменении
+    LaunchedEffect(selectedSubTab) {
+        clientState.selectedPluginSubTab = selectedSubTab
+    }
 
     // Если выбранная вкладка плагина была удалена, переключаемся на конфигурацию
     LaunchedEffect(pluginTabs) {

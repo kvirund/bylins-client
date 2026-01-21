@@ -395,6 +395,9 @@ class ClientState {
     val tabs = tabManager.tabs
     val activeTabId = tabManager.activeTabId
 
+    // Выбранная подвкладка в панели плагинов (сохраняется между переключениями)
+    var selectedPluginSubTab: String = "config"
+
     // Доступ к карте (используем getters для поддержки переключения mapManager)
     val mapRooms get() = mapManager.rooms
     val currentRoomId get() = mapManager.currentRoomId
