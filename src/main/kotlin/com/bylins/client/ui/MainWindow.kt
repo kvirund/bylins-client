@@ -14,6 +14,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.ui.components.*
 import com.bylins.client.ui.theme.AppTheme
@@ -26,7 +27,7 @@ data class TabDef(val id: String, val name: String)
 
 // Все доступные вкладки
 val ALL_TABS = listOf(
-    TabDef("main", "Главная"),
+    TabDef("main", "Вывод"),
     TabDef("triggers", "Триггеры"),
     TabDef("aliases", "Алиасы"),
     TabDef("hotkeys", "Хоткеи"),
@@ -36,7 +37,6 @@ val ALL_TABS = listOf(
     TabDef("map", "Карта"),
     TabDef("scripts", "Скрипты"),
     TabDef("plugins", "Плагины"),
-    TabDef("bot", "AI-Бот"),
     TabDef("msdp", "MSDP"),
     TabDef("gmcp", "GMCP"),
     TabDef("settings", "Настройки"),
@@ -183,12 +183,11 @@ fun MainWindow() {
                 ) {
                     when (selectedTabId) {
                         "main" -> {
-                            // Главный вид с выводом текста и боковой панелью
+                            // Вывод от сервера с боковой панелью
                             val miniMapWidth by clientState.miniMapWidth.collectAsState()
                             val density = LocalDensity.current
 
                             Row(modifier = Modifier.fillMaxSize()) {
-                                // Область вывода текста
                                 OutputPanel(
                                     clientState = clientState,
                                     modifier = Modifier
@@ -196,7 +195,7 @@ fun MainWindow() {
                                         .fillMaxHeight()
                                 )
 
-                                // Draggable divider (вертикальный разделитель)
+                                // Draggable divider
                                 Box(
                                     modifier = Modifier
                                         .width(4.dp)
@@ -206,17 +205,14 @@ fun MainWindow() {
                                         .pointerInput(Unit) {
                                             detectDragGestures { change, dragAmount ->
                                                 change.consume()
-                                                // Уменьшаем ширину при движении вправо (положительный dragAmount.x)
-                                                // и увеличиваем при движении влево (отрицательный dragAmount.x)
                                                 val newWidth = (miniMapWidth - dragAmount.x / density.density).toInt()
                                                 clientState.setMiniMapWidth(newWidth)
                                             }
                                         }
                                 )
 
-                                // Боковая панель со статусом - показываем только если есть элементы
+                                // Боковая панель со статусом
                                 val statusElements by clientState.statusManager.elements.collectAsState()
-
                                 if (statusElements.isNotEmpty()) {
                                     Column(
                                         modifier = Modifier
@@ -290,15 +286,8 @@ fun MainWindow() {
                             )
                         }
                         "plugins" -> {
-                            // Панель плагинов
+                            // Панель плагинов с подвкладками
                             PluginsPanel(
-                                clientState = clientState,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                        "bot" -> {
-                            // Панель AI-бота
-                            BotPanel(
                                 clientState = clientState,
                                 modifier = Modifier.fillMaxSize()
                             )

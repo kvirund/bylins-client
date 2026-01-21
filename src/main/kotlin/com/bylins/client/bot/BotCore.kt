@@ -1,9 +1,9 @@
 package com.bylins.client.bot
 
 import com.bylins.client.bot.combat.CombatManager
+import com.bylins.client.bot.llm.LLMParser
 import com.bylins.client.bot.navigation.Navigator
-import com.bylins.client.bot.perception.EntityTracker
-import com.bylins.client.bot.perception.CombatParser
+import com.bylins.client.bot.perception.*
 import com.bylins.client.scripting.ScriptEvent
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,7 +24,9 @@ class BotCore(
     private val getMsdpValue: (String) -> Any?,
     private val getCurrentRoom: () -> Map<String, Any>?,
     private val findPath: (String) -> List<String>?,
-    private val fireEvent: (ScriptEvent, Any?) -> Unit
+    private val fireEvent: (ScriptEvent, Any?) -> Unit,
+    // Callback для поиска ближайшей комнаты по условию (для исследования)
+    private val findNearestMatching: ((Map<String, Any>) -> Boolean) -> Pair<Map<String, Any>, List<String>>? = { null }
 ) {
     // Состояние
     val stateMachine = BotStateMachine()
@@ -41,6 +43,22 @@ class BotCore(
     val combatParser by lazy { CombatParser(this) }
     val combatManager by lazy { CombatManager(this) }
     val navigator by lazy { Navigator(this) }
+
+    // LLM и адаптивные парсеры
+    var llmParser: LLMParser? = null
+        private set
+    val promptParser by lazy {
+        PromptParser().apply {
+            // Подписываемся на изменения опыта для эмпирического обучения урона
+            onExpChange = { expDelta, previousPrompt, currentPrompt ->
+                handleExpChange(expDelta, previousPrompt, currentPrompt)
+            }
+        }
+    }
+    val adaptiveCombatParser by lazy { AdaptiveCombatParser(database, llmParser) }
+
+    // Буфер последних боевых сообщений для корреляции с изменением опыта
+    private val recentCombatMessages = mutableListOf<CombatMessage>()
 
     // Coroutine scope для асинхронных операций
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -193,37 +211,106 @@ class BotCore(
 
     /**
      * Обновить кэшированное состояние персонажа
+     * Использует MSDP + PromptParser как fallback
      */
     private fun updateCharacterState() {
-        val hp = getMsdpValue("HIT")?.toString()?.toIntOrNull() ?: return
-        val maxHp = getMsdpValue("MAX_HIT")?.toString()?.toIntOrNull() ?: 1
-        val mana = getMsdpValue("MANA")?.toString()?.toIntOrNull() ?: 0
-        val maxMana = getMsdpValue("MAX_MANA")?.toString()?.toIntOrNull() ?: 1
-        val move = getMsdpValue("MOVE")?.toString()?.toIntOrNull() ?: 0
-        val maxMove = getMsdpValue("MAX_MOVE")?.toString()?.toIntOrNull() ?: 1
-        val level = getMsdpValue("LEVEL")?.toString()?.toIntOrNull() ?: 1
-        val exp = getMsdpValue("EXPERIENCE")?.toString()?.toLongOrNull() ?: 0
-        val gold = getMsdpValue("GOLD")?.toString()?.toIntOrNull() ?: 0
+        // Bylins MSDP структура:
+        // - state = {CURRENT_HP=268, CURRENT_MOVE=107}
+        // - max_hit, max_move (lowercase)
+        // - level, experience, gold, room
 
-        val room = getCurrentRoom()
-        val roomId = room?.get("id") as? String
-        val zoneId = room?.get("zone") as? String
+        // Получаем state как Map
+        @Suppress("UNCHECKED_CAST")
+        val stateMap = getMsdpValue("state") as? Map<String, Any>
+            ?: getMsdpValue("STATE") as? Map<String, Any>
 
-        // Определяем позицию из MSDP или по косвенным признакам
-        val positionStr = getMsdpValue("POSITION")?.toString() ?: "STANDING"
-        val position = try {
-            Position.valueOf(positionStr.uppercase())
-        } catch (e: Exception) {
-            Position.STANDING
+        // HP из MSDP state или из PromptParser
+        val promptData = promptParser.lastPromptData
+        val hp = stateMap?.get("CURRENT_HP")?.toString()?.toIntOrNull()
+            ?: stateMap?.get("current_hp")?.toString()?.toIntOrNull()
+            ?: promptData?.hp
+
+        if (hp == null) {
+            if (_characterState.value == null) {
+                log("Ожидание данных HP (MSDP state или промпт)...")
+            }
+            return
         }
 
-        val isInCombat = position == Position.FIGHTING || combatManager.isInCombat()
+        val maxHp = getMsdpValue("max_hit")?.toString()?.toIntOrNull()
+            ?: getMsdpValue("MAX_HIT")?.toString()?.toIntOrNull()
+            ?: promptData?.maxHp
+            ?: 1
+
+        // Move: MSDP state или промпт (M в промпте = Move, не Mana!)
+        val move = stateMap?.get("CURRENT_MOVE")?.toString()?.toIntOrNull()
+            ?: stateMap?.get("current_move")?.toString()?.toIntOrNull()
+            ?: promptData?.move
+            ?: 0
+
+        val maxMove = getMsdpValue("max_move")?.toString()?.toIntOrNull()
+            ?: getMsdpValue("MAX_MOVE")?.toString()?.toIntOrNull()
+            ?: promptData?.maxMove
+            ?: 1
+
+        // В Былинах нет маны - используется система заучивания заклинаний
+
+        val level = getMsdpValue("level")?.toString()?.toIntOrNull()
+            ?: getMsdpValue("LEVEL")?.toString()?.toIntOrNull()
+            ?: 1
+
+        val exp = getMsdpValue("experience")?.toString()?.toLongOrNull()
+            ?: getMsdpValue("EXPERIENCE")?.toString()?.toLongOrNull()
+            ?: 0
+
+        // Gold может быть Map {POCKET=X, BANK=Y}
+        val goldRaw = getMsdpValue("gold") ?: getMsdpValue("GOLD")
+        @Suppress("UNCHECKED_CAST")
+        val gold = when (goldRaw) {
+            is Number -> goldRaw.toInt()
+            is Map<*, *> -> (goldRaw["POCKET"] ?: goldRaw["pocket"])?.toString()?.toIntOrNull() ?: 0
+            else -> goldRaw?.toString()?.toIntOrNull() ?: 0
+        }
+
+        // Room из MSDP
+        @Suppress("UNCHECKED_CAST")
+        val roomMap = getMsdpValue("room") as? Map<String, Any>
+            ?: getMsdpValue("ROOM") as? Map<String, Any>
+
+        val roomId = roomMap?.get("VNUM")?.toString()
+            ?: roomMap?.get("vnum")?.toString()
+            ?: getCurrentRoom()?.get("id") as? String
+
+        val zoneId = roomMap?.get("ZONE")?.toString()
+            ?: roomMap?.get("zone")?.toString()
+            ?: getCurrentRoom()?.get("zone") as? String
+
+        // TERRAIN из MSDP room (тип поверхности: "Внутри", "Город", "Лес" и т.д.)
+        val terrain = roomMap?.get("TERRAIN")?.toString()
+            ?: roomMap?.get("terrain")?.toString()
+
+        // EXITS из MSDP room (может быть Map<String, vnum> или List<String>)
+        val exitsRaw = roomMap?.get("EXITS") ?: roomMap?.get("exits")
+        @Suppress("UNCHECKED_CAST")
+        val exits: List<String> = when (exitsRaw) {
+            is Map<*, *> -> exitsRaw.keys.mapNotNull { it?.toString() }
+            is List<*> -> exitsRaw.mapNotNull { it?.toString() }
+            is String -> exitsRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            else -> promptData?.exits ?: emptyList()
+        }
+
+        // Позиция из промпта (MSDP её не даёт напрямую)
+        val position = when {
+            promptParser.isInCombat() -> Position.FIGHTING
+            promptData?.position != null -> promptData.position
+            else -> Position.STANDING
+        }
+
+        val isInCombat = position == Position.FIGHTING || combatManager.isInCombat() || promptParser.isInCombat()
 
         _characterState.value = CharacterState(
             hp = hp,
             maxHp = maxHp,
-            mana = mana,
-            maxMana = maxMana,
             move = move,
             maxMove = maxMove,
             level = level,
@@ -231,8 +318,10 @@ class BotCore(
             position = position,
             roomId = roomId,
             zoneId = zoneId,
+            terrain = terrain,
+            exits = exits,
             isInCombat = isInCombat,
-            targetName = combatManager.currentTarget?.name,
+            targetName = combatManager.currentTarget?.name ?: promptData?.targetName,
             targetHpPercent = combatManager.currentTarget?.hpPercent,
             gold = gold
         )
@@ -288,45 +377,65 @@ class BotCore(
     // ============================================
 
     private fun handleStarting() {
-        log("Starting: checking initial conditions")
+        val charState = _characterState.value
+        if (charState == null) {
+            log("Starting: ожидание данных персонажа...")
+            return
+        }
 
-        val charState = _characterState.value ?: return
+        log("Starting: HP=${charState.hp}/${charState.maxHp} (${charState.hpPercent}%), room=${charState.roomId}, exits=${charState.exits}")
+
         val cfg = config.value
 
         // Проверяем баффы
         if (cfg.autoBuffs && needsBuffs()) {
+            log("Starting: нужны баффы, переход в BUFFING")
             stateMachine.transition(BotTransition.BUFFS_NEEDED)
             return
         }
 
         // Проверяем HP для отдыха
         if (charState.hpPercent < cfg.restHpPercent) {
+            log("Starting: низкий HP (${charState.hpPercent}% < ${cfg.restHpPercent}%), переход в RESTING")
             stateMachine.transition(BotTransition.LOW_HP)
+            return
+        }
+
+        // В режиме EXPLORING сразу переходим в исследование
+        if (cfg.mode == BotMode.EXPLORING) {
+            log("Starting: режим EXPLORING, переход в EXPLORING state")
+            stateMachine.transition(BotTransition.NO_PATH)
             return
         }
 
         // Ищем путь или переходим к исследованию
         if (navigator.hasTarget() || navigator.findNextTarget()) {
+            log("Starting: цель найдена, переход в TRAVELING")
             stateMachine.transition(BotTransition.PATH_FOUND)
         } else {
-            // Нет цели - исследуем
-            stateMachine.transition(BotTransition.PATH_FOUND)
+            log("Starting: цель не найдена, переход в EXPLORING")
+            stateMachine.transition(BotTransition.NO_PATH)
         }
     }
 
     private fun handleTraveling() {
         // Проверяем мобов в комнате
         val mobs = entityTracker.getMobsInRoom()
-        if (mobs.isNotEmpty() && config.value.autoAttack) {
-            val targetMob = combatManager.selectTarget(mobs)
-            if (targetMob != null) {
-                stateMachine.transition(BotTransition.ENEMY_DETECTED)
-                return
+        if (mobs.isNotEmpty()) {
+            log("Traveling: мобы в комнате: ${mobs.map { it.name }}")
+            if (config.value.autoAttack) {
+                val targetMob = combatManager.selectTarget(mobs)
+                if (targetMob != null) {
+                    log("Traveling: атакуем ${targetMob.name}")
+                    stateMachine.transition(BotTransition.ENEMY_DETECTED)
+                    return
+                }
             }
         }
 
         // Проверяем баффы
         if (config.value.autoBuffs && needsBuffs()) {
+            log("Traveling: нужны баффы")
             stateMachine.transition(BotTransition.BUFFS_NEEDED)
             return
         }
@@ -366,13 +475,11 @@ class BotCore(
         val cfg = config.value
 
         // Проверяем достаточно ли HP
+        // В Былинах нет маны - заклинания заучиваются
         if (charState.hpPercent >= cfg.restHpPercent) {
-            // Проверяем ману
-            if (charState.manaPercent >= cfg.restManaPercent || !cfg.autoBuffs) {
-                send("встать")
-                stateMachine.transition(BotTransition.HP_RECOVERED)
-                return
-            }
+            send("встать")
+            stateMachine.transition(BotTransition.HP_RECOVERED)
+            return
         }
 
         // Продолжаем отдыхать
@@ -420,11 +527,16 @@ class BotCore(
     }
 
     private fun handleExploring() {
+        val charState = _characterState.value
+        log("handleExploring: room=${charState?.roomId}, exits=${charState?.exits}, terrain=${charState?.terrain}")
+
         // Ищем новую цель для исследования
         if (navigator.findNextTarget()) {
+            log("handleExploring: цель найдена, переход в TRAVELING")
             stateMachine.transition(BotTransition.PATH_FOUND)
         } else {
             // Нет куда идти - пробуем случайное направление
+            log("handleExploring: цель не найдена, пробую случайное направление")
             navigator.exploreRandom()
         }
     }
@@ -460,7 +572,8 @@ class BotCore(
         return false
     }
 
-    private fun hasAffect(affectName: String): Boolean {
+    @Suppress("UNUSED_PARAMETER")
+    private fun hasAffect(_affectName: String): Boolean {
         // TODO: Реализовать проверку аффектов через MSDP/парсинг
         return false
     }
@@ -485,14 +598,193 @@ class BotCore(
     fun getRoom(): Map<String, Any>? = getCurrentRoom()
 
     /**
+     * Найти ближайшую комнату, удовлетворяющую условию
+     * Возвращает пару (комната, путь) или null
+     */
+    fun findNearestRoom(predicate: (Map<String, Any>) -> Boolean): Pair<Map<String, Any>, List<String>>? {
+        return findNearestMatching(predicate)
+    }
+
+    /**
+     * Найти путь к комнате по ID
+     */
+    fun findPathToRoom(roomId: String): List<String>? {
+        return findPath(roomId)
+    }
+
+    /**
      * Обработать входящую строку от сервера
      */
     fun processLine(line: String) {
-        // Парсим боевые сообщения
+        // Парсим промпт для определения состояния боя
+        val combatStateChanges = promptParser.processPrompt(line)
+        for (change in combatStateChanges) {
+            handleCombatStateChange(change)
+        }
+
+        // Если в бою, парсим боевые сообщения адаптивным парсером
+        if (promptParser.isInCombat()) {
+            scope.launch {
+                val combatMessage = adaptiveCombatParser.parseMessage(line)
+                if (combatMessage != null) {
+                    handleCombatMessage(combatMessage)
+                }
+            }
+        }
+
+        // Парсим боевые сообщения (старый rule-based парсер)
         combatParser.parseLine(line)
 
         // Обновляем трекер сущностей
         entityTracker.processLine(line)
+    }
+
+    /**
+     * Обработать изменение состояния боя (из PromptParser)
+     */
+    private fun handleCombatStateChange(change: CombatStateChange) {
+        when (change) {
+            is CombatStateChange.CombatStarted -> {
+                log("Combat started with: ${change.targetName}")
+                combatManager.onCombatStarted(change.targetName, change.targetCondition)
+                fireEvent(ScriptEvent.ON_COMBAT_START, mapOf(
+                    "target" to change.targetName,
+                    "targetCondition" to (change.targetCondition ?: "unknown")
+                ))
+                // Переводим FSM в боевой режим если бот активен
+                if (stateMachine.isActive() && stateMachine.currentState.value != BotStateType.COMBAT) {
+                    stateMachine.transition(BotTransition.ENEMY_DETECTED)
+                }
+            }
+            is CombatStateChange.CombatEnded -> {
+                log("Combat ended: ${change.reason}")
+                combatManager.onCombatEnded(change.reason)
+                fireEvent(ScriptEvent.ON_COMBAT_END, mapOf(
+                    "reason" to change.reason.name
+                ))
+            }
+            is CombatStateChange.TargetChanged -> {
+                log("Target changed to: ${change.newTarget}")
+                combatManager.onTargetChanged(change.newTarget, change.newCondition)
+            }
+            is CombatStateChange.TargetConditionChanged -> {
+                log("Target ${change.targetName} condition: ${change.oldCondition} -> ${change.newCondition}")
+                combatManager.onTargetConditionChanged(change.targetName, change.newCondition)
+            }
+            is CombatStateChange.PlayerConditionChanged -> {
+                log("Player condition: ${change.oldCondition} -> ${change.newCondition}")
+            }
+        }
+    }
+
+    /**
+     * Обработать распознанное боевое сообщение
+     */
+    private fun handleCombatMessage(message: CombatMessage) {
+        // Добавляем в буфер для корреляции с изменением опыта
+        if (message.type == CombatMessageType.DAMAGE_DEALT || message.type == CombatMessageType.DAMAGE_RECEIVED) {
+            recentCombatMessages.add(message)
+            // Ограничиваем размер буфера (между промптами обычно не больше 4-6 сообщений)
+            if (recentCombatMessages.size > 10) {
+                recentCombatMessages.removeAt(0)
+            }
+        }
+
+        when (message.type) {
+            CombatMessageType.DAMAGE_DEALT -> {
+                // Зафиксировать нанесённый урон
+                combatManager.onDamageDealt(message.target, message.intensity)
+            }
+            CombatMessageType.DAMAGE_RECEIVED -> {
+                // Зафиксировать полученный урон
+                combatManager.onDamageReceived(message.source, message.intensity)
+            }
+            CombatMessageType.MOB_DEATH -> {
+                // Моб убит
+                log("Mob killed: ${message.target}")
+                currentSession?.totalKills = (currentSession?.totalKills ?: 0) + 1
+                fireEvent(ScriptEvent.ON_MOB_KILLED, mapOf(
+                    "name" to (message.target ?: "unknown")
+                ))
+            }
+            CombatMessageType.PLAYER_DEATH -> {
+                // Игрок погиб
+                handleDeath()
+            }
+            CombatMessageType.PLAYER_FLED -> {
+                // Игрок сбежал
+                log("Player fled")
+                fireEvent(ScriptEvent.ON_COMBAT_END, mapOf("reason" to "PLAYER_FLED"))
+            }
+            CombatMessageType.MOB_FLED -> {
+                // Моб сбежал
+                log("Mob fled: ${message.source}")
+                fireEvent(ScriptEvent.ON_COMBAT_END, mapOf("reason" to "MOB_FLED"))
+            }
+            CombatMessageType.EXP_GAIN -> {
+                // Получен опыт
+                message.amount?.let { exp ->
+                    currentSession?.totalExpGained = (currentSession?.totalExpGained ?: 0) + exp
+                    fireEvent(ScriptEvent.ON_EXP_GAIN, exp)
+                }
+            }
+            CombatMessageType.LEVEL_UP -> {
+                // Повышение уровня
+                log("Level up: ${message.amount}")
+                fireEvent(ScriptEvent.ON_LEVEL_UP, message.amount)
+            }
+            else -> { /* MISS, SKILL_USED, AFFECT_APPLIED, AFFECT_EXPIRED, UNKNOWN */ }
+        }
+    }
+
+    /**
+     * Инициализировать LLM парсер
+     */
+    fun initializeLLM(baseUrl: String = "http://localhost:11434", modelName: String = "llama3"): Boolean {
+        llmParser = LLMParser(baseUrl, modelName)
+        val success = llmParser?.initialize() ?: false
+        if (success) {
+            echo("[BOT] LLM парсер инициализирован: $modelName")
+        } else {
+            echo("[BOT] Не удалось инициализировать LLM парсер")
+        }
+        return success
+    }
+
+    /**
+     * Обработать изменение опыта (для эмпирического обучения урона)
+     *
+     * Когда получен опыт (expToLevel уменьшился), мы можем соотнести его
+     * с недавними боевыми сообщениями для оценки урона.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun handleExpChange(expDelta: Int, _previousPrompt: PromptData?, _currentPrompt: PromptData) {
+        if (!promptParser.isInCombat()) {
+            // Вне боя - очищаем буфер
+            recentCombatMessages.clear()
+            return
+        }
+
+        // В бою: опыт получен за удары
+        // Если в буфере есть сообщения о нанесённом уроне, можем оценить урон
+        val damageMessages = recentCombatMessages.filter {
+            it.type == CombatMessageType.DAMAGE_DEALT
+        }
+
+        if (damageMessages.isNotEmpty()) {
+            // Примерный расчёт: expDelta распределяется между ударами
+            // (упрощённо - равномерно, в реальности зависит от урона каждого удара)
+            val avgExpPerHit = expDelta / damageMessages.size
+            log("Exp gained: $expDelta from ${damageMessages.size} hits (~$avgExpPerHit exp/hit)")
+
+            // Сохраняем статистику для каждого уникального текста удара
+            for (msg in damageMessages) {
+                database.recordHitExp(msg.rawText, avgExpPerHit)
+            }
+        }
+
+        // Очищаем буфер после обработки промпта
+        recentCombatMessages.clear()
     }
 
     /**

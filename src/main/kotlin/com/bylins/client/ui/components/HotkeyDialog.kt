@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,7 +73,9 @@ fun HotkeyDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier.width(500.dp),
+            modifier = Modifier
+                .width(500.dp)
+                .heightIn(max = 600.dp),
             backgroundColor = colorScheme.surface,
             elevation = 8.dp
         ) {
@@ -88,6 +92,14 @@ fun HotkeyDialog(
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
+
+                // Прокручиваемый контент
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(scrollState)
+                ) {
 
                 // Выбор целевого профиля (только для нового)
                 if (isNewHotkey && availableProfiles.isNotEmpty()) {
@@ -304,12 +316,14 @@ fun HotkeyDialog(
                         )
                     }
                 }
+                } // Конец прокручиваемого контента
 
-                // Кнопки
+                // Разделитель
+                Divider(color = colorScheme.divider, modifier = Modifier.padding(vertical = 8.dp))
+
+                // Кнопки (sticky)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                 ) {
                     Button(

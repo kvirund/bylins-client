@@ -282,6 +282,74 @@ class Pathfinder {
     }
 
     /**
+     * Ищет комнаты с произвольным фильтром.
+     *
+     * @param rooms Карта всех комнат
+     * @param predicate Функция-фильтр для комнат
+     * @param maxResults Максимальное количество результатов
+     * @return Список комнат, удовлетворяющих условию
+     */
+    fun findRoomsMatching(
+        rooms: Map<String, Room>,
+        predicate: (Room) -> Boolean,
+        maxResults: Int = 100
+    ): List<Room> {
+        return rooms.values
+            .filter(predicate)
+            .take(maxResults)
+    }
+
+    /**
+     * Находит ближайшую комнату, удовлетворяющую условию (BFS).
+     *
+     * @param rooms Карта всех комнат
+     * @param startRoomId ID начальной комнаты
+     * @param predicate Функция-фильтр для комнат
+     * @return Пара (комната, путь) или null если не найдено
+     */
+    fun findNearestMatching(
+        rooms: Map<String, Room>,
+        startRoomId: String,
+        predicate: (Room) -> Boolean
+    ): Pair<Room, List<Direction>>? {
+        val startRoom = rooms[startRoomId] ?: return null
+
+        // Если стартовая комната соответствует условию
+        if (predicate(startRoom)) {
+            return Pair(startRoom, emptyList())
+        }
+
+        val queue: Queue<PathNode> = LinkedList()
+        val visited = mutableSetOf<String>()
+
+        queue.offer(PathNode(startRoomId, emptyList()))
+        visited.add(startRoomId)
+
+        while (queue.isNotEmpty()) {
+            val current = queue.poll()
+            val currentRoom = rooms[current.roomId] ?: continue
+
+            for ((direction, exit) in currentRoom.exits) {
+                val nextRoomId = exit.targetRoomId
+                if (nextRoomId in visited) continue
+
+                val nextRoom = rooms[nextRoomId] ?: continue
+                val newPath = current.path + direction
+
+                // Если нашли комнату, удовлетворяющую условию
+                if (predicate(nextRoom)) {
+                    return Pair(nextRoom, newPath)
+                }
+
+                queue.offer(PathNode(nextRoomId, newPath))
+                visited.add(nextRoomId)
+            }
+        }
+
+        return null
+    }
+
+    /**
      * Вспомогательный класс для хранения узла пути (BFS)
      */
     private data class PathNode(

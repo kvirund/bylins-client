@@ -220,7 +220,8 @@ class EntityTracker(private val bot: BotCore) {
     /**
      * Парсить описание комнаты для извлечения сущностей
      */
-    fun parseRoomDescription(description: String, mobList: String?) {
+    @Suppress("UNUSED_PARAMETER")
+    fun parseRoomDescription(_description: String, mobList: String?) {
         // Очищаем текущие данные
         mobsInRoom.clear()
 

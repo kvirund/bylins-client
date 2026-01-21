@@ -17,7 +17,6 @@ data class BotConfig(
     // Настройки безопасности
     var fleeHpPercent: Int = 20,          // Убегать при HP ниже этого %
     var restHpPercent: Int = 70,          // Отдыхать пока HP ниже этого %
-    var restManaPercent: Int = 30,        // Отдыхать пока мана ниже этого %
     var maxDeathsPerSession: Int = 3,     // Макс. смертей до автостопа
     var autoRecallOnLowHp: Boolean = true, // Авто-рекол при низком HP
     var safeZones: List<String> = emptyList(), // Безопасные зоны для отдыха
@@ -72,7 +71,6 @@ data class BotConfig(
         "autoStart" to autoStart,
         "fleeHpPercent" to fleeHpPercent,
         "restHpPercent" to restHpPercent,
-        "restManaPercent" to restManaPercent,
         "maxDeathsPerSession" to maxDeathsPerSession,
         "autoRecallOnLowHp" to autoRecallOnLowHp,
         "safeZones" to safeZones,
@@ -116,7 +114,6 @@ data class BotConfig(
             map["autoStart"]?.let { config.autoStart = it as? Boolean ?: false }
             map["fleeHpPercent"]?.let { config.fleeHpPercent = (it as? Number)?.toInt() ?: 20 }
             map["restHpPercent"]?.let { config.restHpPercent = (it as? Number)?.toInt() ?: 70 }
-            map["restManaPercent"]?.let { config.restManaPercent = (it as? Number)?.toInt() ?: 30 }
             map["maxDeathsPerSession"]?.let { config.maxDeathsPerSession = (it as? Number)?.toInt() ?: 3 }
             map["autoRecallOnLowHp"]?.let { config.autoRecallOnLowHp = it as? Boolean ?: true }
             @Suppress("UNCHECKED_CAST")

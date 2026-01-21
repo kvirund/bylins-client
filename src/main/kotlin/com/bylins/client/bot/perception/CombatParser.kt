@@ -318,7 +318,8 @@ class CombatParser(private val bot: BotCore) {
     /**
      * Получить лог боевых событий для API
      */
-    fun getCombatLogAsMap(limit: Int): List<Map<String, Any>> {
+    @Suppress("UNUSED_PARAMETER")
+    fun getCombatLogAsMap(_limit: Int): List<Map<String, Any>> {
         // TODO: Хранить историю событий
         return emptyList()
     }

@@ -30,21 +30,40 @@ class TabManager {
         maxLines = 1000  // Уменьшено с 2000
     )
 
+    /**
+     * Вкладка системных логов (всегда существует)
+     */
+    private val logsTab = Tab(
+        id = "logs",
+        name = "Логи",
+        filters = emptyList(),
+        captureMode = CaptureMode.COPY,
+        maxLines = 500
+    )
+
     init {
-        // Добавляем главную вкладку
-        _tabs.value = listOf(mainTab)
+        // Добавляем системные вкладки (логи в конце - системная)
+        _tabs.value = listOf(mainTab, logsTab)
         _activeTabId.value = "main"
     }
 
     /**
-     * Добавляет новую вкладку
+     * Добавляет новую вкладку (перед системной вкладкой "Логи")
      */
     fun addTab(tab: Tab) {
         if (_tabs.value.any { it.id == tab.id }) {
             logger.info { "Tab with id ${tab.id} already exists" }
             return
         }
-        _tabs.value = _tabs.value + tab
+        // Вставляем перед logsTab (который всегда последний)
+        val current = _tabs.value.toMutableList()
+        val logsIndex = current.indexOfFirst { it.id == "logs" }
+        if (logsIndex >= 0) {
+            current.add(logsIndex, tab)
+        } else {
+            current.add(tab)
+        }
+        _tabs.value = current
     }
 
     /**
@@ -81,8 +100,8 @@ class TabManager {
      * Удаляет вкладку
      */
     fun removeTab(id: String) {
-        if (id == "main") {
-            logger.info { "Cannot remove main tab" }
+        if (id == "main" || id == "logs") {
+            logger.info { "Cannot remove system tab: $id" }
             return
         }
         _tabs.value = _tabs.value.filter { it.id != id }
@@ -185,6 +204,17 @@ class TabManager {
     }
 
     /**
+     * Добавляет текст в вкладку системных логов
+     */
+    fun addToLogsTab(text: String) {
+        if (text.isEmpty()) return
+
+        val isActive = _activeTabId.value == "logs"
+        logsTab.appendText(text, markUnread = !isActive)
+        logsTab.flush()
+    }
+
+    /**
      * Очищает все вкладки
      */
     fun clearAll() {
@@ -202,9 +232,10 @@ class TabManager {
      * Загружает вкладки из списка
      */
     fun loadTabs(tabs: List<Tab>) {
-        // Ищем сохранённую главную вкладку
+        // Ищем сохранённые системные вкладки
         val savedMainTab = tabs.find { it.id == "main" }
-        val otherTabs = tabs.filter { it.id != "main" }
+        val savedLogsTab = tabs.find { it.id == "logs" }
+        val otherTabs = tabs.filter { it.id != "main" && it.id != "logs" }
 
         // Восстанавливаем содержимое главной вкладки
         if (savedMainTab != null) {
@@ -215,12 +246,21 @@ class TabManager {
             }
         }
 
+        // Восстанавливаем содержимое вкладки логов
+        if (savedLogsTab != null) {
+            val savedContent = savedLogsTab.content.value
+            if (savedContent.isNotEmpty()) {
+                logsTab.appendText(savedContent)
+                logsTab.flush()
+            }
+        }
+
         // Добавляем welcome message после восстановленного лога
         mainTab.appendText("\nДобро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n")
         mainTab.flush()
 
-        // Сохраняем главную вкладку и добавляем загруженные
-        _tabs.value = listOf(mainTab) + otherTabs
+        // Сохраняем: mainTab, пользовательские вкладки, logsTab (в конце)
+        _tabs.value = listOf(mainTab) + otherTabs + listOf(logsTab)
     }
 
     /**

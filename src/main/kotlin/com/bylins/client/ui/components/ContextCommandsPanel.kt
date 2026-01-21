@@ -552,7 +552,7 @@ private fun ContextRuleDialog(
     val availableZonesWithNames = remember(mapRooms, zoneNames) {
         mapRooms.values
             .filter { !it.zone.isNullOrEmpty() }
-            .map { it.zone!! to (zoneNames[it.zone] ?: it.zone!!) }
+            .map { it.zone!! to (zoneNames[it.zone] ?: it.zone) }
             .distinct()
             .sortedBy { it.second }
     }

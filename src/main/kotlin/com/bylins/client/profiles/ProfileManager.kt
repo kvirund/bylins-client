@@ -212,36 +212,86 @@ class ProfileManager(
     // === Управление стеком ===
 
     /**
-     * Добавляет профиль в стек (в конец)
-     * @return Result.success если успешно, Result.failure с DependencyException если зависимости не удовлетворены
+     * Результат добавления профиля в стек
      */
-    fun pushProfile(id: String): Result<Unit> {
+    data class PushResult(
+        val success: Boolean,
+        val addedProfiles: List<String> = emptyList(),  // ID добавленных профилей (включая зависимости)
+        val errorMessage: String? = null
+    )
+
+    /**
+     * Добавляет профиль в стек (в конец)
+     * Автоматически добавляет недостающие зависимости
+     * @return PushResult с информацией о добавленных профилях
+     */
+    fun pushProfile(id: String): PushResult {
         if (id in _activeStack.value) {
-            return Result.success(Unit)  // Уже в стеке
+            return PushResult(success = true)  // Уже в стеке
         }
 
-        val profile = _profiles.value.find { it.id == id }
-            ?: return Result.failure(IllegalArgumentException("Profile not found: $id"))
+        if (_profiles.value.none { it.id == id }) {
+            return PushResult(success = false, errorMessage = "Профиль не найден: $id")
+        }
 
-        // Проверяем зависимости
-        val depResult = checkDependencies(id)
-        if (depResult is DependencyResult.Missing) {
-            val missing = depResult.missingIds.joinToString(", ") { missingId ->
-                _profiles.value.find { it.id == missingId }?.name ?: missingId
+        // Собираем все недостающие зависимости (рекурсивно)
+        val toAdd = collectMissingDependencies(id)
+
+        // Проверяем, что все зависимости существуют
+        for (depId in toAdd) {
+            if (_profiles.value.none { it.id == depId }) {
+                return PushResult(
+                    success = false,
+                    errorMessage = "Зависимость не найдена: $depId"
+                )
             }
-            return Result.failure(DependencyException("Требуются профили: $missing"))
         }
 
-        // Добавляем в стек
-        _activeStack.value = _activeStack.value + id
-
-        // Загружаем скрипты профиля
-        profile.scriptsDir?.let { scriptsDir ->
-            scriptManager.loadScriptsFromDirectory(scriptsDir.toFile(), profileId = id)
+        // Добавляем все профили в правильном порядке
+        val addedProfiles = mutableListOf<String>()
+        for (depId in toAdd) {
+            if (depId !in _activeStack.value) {
+                val depProfile = _profiles.value.find { it.id == depId }
+                if (depProfile != null) {
+                    _activeStack.value = _activeStack.value + depId
+                    depProfile.scriptsDir?.let { scriptsDir ->
+                        scriptManager.loadScriptsFromDirectory(scriptsDir.toFile(), profileId = depId)
+                    }
+                    addedProfiles.add(depId)
+                    logger.info { "Pushed profile to stack: ${depProfile.name} (${depProfile.id})" }
+                }
+            }
         }
 
-        logger.info { "Pushed profile to stack: ${profile.name} (${profile.id})" }
-        return Result.success(Unit)
+        return PushResult(success = true, addedProfiles = addedProfiles)
+    }
+
+    /**
+     * Собирает все недостающие зависимости для профиля (рекурсивно, в правильном порядке)
+     * Возвращает список ID профилей для добавления, от корневых зависимостей к целевому профилю
+     */
+    private fun collectMissingDependencies(profileId: String, visited: MutableSet<String> = mutableSetOf()): List<String> {
+        if (profileId in visited) return emptyList()
+        visited.add(profileId)
+
+        val profile = _profiles.value.find { it.id == profileId } ?: return listOf(profileId)
+        val currentStack = _activeStack.value.toSet()
+
+        val result = mutableListOf<String>()
+
+        // Сначала добавляем все зависимости (рекурсивно)
+        for (reqId in profile.requires) {
+            if (reqId !in currentStack && reqId !in result) {
+                result.addAll(collectMissingDependencies(reqId, visited))
+            }
+        }
+
+        // Затем добавляем сам профиль
+        if (profileId !in currentStack) {
+            result.add(profileId)
+        }
+
+        return result
     }
 
     /**
@@ -589,8 +639,8 @@ class ProfileManager(
         logger.info { "Restoring profile stack: $savedStack" }
         for (profileId in savedStack) {
             val result = pushProfile(profileId)
-            if (result.isFailure) {
-                logger.warn { "Failed to restore profile $profileId: ${result.exceptionOrNull()?.message}" }
+            if (!result.success) {
+                logger.warn { "Failed to restore profile $profileId: ${result.errorMessage}" }
             }
         }
     }

@@ -154,7 +154,7 @@ class JavaScriptEngine : ScriptEngine {
             val patternBytes = pattern.toByteArray(Charsets.UTF_8).joinToString(" ") { "%02X".format(it) }
             logger.debug { "TriggerHelper.register pattern='$pattern' bytes=[$patternBytes]" }
 
-            val kotlinCallback: (String, Map<Int, String>) -> Unit = { line, groups ->
+            val kotlinCallback: (String, Map<Int, String>) -> Unit = { _, groups ->
                 // Конвертируем Map<Int, String> в массив для JavaScript
                 // groups[0] = full match, groups[1] = group 1, etc.
                 val maxIndex = groups.keys.maxOrNull() ?: -1

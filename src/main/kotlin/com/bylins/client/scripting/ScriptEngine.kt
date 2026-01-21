@@ -109,6 +109,7 @@ enum class ScriptEvent {
     ON_AFFECT_APPLIED,    // Наложен эффект
     ON_AFFECT_EXPIRED,    // Эффект истёк
     ON_LEVEL_UP,          // Повышение уровня
+    ON_EXP_GAIN,          // Получен опыт
     ON_ITEM_PICKED,       // Подобран предмет
     ON_ZONE_CHANGED,      // Смена зоны
 

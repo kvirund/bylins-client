@@ -787,7 +787,7 @@ fun RoomTooltip(
     mouseY: Float,
     zoneNotes: String = "",
     zoneNames: Map<String, String> = emptyMap(),
-    maxWidth: Int = 300,
+    @Suppress("UNUSED_PARAMETER") maxWidth: Int = 300,
     canvasWidth: Float = 0f,
     canvasHeight: Float = 0f
 ) {

@@ -2,6 +2,8 @@ package com.bylins.client.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
@@ -46,19 +48,26 @@ fun ProfileDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+                .width(450.dp)
+                .heightIn(max = 600.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = if (profile == null) "Новый профиль" else "Редактировать профиль",
                     style = MaterialTheme.typography.titleLarge
                 )
 
-                OutlinedTextField(
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Прокручиваемый контент
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Название") },
@@ -148,7 +157,14 @@ fun ProfileDialog(
                         }
                     }
                 }
+                } // Конец прокручиваемого контента
 
+                // Разделитель
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Кнопки (sticky)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

@@ -73,8 +73,8 @@ fun OutputPanel(
                                             .background(Color(0xFFFF9800), shape = CircleShape)
                                     )
                                 }
-                                // Кнопки управления (кроме главной вкладки)
-                                if (tab.id != "main") {
+                                // Кнопки управления (кроме системных вкладок)
+                                if (tab.id != "main" && tab.id != "logs") {
                                     IconButton(
                                         onClick = {
                                             editingTab = tab
@@ -231,17 +231,21 @@ fun TabContent(
             .background(Color.Black)
             .padding(8.dp)
     ) {
-        SelectionContainer {
-            Text(
-                text = outputText,
-                color = Color(0xFFBBBBBB),
-                fontFamily = fontFamily,
-                fontSize = fontSize.sp,
-                lineHeight = (fontSize + 4).sp,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-            )
+        // key() пересоздаёт SelectionContainer при изменении текста,
+        // предотвращая ошибку "layouts are not part of the same hierarchy"
+        key(limitedText.hashCode()) {
+            SelectionContainer {
+                Text(
+                    text = outputText,
+                    color = Color(0xFFBBBBBB),
+                    fontFamily = fontFamily,
+                    fontSize = fontSize.sp,
+                    lineHeight = (fontSize + 4).sp,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(scrollState)
+                )
+            }
         }
     }
 }

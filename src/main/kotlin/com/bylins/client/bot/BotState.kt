@@ -42,6 +42,7 @@ enum class BotTransition {
     LOOT_DONE,          // Лут собран
     PATH_FOUND,         // Найден путь
     PATH_BLOCKED,       // Путь заблокирован
+    NO_PATH,            // Путь не найден, нужно исследовать
     ZONE_COMPLETE,      // Зона пройдена
     ERROR_OCCURRED,     // Произошла ошибка
     RECOVERED           // Восстановление после ошибки
@@ -79,6 +80,8 @@ class BotStateMachine {
         // Из STARTING
         (BotStateType.STARTING to BotTransition.BUFFS_NEEDED) to BotStateType.BUFFING,
         (BotStateType.STARTING to BotTransition.PATH_FOUND) to BotStateType.TRAVELING,
+        (BotStateType.STARTING to BotTransition.NO_PATH) to BotStateType.EXPLORING,
+        (BotStateType.STARTING to BotTransition.LOW_HP) to BotStateType.RESTING,
         (BotStateType.STARTING to BotTransition.ENEMY_DETECTED) to BotStateType.COMBAT,
         (BotStateType.STARTING to BotTransition.ERROR_OCCURRED) to BotStateType.ERROR,
 

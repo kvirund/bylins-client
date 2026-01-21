@@ -21,7 +21,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
-import com.bylins.client.profiles.DependencyResult
 import com.bylins.client.profiles.Profile
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import mu.KotlinLogging
@@ -41,7 +40,7 @@ fun ProfilesPanel(
 
     var selectedProfile by remember { mutableStateOf<Profile?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var snackbarMessage by remember { mutableStateOf<String?>(null) }
 
     // Обновляем selectedProfile если профиль изменился
     LaunchedEffect(profiles) {
@@ -50,10 +49,22 @@ fun ProfilesPanel(
         }
     }
 
-    Column(
+    // Автоматически скрываем snackbar через 3 секунды
+    LaunchedEffect(snackbarMessage) {
+        if (snackbarMessage != null) {
+            kotlinx.coroutines.delay(3000)
+            snackbarMessage = null
+        }
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(colorScheme.background)
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .padding(8.dp)
     ) {
         // Заголовок
@@ -65,25 +76,6 @@ fun ProfilesPanel(
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(bottom = 8.dp)
         )
-
-        // Сообщение об ошибке
-        errorMessage?.let { msg ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                backgroundColor = Color(0xFF5C2020),
-                shape = RoundedCornerShape(4.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(msg, color = Color.White, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { errorMessage = null }) {
-                        Icon(Icons.Default.Close, "Закрыть", tint = Color.White)
-                    }
-                }
-            }
-        }
 
         Row(modifier = Modifier.fillMaxSize()) {
             // Колонка 1: Активный стек
@@ -133,7 +125,7 @@ fun ProfilesPanel(
                                         if (removed.size > 1) {
                                             val dependentNames = removed.filter { it != profile.id }
                                                 .mapNotNull { id -> profiles.find { it.id == id }?.name }
-                                            errorMessage = "Также отключены: ${dependentNames.joinToString()}"
+                                            snackbarMessage = "Также отключены: ${dependentNames.joinToString()}"
                                         }
                                         clientState.saveConfig()
                                     },
@@ -183,17 +175,38 @@ fun ProfilesPanel(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(profiles) { profile ->
+                        val isInStack = profile.id in activeStack
                         ProfileListItem(
                             profile = profile,
-                            isInStack = profile.id in activeStack,
+                            isInStack = isInStack,
                             isSelected = selectedProfile?.id == profile.id,
                             colorScheme = colorScheme,
-                            onAddToStack = {
-                                val result = profileManager.pushProfile(profile.id)
-                                if (result.isFailure) {
-                                    errorMessage = result.exceptionOrNull()?.message
-                                } else {
+                            onToggle = {
+                                if (isInStack) {
+                                    // Удаляем из стека
+                                    val removed = profileManager.removeFromStack(profile.id)
+                                    if (removed.size > 1) {
+                                        val dependentNames = removed.filter { it != profile.id }
+                                            .mapNotNull { id -> profiles.find { it.id == id }?.name }
+                                        snackbarMessage = "Также отключены: ${dependentNames.joinToString()}"
+                                    }
                                     clientState.saveConfig()
+                                } else {
+                                    // Добавляем в стек (с автоматическими зависимостями)
+                                    val result = profileManager.pushProfile(profile.id)
+                                    if (!result.success) {
+                                        snackbarMessage = result.errorMessage
+                                    } else {
+                                        // Показываем сообщение о добавленных зависимостях
+                                        val addedDeps = result.addedProfiles.filter { it != profile.id }
+                                        if (addedDeps.isNotEmpty()) {
+                                            val depNames = addedDeps.mapNotNull { id ->
+                                                profiles.find { it.id == id }?.name
+                                            }
+                                            snackbarMessage = "Автоматически добавлены: ${depNames.joinToString()}"
+                                        }
+                                        clientState.saveConfig()
+                                    }
                                 }
                             },
                             onClick = { selectedProfile = profile }
@@ -251,6 +264,33 @@ fun ProfilesPanel(
                         )
                     }
                 }
+            }
+        }
+        }
+
+        // Snackbar внизу (внутри Box)
+        snackbarMessage?.let { message ->
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                backgroundColor = colorScheme.surfaceVariant,
+                contentColor = colorScheme.onSurface,
+                action = {
+                    IconButton(
+                        onClick = { snackbarMessage = null },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Закрыть",
+                            tint = colorScheme.onSurface,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            ) {
+                Text(message, fontSize = 12.sp)
             }
         }
     }
@@ -324,7 +364,7 @@ private fun ProfileListItem(
     isInStack: Boolean,
     isSelected: Boolean,
     colorScheme: com.bylins.client.ui.theme.ColorScheme,
-    onAddToStack: () -> Unit,
+    onToggle: () -> Unit,
     onClick: () -> Unit
 ) {
     val backgroundColor = when {
@@ -336,7 +376,7 @@ private fun ProfileListItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = onClick)  // Клик выбирает для редактирования
             .then(
                 if (isSelected) Modifier.border(1.dp, colorScheme.primary, RoundedCornerShape(4.dp))
                 else Modifier
@@ -348,6 +388,21 @@ private fun ProfileListItem(
             modifier = Modifier.padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Кнопка переключения (чекбокс)
+            IconButton(
+                onClick = onToggle,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = if (isInStack) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                    contentDescription = if (isInStack) "Убрать из стека" else "Добавить в стек",
+                    tint = if (isInStack) colorScheme.primary else colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = profile.name,
@@ -368,22 +423,15 @@ private fun ProfileListItem(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-            }
-
-            if (isInStack) {
-                Icon(
-                    Icons.Default.Check,
-                    "В стеке",
-                    tint = colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            } else {
-                IconButton(onClick = onAddToStack, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        Icons.Default.Add,
-                        "Добавить в стек",
-                        tint = colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+                // Показываем зависимости если есть
+                if (profile.requires.isNotEmpty()) {
+                    Text(
+                        text = "→ ${profile.requires.joinToString()}",
+                        color = colorScheme.onSurface.copy(alpha = 0.4f),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -623,15 +671,23 @@ private fun ProfileEditor(
         Spacer(modifier = Modifier.weight(1f))
 
         // Кнопка сохранения
+        val isModified = name != profile.name || description != profile.description
         Button(
             onClick = {
                 onSave(profile.copy(name = name, description = description))
             },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary),
-            enabled = name != profile.name || description != profile.description
+            colors = ButtonDefaults.buttonColors(
+                backgroundColor = colorScheme.primary,
+                disabledBackgroundColor = colorScheme.surface,
+                disabledContentColor = colorScheme.onSurface.copy(alpha = 0.4f)
+            ),
+            enabled = isModified
         ) {
-            Text("Сохранить изменения", color = Color.White)
+            Text(
+                "Сохранить изменения",
+                color = if (isModified) Color.White else colorScheme.onSurface.copy(alpha = 0.4f)
+            )
         }
     }
 

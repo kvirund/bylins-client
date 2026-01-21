@@ -636,6 +636,46 @@ class MapManager(
         return pathfinder.findRoomsInRadius(_rooms.value, currentId, maxSteps)
     }
 
+    /**
+     * Ищет комнаты с произвольным callback-фильтром.
+     * Принимает Map<String, Any> для совместимости с плагинами.
+     *
+     * @param predicate Функция-фильтр для комнат (получает Map представление комнаты)
+     * @param maxResults Максимальное количество результатов
+     * @return Список комнат в формате Map
+     */
+    fun findRoomsMatching(
+        predicate: (Map<String, Any>) -> Boolean,
+        maxResults: Int = 100
+    ): List<Map<String, Any>> {
+        return pathfinder.findRoomsMatching(
+            _rooms.value,
+            { room -> predicate(room.toMap()) },
+            maxResults
+        ).map { it.toMap() }
+    }
+
+    /**
+     * Находит ближайшую комнату, удовлетворяющую произвольному условию.
+     * Принимает Map<String, Any> для совместимости с плагинами.
+     *
+     * @param predicate Функция-фильтр для комнат (получает Map представление комнаты)
+     * @return Пара (комната в формате Map, список направлений) или null
+     */
+    fun findNearestMatching(
+        predicate: (Map<String, Any>) -> Boolean
+    ): Pair<Map<String, Any>, List<String>>? {
+        val currentId = _currentRoomId.value ?: return null
+        val result = pathfinder.findNearestMatching(
+            _rooms.value,
+            currentId
+        ) { room -> predicate(room.toMap()) }
+
+        return result?.let { (room, path) ->
+            Pair(room.toMap(), path.map { it.name })
+        }
+    }
+
     // === Работа с зонами ===
 
     private val zoneDetector = ZoneDetector()

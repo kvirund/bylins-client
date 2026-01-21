@@ -19,8 +19,6 @@ import com.bylins.client.ui.theme.LocalAppColorScheme
 import com.bylins.client.ui.ALL_TABS
 import java.awt.Desktop
 import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 @OptIn(ExperimentalMaterialApi::class)
 private val logger = KotlinLogging.logger("SettingsPanel")
@@ -31,6 +29,8 @@ fun SettingsPanel(
 ) {
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var statusColor by remember { mutableStateOf<Color?>(null) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
     val colorScheme = LocalAppColorScheme.current
 
@@ -563,49 +563,14 @@ fun SettingsPanel(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = {
-                            val fileChooser = JFileChooser()
-                            fileChooser.dialogTitle = "Экспорт конфигурации"
-                            fileChooser.fileFilter = FileNameExtensionFilter("JSON файлы", "json")
-                            fileChooser.selectedFile = File("bylins-config.json")
-
-                            if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-                                try {
-                                    var file = fileChooser.selectedFile
-                                    if (!file.name.endsWith(".json")) {
-                                        file = File(file.parentFile, file.name + ".json")
-                                    }
-                                    clientState.exportConfig(file)
-                                    statusMessage = "Конфигурация экспортирована"
-                                    statusColor = colorScheme.success
-                                } catch (e: Exception) {
-                                    statusMessage = "Ошибка: ${e.message}"
-                                    statusColor = colorScheme.error
-                                }
-                            }
-                        },
+                        onClick = { showExportDialog = true },
                         colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
                     ) {
                         Text("Экспорт", color = colorScheme.onSurface)
                     }
 
                     Button(
-                        onClick = {
-                            val fileChooser = JFileChooser()
-                            fileChooser.dialogTitle = "Импорт конфигурации"
-                            fileChooser.fileFilter = FileNameExtensionFilter("JSON файлы", "json")
-
-                            if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                                try {
-                                    clientState.importConfig(fileChooser.selectedFile)
-                                    statusMessage = "Конфигурация импортирована"
-                                    statusColor = colorScheme.success
-                                } catch (e: Exception) {
-                                    statusMessage = "Ошибка: ${e.message}"
-                                    statusColor = colorScheme.error
-                                }
-                            }
-                        },
+                        onClick = { showImportDialog = true },
                         colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning)
                     ) {
                         Text("Импорт", color = colorScheme.onSurface)
@@ -732,6 +697,55 @@ fun SettingsPanel(
                 }
             }
         }
+    }
+
+    // Диалог экспорта конфигурации
+    if (showExportDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.SAVE,
+            title = "Экспорт конфигурации",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            defaultFileName = "bylins-config.json",
+            onDismiss = { showExportDialog = false },
+            onFileSelected = { file ->
+                try {
+                    var targetFile = file
+                    if (!targetFile.name.endsWith(".json")) {
+                        targetFile = File(targetFile.parentFile, targetFile.name + ".json")
+                    }
+                    clientState.exportConfig(targetFile)
+                    statusMessage = "Конфигурация экспортирована"
+                    statusColor = colorScheme.success
+                } catch (e: Exception) {
+                    statusMessage = "Ошибка: ${e.message}"
+                    statusColor = colorScheme.error
+                }
+                showExportDialog = false
+            }
+        )
+    }
+
+    // Диалог импорта конфигурации
+    if (showImportDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Импорт конфигурации",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            onDismiss = { showImportDialog = false },
+            onFileSelected = { file ->
+                try {
+                    clientState.importConfig(file)
+                    statusMessage = "Конфигурация импортирована"
+                    statusColor = colorScheme.success
+                } catch (e: Exception) {
+                    statusMessage = "Ошибка: ${e.message}"
+                    statusColor = colorScheme.error
+                }
+                showImportDialog = false
+            }
+        )
     }
 }
 

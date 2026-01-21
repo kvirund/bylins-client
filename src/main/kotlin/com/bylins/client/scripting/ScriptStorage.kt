@@ -1,7 +1,6 @@
 package com.bylins.client.scripting
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import kotlinx.serialization.json.*
 import mu.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -18,7 +17,7 @@ private val logger = KotlinLogging.logger("ScriptStorage")
 class ScriptStorage {
     private var connection: Connection? = null
     private val dbPath: String
-    private val objectMapper = ObjectMapper().registerKotlinModule()
+    private val json = Json { encodeDefaults = true }
 
     init {
         // Create directory for DB if doesn't exist
@@ -81,7 +80,7 @@ class ScriptStorage {
     fun setData(scriptId: String, key: String, value: Any): Boolean {
         return try {
             val now = Instant.now().epochSecond
-            val jsonValue = objectMapper.writeValueAsString(value)
+            val jsonValue = toJsonElement(value).toString()
 
             val stmt = connection?.prepareStatement("""
                 INSERT INTO script_storage (script_id, key, value, created_at, updated_at)
@@ -247,12 +246,44 @@ class ScriptStorage {
     /**
      * Deserialize JSON string to appropriate type.
      */
-    private fun deserializeJson(json: String): Any? {
+    private fun deserializeJson(jsonStr: String): Any? {
         return try {
-            objectMapper.readValue(json, Any::class.java)
+            fromJsonElement(json.parseToJsonElement(jsonStr))
         } catch (e: Exception) {
             // If deserialization fails, return as string
-            json
+            jsonStr
+        }
+    }
+
+    /**
+     * Конвертирует Any в JsonElement
+     */
+    private fun toJsonElement(value: Any?): JsonElement {
+        return when (value) {
+            null -> JsonNull
+            is Boolean -> JsonPrimitive(value)
+            is Number -> JsonPrimitive(value)
+            is String -> JsonPrimitive(value)
+            is List<*> -> JsonArray(value.map { toJsonElement(it) })
+            is Map<*, *> -> JsonObject(value.entries.associate { (k, v) ->
+                k.toString() to toJsonElement(v)
+            })
+            else -> JsonPrimitive(value.toString())
+        }
+    }
+
+    /**
+     * Конвертирует JsonElement в Any
+     */
+    private fun fromJsonElement(element: JsonElement): Any? {
+        return when (element) {
+            is JsonNull -> null
+            is JsonPrimitive -> {
+                if (element.isString) element.content
+                else element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.content
+            }
+            is JsonArray -> element.map { fromJsonElement(it) }
+            is JsonObject -> element.mapValues { (_, v) -> fromJsonElement(v) }
         }
     }
 

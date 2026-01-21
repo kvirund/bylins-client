@@ -19,15 +19,17 @@ import com.bylins.client.ClientState
 import com.bylins.client.triggers.Trigger
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 private val logger = KotlinLogging.logger("TriggersPanel")
+
 @Composable
 fun TriggersPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
+    // Состояние для FilePickerDialog
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     // Получаем все триггеры с источниками
     val triggersWithSource = remember { mutableStateOf(clientState.getAllTriggersWithSource()) }
     val triggers by clientState.triggers.collectAsState()
@@ -71,24 +73,7 @@ fun TriggersPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = {
-                        // Экспорт триггеров
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-                        fileChooser.selectedFile = File("triggers.json")
-
-                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val triggerIds = triggers.map { it.id }
-                                val json = clientState.exportTriggers(triggerIds)
-                                fileChooser.selectedFile.writeText(json)
-                                logger.info { "Triggers exported to ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Export error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showExportDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.primary
                     )
@@ -97,22 +82,7 @@ fun TriggersPanel(
                 }
 
                 Button(
-                    onClick = {
-                        // Импорт триггеров
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val json = fileChooser.selectedFile.readText()
-                                val count = clientState.importTriggers(json, merge = true)
-                                logger.info { "Imported $count triggers from ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Import error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showImportDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.warning
                     )
@@ -257,6 +227,50 @@ fun TriggersPanel(
                 showDialog = false
                 editingTrigger = null
                 editingTriggerSource = null
+            }
+        )
+    }
+
+    // Диалог экспорта
+    if (showExportDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.SAVE,
+            title = "Экспорт триггеров",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            defaultFileName = "triggers.json",
+            onDismiss = { showExportDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val triggerIds = triggers.map { it.id }
+                    val json = clientState.exportTriggers(triggerIds)
+                    file.writeText(json)
+                    logger.info { "Triggers exported to ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "Export error: ${e.message}" }
+                }
+                showExportDialog = false
+            }
+        )
+    }
+
+    // Диалог импорта
+    if (showImportDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Импорт триггеров",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            onDismiss = { showImportDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val json = file.readText()
+                    val count = clientState.importTriggers(json, merge = true)
+                    logger.info { "Imported $count triggers from ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "Import error: ${e.message}" }
+                }
+                showImportDialog = false
             }
         )
     }

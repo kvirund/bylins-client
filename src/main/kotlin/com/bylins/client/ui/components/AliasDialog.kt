@@ -1,6 +1,8 @@
 package com.bylins.client.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,11 +56,13 @@ fun AliasDialog(
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                // Форма
+                // Форма (прокручиваемая)
+                val scrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Выбор целевого профиля (только для нового)
@@ -214,11 +218,12 @@ fun AliasDialog(
                     )
                 }
 
-                // Кнопки
+                // Разделитель
+                Divider(color = Color(0xFF444444), modifier = Modifier.padding(vertical = 8.dp))
+
+                // Кнопки (sticky)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {

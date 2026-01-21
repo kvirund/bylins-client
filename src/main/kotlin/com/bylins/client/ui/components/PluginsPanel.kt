@@ -2,9 +2,12 @@ package com.bylins.client.ui.components
 
 import mu.KotlinLogging
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,25 +19,125 @@ import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.plugins.LoadedPlugin
 import com.bylins.client.plugins.PluginState
+import com.bylins.client.plugins.ui.RenderPluginTab
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 private val logger = KotlinLogging.logger("PluginsPanel")
+
 @Composable
 fun PluginsPanel(
     clientState: ClientState,
     modifier: Modifier = Modifier
 ) {
     val colorScheme = LocalAppColorScheme.current
-    val plugins by clientState.getPlugins().collectAsState()
-    val pluginsDirectory = clientState.getPluginsDirectory()
+    val pluginTabs by clientState.pluginTabManager.tabsState.collectAsState()
+
+    // Текущая выбранная подвкладка: "config" или id вкладки плагина
+    var selectedSubTab by remember { mutableStateOf("config") }
+
+    // Если выбранная вкладка плагина была удалена, переключаемся на конфигурацию
+    LaunchedEffect(pluginTabs) {
+        if (selectedSubTab != "config" && pluginTabs.none { it.id == selectedSubTab }) {
+            selectedSubTab = "config"
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(colorScheme.background)
+    ) {
+        // Подвкладки
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colorScheme.surface)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Вкладка "Конфигурация"
+            SubTabButton(
+                title = "Конфигурация",
+                selected = selectedSubTab == "config",
+                onClick = { selectedSubTab = "config" }
+            )
+
+            // Вкладки плагинов
+            pluginTabs.forEach { tab ->
+                SubTabButton(
+                    title = tab.title,
+                    selected = selectedSubTab == tab.id,
+                    onClick = { selectedSubTab = tab.id }
+                )
+            }
+        }
+
+        Divider(color = colorScheme.divider, thickness = 1.dp)
+
+        // Содержимое выбранной подвкладки
+        when (selectedSubTab) {
+            "config" -> {
+                PluginConfigContent(
+                    clientState = clientState,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            else -> {
+                // Вкладка плагина
+                val pluginTab = pluginTabs.find { it.id == selectedSubTab }
+                if (pluginTab != null) {
+                    RenderPluginTab(
+                        tab = pluginTab,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubTabButton(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val colorScheme = LocalAppColorScheme.current
+
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        color = if (selected) colorScheme.primary else colorScheme.surface,
+        shape = MaterialTheme.shapes.small,
+        elevation = if (selected) 2.dp else 0.dp
+    ) {
+        Text(
+            text = title,
+            color = if (selected) Color.White else colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+}
+
+/**
+ * Содержимое вкладки "Конфигурация" - список плагинов
+ */
+@Composable
+private fun PluginConfigContent(
+    clientState: ClientState,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = LocalAppColorScheme.current
+    val plugins by clientState.getPlugins().collectAsState()
+    val pluginsDirectory = clientState.getPluginsDirectory()
+    var showLoadPluginDialog by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
             .padding(8.dp)
     ) {
         // Заголовок с кнопками
@@ -46,7 +149,7 @@ fun PluginsPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Плагины",
+                text = "Управление плагинами",
                 color = colorScheme.onBackground,
                 fontSize = 16.sp,
                 fontFamily = FontFamily.Monospace
@@ -56,21 +159,7 @@ fun PluginsPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = {
-                        // Открываем диалог выбора JAR файла
-                        val fileChooser = JFileChooser(pluginsDirectory)
-                        fileChooser.fileFilter = FileNameExtensionFilter(
-                            "Plugin files (*.jar)",
-                            "jar"
-                        )
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            val loaded = clientState.loadPlugin(fileChooser.selectedFile)
-                            if (loaded != null) {
-                                clientState.enablePlugin(loaded.metadata.id)
-                            }
-                        }
-                    },
+                    onClick = { showLoadPluginDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.primary
                     )
@@ -79,15 +168,7 @@ fun PluginsPanel(
                 }
 
                 Button(
-                    onClick = {
-                        // Открываем директорию с плагинами
-                        try {
-                            val desktop = java.awt.Desktop.getDesktop()
-                            desktop.open(File(pluginsDirectory))
-                        } catch (e: Exception) {
-                            logger.error { "Error opening plugins directory: ${e.message}" }
-                        }
-                    },
+                    onClick = { openDirectory(pluginsDirectory) },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.secondary
                     )
@@ -163,6 +244,24 @@ fun PluginsPanel(
                 }
             }
         }
+    }
+
+    // Диалог загрузки плагина
+    if (showLoadPluginDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Загрузить плагин",
+            initialDirectory = File(pluginsDirectory),
+            extensions = listOf("jar"),
+            onDismiss = { showLoadPluginDialog = false },
+            onFileSelected = { file ->
+                val loaded = clientState.loadPlugin(file)
+                if (loaded != null) {
+                    clientState.enablePlugin(loaded.metadata.id)
+                }
+                showLoadPluginDialog = false
+            }
+        )
     }
 }
 
@@ -329,5 +428,18 @@ private fun PluginItem(
                 )
             }
         }
+    }
+}
+
+private fun openDirectory(path: String) {
+    try {
+        val os = System.getProperty("os.name").lowercase()
+        when {
+            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", path))
+            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", path))
+            else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
+        }
+    } catch (e: Exception) {
+        logger.error { "Error opening directory: ${e.message}" }
     }
 }

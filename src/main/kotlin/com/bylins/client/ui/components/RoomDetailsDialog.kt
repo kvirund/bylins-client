@@ -79,26 +79,31 @@ fun RoomDetailsDialog(
         Card(
             modifier = Modifier
                 .width(550.dp)
-                .heightIn(max = 700.dp)
-                .padding(16.dp),
+                .heightIn(max = 700.dp),
             colors = CardDefaults.cardColors(
                 containerColor = colorScheme.surface
             )
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Заголовок
                 Text(
                     text = "Редактирование комнаты",
                     style = MaterialTheme.typography.titleLarge,
                     color = colorScheme.onSurface
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
                 Divider(color = colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Прокручиваемый контент
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
 
                 // VNUM (ID комнаты - только для чтения)
                 Row(
@@ -457,9 +462,13 @@ fun RoomDetailsDialog(
                     )
                 }
 
-                Divider(color = colorScheme.onSurfaceVariant)
+                } // Конец прокручиваемого контента
 
-                // Кнопки
+                // Разделитель и кнопки (sticky)
+                Spacer(modifier = Modifier.height(12.dp))
+                Divider(color = colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,

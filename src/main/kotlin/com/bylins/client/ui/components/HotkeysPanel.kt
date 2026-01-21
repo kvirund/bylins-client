@@ -21,8 +21,6 @@ import com.bylins.client.ui.theme.LocalAppColorScheme
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 private val logger = KotlinLogging.logger("HotkeysPanel")
 
@@ -47,6 +45,10 @@ fun HotkeysPanel(
     var editingHotkey by remember { mutableStateOf<Hotkey?>(null) }
     var editingHotkeySource by remember { mutableStateOf<String?>(null) }
     var lastTargetProfileId by remember { mutableStateOf<String?>(null) }  // Запоминаем последний выбор
+    var showExportJsonDialog by remember { mutableStateOf(false) }
+    var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showExportYamlDialog by remember { mutableStateOf(false) }
+    var showImportYamlDialog by remember { mutableStateOf(false) }
     val colorScheme = LocalAppColorScheme.current
 
     Column(
@@ -76,23 +78,7 @@ fun HotkeysPanel(
             ) {
                 // Экспорт JSON
                 Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-                        fileChooser.selectedFile = File("hotkeys.json")
-
-                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val hotkeyIds = hotkeys.map { it.id }
-                                val json = clientState.exportHotkeys(hotkeyIds)
-                                fileChooser.selectedFile.writeText(json)
-                                logger.info { "Hotkeys exported to ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Export error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showExportJsonDialog = true },
                     colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
                 ) {
                     Text("JSON↓", color = Color.White, fontSize = 11.sp)
@@ -100,21 +86,7 @@ fun HotkeysPanel(
 
                 // Импорт JSON
                 Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val json = fileChooser.selectedFile.readText()
-                                val count = clientState.importHotkeys(json, merge = true)
-                                logger.info { "Imported $count hotkeys from ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Import error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showImportJsonDialog = true },
                     colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
                 ) {
                     Text("JSON↑", color = Color.White, fontSize = 11.sp)
@@ -122,22 +94,7 @@ fun HotkeysPanel(
 
                 // Экспорт YAML
                 Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("YAML files", "yaml", "yml")
-                        fileChooser.selectedFile = File("hotkeys.yaml")
-
-                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val yaml = exportHotkeysToYaml(hotkeys)
-                                fileChooser.selectedFile.writeText(yaml)
-                                logger.info { "Hotkeys exported to YAML: ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "YAML export error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showExportYamlDialog = true },
                     colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning)
                 ) {
                     Text("YAML↓", color = Color.White, fontSize = 11.sp)
@@ -145,21 +102,7 @@ fun HotkeysPanel(
 
                 // Импорт YAML
                 Button(
-                    onClick = {
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("YAML files", "yaml", "yml")
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val yamlText = fileChooser.selectedFile.readText()
-                                val count = importHotkeysFromYaml(yamlText, clientState)
-                                logger.info { "Imported $count hotkeys from YAML: ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "YAML import error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showImportYamlDialog = true },
                     colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.warning)
                 ) {
                     Text("YAML↑", color = Color.White, fontSize = 11.sp)
@@ -360,6 +303,93 @@ fun HotkeysPanel(
                 }
             }
         }
+    }
+
+    // Диалог экспорта JSON
+    if (showExportJsonDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.SAVE,
+            title = "Экспорт хоткеев (JSON)",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            defaultFileName = "hotkeys.json",
+            onDismiss = { showExportJsonDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val hotkeyIds = hotkeys.map { it.id }
+                    val json = clientState.exportHotkeys(hotkeyIds)
+                    file.writeText(json)
+                    logger.info { "Hotkeys exported to ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "Export error: ${e.message}" }
+                }
+                showExportJsonDialog = false
+            }
+        )
+    }
+
+    // Диалог импорта JSON
+    if (showImportJsonDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Импорт хоткеев (JSON)",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            onDismiss = { showImportJsonDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val json = file.readText()
+                    val count = clientState.importHotkeys(json, merge = true)
+                    logger.info { "Imported $count hotkeys from ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "Import error: ${e.message}" }
+                }
+                showImportJsonDialog = false
+            }
+        )
+    }
+
+    // Диалог экспорта YAML
+    if (showExportYamlDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.SAVE,
+            title = "Экспорт хоткеев (YAML)",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("yaml", "yml"),
+            defaultFileName = "hotkeys.yaml",
+            onDismiss = { showExportYamlDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val yaml = exportHotkeysToYaml(hotkeys)
+                    file.writeText(yaml)
+                    logger.info { "Hotkeys exported to YAML: ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "YAML export error: ${e.message}" }
+                }
+                showExportYamlDialog = false
+            }
+        )
+    }
+
+    // Диалог импорта YAML
+    if (showImportYamlDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Импорт хоткеев (YAML)",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("yaml", "yml"),
+            onDismiss = { showImportYamlDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val yamlText = file.readText()
+                    val count = importHotkeysFromYaml(yamlText, clientState)
+                    logger.info { "Imported $count hotkeys from YAML: ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "YAML import error: ${e.message}" }
+                }
+                showImportYamlDialog = false
+            }
+        )
     }
 }
 

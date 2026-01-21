@@ -178,6 +178,8 @@ enum class AffectType {
 
 /**
  * Информация о навыке персонажа
+ *
+ * Примечание: В Былинах нет маны. Заклинания требуют заучивания (команда "запомн").
  */
 @Serializable
 data class SkillInfo(
@@ -185,8 +187,8 @@ data class SkillInfo(
     val level: Int? = null,         // Уровень владения (%)
     val cooldown: Int? = null,      // Кулдаун (раунды до готовности)
     val isReady: Boolean = true,    // Готов к использованию
-    val manaCost: Int? = null,      // Стоимость маны
-    val moveCost: Int? = null       // Стоимость движения
+    val moveCost: Int? = null,      // Стоимость движения
+    val memorized: Int? = null      // Заучено копий заклинания
 )
 
 // ============================================
@@ -219,14 +221,15 @@ data class CombatEvent(
 
 /**
  * Полное состояние персонажа для принятия решений
+ *
+ * Примечание: В Былинах нет маны - используется система заучивания заклинаний.
+ * Заклинания заучиваются командой "запомн" и имеют таймаут.
  */
 @Serializable
 data class CharacterState(
     // Базовые характеристики
     val hp: Int,
     val maxHp: Int,
-    val mana: Int,
-    val maxMana: Int,
     val move: Int,
     val maxMove: Int,
     val level: Int,
@@ -236,6 +239,10 @@ data class CharacterState(
     val position: Position,
     val roomId: String?,
     val zoneId: String?,
+
+    // Комната
+    val terrain: String? = null,        // Тип поверхности (TERRAIN из MSDP)
+    val exits: List<String> = emptyList(), // Выходы (EXITS из MSDP)
 
     // Боевое состояние
     val isInCombat: Boolean,
@@ -256,7 +263,6 @@ data class CharacterState(
     val tankHpPercent: Int? = null
 ) {
     val hpPercent: Int get() = if (maxHp > 0) (hp * 100) / maxHp else 0
-    val manaPercent: Int get() = if (maxMana > 0) (mana * 100) / maxMana else 0
     val movePercent: Int get() = if (maxMove > 0) (move * 100) / maxMove else 0
 
     fun toJson(): String = Json.encodeToString(serializer(), this)

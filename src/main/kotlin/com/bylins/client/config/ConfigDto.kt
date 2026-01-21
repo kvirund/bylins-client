@@ -172,7 +172,8 @@ data class ConnectionProfileDto(
     val host: String,
     val port: Int,
     val encoding: String = "UTF-8",
-    val mapFile: String = "maps.db"
+    val mapFile: String = "maps.db",
+    val activeProfileStack: List<String> = emptyList()
 ) {
     fun toConnectionProfile(): ConnectionProfile {
         return ConnectionProfile(
@@ -181,7 +182,8 @@ data class ConnectionProfileDto(
             host = host,
             port = port,
             encoding = encoding,
-            mapFile = mapFile
+            mapFile = mapFile,
+            activeProfileStack = activeProfileStack
         )
     }
 
@@ -193,7 +195,8 @@ data class ConnectionProfileDto(
                 host = profile.host,
                 port = profile.port,
                 encoding = profile.encoding,
-                mapFile = profile.mapFile
+                mapFile = profile.mapFile,
+                activeProfileStack = profile.activeProfileStack
             )
         }
     }
@@ -317,5 +320,6 @@ data class ClientConfig(
     val ignoreNumLock: Boolean = false,  // Игнорировать состояние NumLock для хоткеев
     val activeProfileStack: List<String> = emptyList(),  // Стек активных профилей персонажей
     val hiddenTabs: Set<String> = emptySet(),  // Скрытые вкладки (по ID)
-    val lastMapRoomId: String? = null  // Последняя текущая комната на карте
+    val lastMapRoomId: String? = null,  // Последняя текущая комната на карте
+    val logWithColors: Boolean = false  // Сохранять ANSI-цвета в логах
 )

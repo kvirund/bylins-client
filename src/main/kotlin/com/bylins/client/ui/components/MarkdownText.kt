@@ -42,7 +42,6 @@ fun MarkdownText(
  */
 private fun parseMarkdown(text: String, baseColor: Color): AnnotatedString {
     return buildAnnotatedString {
-        var i = 0
         val lines = text.split('\n')
 
         lines.forEachIndexed { lineIndex, line ->

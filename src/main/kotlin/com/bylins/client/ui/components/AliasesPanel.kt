@@ -18,8 +18,6 @@ import com.bylins.client.ClientState
 import com.bylins.client.aliases.Alias
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 private val logger = KotlinLogging.logger("AliasesPanel")
 @Composable
@@ -41,6 +39,8 @@ fun AliasesPanel(
     var showDialog by remember { mutableStateOf(false) }
     var editingAlias by remember { mutableStateOf<Alias?>(null) }
     var editingAliasSource by remember { mutableStateOf<String?>(null) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     var lastTargetProfileId by remember { mutableStateOf<String?>(null) }  // Запоминаем последний выбор
     val colorScheme = LocalAppColorScheme.current
 
@@ -70,24 +70,7 @@ fun AliasesPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = {
-                        // Экспорт алиасов
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-                        fileChooser.selectedFile = File("aliases.json")
-
-                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val aliasIds = aliases.map { it.id }
-                                val json = clientState.exportAliases(aliasIds)
-                                fileChooser.selectedFile.writeText(json)
-                                logger.info { "Aliases exported to ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Export error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showExportDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.primary
                     )
@@ -96,22 +79,7 @@ fun AliasesPanel(
                 }
 
                 Button(
-                    onClick = {
-                        // Импорт алиасов
-                        val fileChooser = JFileChooser()
-                        fileChooser.fileFilter = FileNameExtensionFilter("JSON files", "json")
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            try {
-                                val json = fileChooser.selectedFile.readText()
-                                val count = clientState.importAliases(json, merge = true)
-                                logger.info { "Imported $count aliases from ${fileChooser.selectedFile.absolutePath}" }
-                            } catch (e: Exception) {
-                                logger.error { "Import error: ${e.message}" }
-                                e.printStackTrace()
-                            }
-                        }
-                    },
+                    onClick = { showImportDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.warning
                     )
@@ -215,6 +183,50 @@ fun AliasesPanel(
                 )
             }
         }
+    }
+
+    // Диалог экспорта
+    if (showExportDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.SAVE,
+            title = "Экспорт алиасов",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            defaultFileName = "aliases.json",
+            onDismiss = { showExportDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val aliasIds = aliases.map { it.id }
+                    val json = clientState.exportAliases(aliasIds)
+                    file.writeText(json)
+                    logger.info { "Aliases exported to ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "Export error: ${e.message}" }
+                }
+                showExportDialog = false
+            }
+        )
+    }
+
+    // Диалог импорта
+    if (showImportDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Импорт алиасов",
+            initialDirectory = File(System.getProperty("user.home")),
+            extensions = listOf("json"),
+            onDismiss = { showImportDialog = false },
+            onFileSelected = { file ->
+                try {
+                    val json = file.readText()
+                    val count = clientState.importAliases(json, merge = true)
+                    logger.info { "Imported $count aliases from ${file.absolutePath}" }
+                } catch (e: Exception) {
+                    logger.error { "Import error: ${e.message}" }
+                }
+                showImportDialog = false
+            }
+        )
     }
 
     // Диалог добавления/редактирования

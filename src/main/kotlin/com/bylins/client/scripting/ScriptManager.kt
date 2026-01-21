@@ -359,6 +359,7 @@ class ScriptManager(
             ScriptEvent.ON_AFFECT_APPLIED -> "on_affect_applied"
             ScriptEvent.ON_AFFECT_EXPIRED -> "on_affect_expired"
             ScriptEvent.ON_LEVEL_UP -> "on_level_up"
+            ScriptEvent.ON_EXP_GAIN -> "on_exp_gain"
             ScriptEvent.ON_ITEM_PICKED -> "on_item_picked"
             ScriptEvent.ON_ZONE_CHANGED -> "on_zone_changed"
             ScriptEvent.ON_LOW_HP -> "on_low_hp"

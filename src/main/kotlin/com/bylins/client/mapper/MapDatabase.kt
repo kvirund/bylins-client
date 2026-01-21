@@ -285,7 +285,7 @@ class MapDatabase(dbFileName: String = "maps.db") {
                 val currentName = rs.getString("name")
                 val currentNotes = rs.getString("notes")
                 rs.close()
-                existingStmt?.close()
+                existingStmt.close()
 
                 val newName = name ?: currentName
                 val newNotes = notes ?: currentNotes

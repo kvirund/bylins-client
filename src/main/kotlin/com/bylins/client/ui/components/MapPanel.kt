@@ -303,11 +303,11 @@ fun MapPanel(
 
                                 val canvasW = canvasSize.first
                                 val canvasH = canvasSize.second
-                                val rooms = currentDisplayRooms
+                                val dragRooms = currentDisplayRooms
 
-                                if (canvasW > 0 && canvasH > 0 && rooms.isNotEmpty()) {
+                                if (canvasW > 0 && canvasH > 0 && dragRooms.isNotEmpty()) {
                                     val margin = roomSize / 2
-                                    val anyVisible = rooms.values.any { roomInfo ->
+                                    val anyVisible = dragRooms.values.any { roomInfo ->
                                         val newX = roomInfo.screenX + dragDelta.x
                                         val newY = roomInfo.screenY + dragDelta.y
                                         newX >= -margin && newX <= canvasW + margin &&

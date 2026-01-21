@@ -4,8 +4,7 @@ import com.bylins.client.bot.*
 import com.bylins.client.bot.perception.CombatEndReason
 import com.bylins.client.bot.perception.DamageIntensity
 import com.bylins.client.scripting.ScriptEvent
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import kotlinx.serialization.json.*
 import mu.KotlinLogging
 
 /**
@@ -44,7 +43,7 @@ class CombatManager(private val bot: BotCore) {
     // Combat Profile tracking
     // ============================================
 
-    private val objectMapper = ObjectMapper().registerKotlinModule()
+    private val json = Json { encodeDefaults = true }
 
     // Current combat profile being recorded
     private var currentProfileId: Long? = null
@@ -284,14 +283,14 @@ class CombatManager(private val bot: BotCore) {
 
         // Build raw data JSON
         val rawData = try {
-            objectMapper.writeValueAsString(mapOf(
-                "hits" to profileHits,
-                "hp_timeline" to profileHpTimeline,
-                "exp_timeline" to profileExpTimeline,
-                "skills_used" to profileSkillsUsed.toList(),
-                "damage_dealt" to damageDealt,
-                "damage_received" to damageReceived
-            ))
+            buildJsonObject {
+                put("hits", toJsonArray(profileHits))
+                put("hp_timeline", toJsonArray(profileHpTimeline))
+                put("exp_timeline", toJsonArray(profileExpTimeline))
+                put("skills_used", JsonArray(profileSkillsUsed.map { JsonPrimitive(it) }))
+                put("damage_dealt", JsonPrimitive(damageDealt))
+                put("damage_received", JsonPrimitive(damageReceived))
+            }.toString()
         } catch (e: Exception) {
             logger.error { "Error serializing combat raw data: ${e.message}" }
             "{}"
@@ -299,7 +298,7 @@ class CombatManager(private val bot: BotCore) {
 
         // Build mobs killed JSON
         val mobsKilledJson = try {
-            objectMapper.writeValueAsString(profileMobsKilled)
+            JsonArray(profileMobsKilled.map { JsonPrimitive(it) }).toString()
         } catch (e: Exception) {
             "[]"
         }
@@ -607,5 +606,31 @@ class CombatManager(private val bot: BotCore) {
             "damageReceived" to damageReceived,
             "skillQueueSize" to skillQueue.size
         )
+    }
+
+    /**
+     * Конвертирует List<Map<String, Any>> в JsonArray
+     */
+    private fun toJsonArray(list: List<Map<String, Any>>): JsonArray {
+        return JsonArray(list.map { map ->
+            JsonObject(map.mapValues { (_, v) -> toJsonElement(v) })
+        })
+    }
+
+    /**
+     * Конвертирует Any в JsonElement
+     */
+    private fun toJsonElement(value: Any?): JsonElement {
+        return when (value) {
+            null -> JsonNull
+            is Boolean -> JsonPrimitive(value)
+            is Number -> JsonPrimitive(value)
+            is String -> JsonPrimitive(value)
+            is List<*> -> JsonArray(value.map { toJsonElement(it) })
+            is Map<*, *> -> JsonObject(value.entries.associate { (k, v) ->
+                k.toString() to toJsonElement(v)
+            })
+            else -> JsonPrimitive(value.toString())
+        }
     }
 }

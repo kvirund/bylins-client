@@ -17,8 +17,6 @@ import com.bylins.client.ClientState
 import com.bylins.client.scripting.Script
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
 
 private val logger = KotlinLogging.logger("ScriptsPanel")
 @Composable
@@ -30,6 +28,7 @@ fun ScriptsPanel(
     val scripts by clientState.getScripts().collectAsState()
     val availableEngines = clientState.getAvailableScriptEngines()
     val scriptsDirectory = clientState.getScriptsDirectory()
+    var showLoadScriptDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -56,18 +55,7 @@ fun ScriptsPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = {
-                        // Открываем диалог выбора файла
-                        val fileChooser = JFileChooser(scriptsDirectory)
-                        fileChooser.fileFilter = FileNameExtensionFilter(
-                            "Script files (*.js, *.py, *.lua, *.pl)",
-                            "js", "py", "lua", "pl"
-                        )
-
-                        if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            clientState.loadScript(fileChooser.selectedFile)
-                        }
-                    },
+                    onClick = { showLoadScriptDialog = true },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.success
                     )
@@ -76,20 +64,12 @@ fun ScriptsPanel(
                 }
 
                 Button(
-                    onClick = {
-                        // Открываем директорию со скриптами
-                        try {
-                            val desktop = java.awt.Desktop.getDesktop()
-                            desktop.open(File(scriptsDirectory))
-                        } catch (e: Exception) {
-                            logger.error { "Error opening scripts directory: ${e.message}" }
-                        }
-                    },
+                    onClick = { openDirectory(scriptsDirectory) },
                     colors = ButtonDefaults.buttonColors(
                         backgroundColor = colorScheme.primary
                     )
                 ) {
-                    Text("📁 Открыть папку", color = colorScheme.onSurface)
+                    Text("Открыть папку", color = colorScheme.onSurface)
                 }
             }
         }
@@ -155,6 +135,21 @@ fun ScriptsPanel(
                 }
             }
         }
+    }
+
+    // Диалог загрузки скрипта
+    if (showLoadScriptDialog) {
+        FilePickerDialog(
+            mode = FilePickerMode.OPEN,
+            title = "Загрузить скрипт",
+            initialDirectory = File(scriptsDirectory),
+            extensions = listOf("js", "py", "lua", "pl"),
+            onDismiss = { showLoadScriptDialog = false },
+            onFileSelected = { file ->
+                clientState.loadScript(file)
+                showLoadScriptDialog = false
+            }
+        )
     }
 }
 
@@ -276,5 +271,18 @@ private fun ScriptItem(
                 )
             }
         }
+    }
+}
+
+private fun openDirectory(path: String) {
+    try {
+        val os = System.getProperty("os.name").lowercase()
+        when {
+            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", path))
+            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", path))
+            else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
+        }
+    } catch (e: Exception) {
+        KotlinLogging.logger("ScriptsPanel").error { "Error opening directory: ${e.message}" }
     }
 }

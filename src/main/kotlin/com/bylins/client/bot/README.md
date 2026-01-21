@@ -82,7 +82,7 @@ IDLE ─────► STARTING ─────► TRAVELING ─────►
 - `TRAVELING` - перемещение к цели
 - `COMBAT` - в бою
 - `LOOTING` - сбор лута
-- `RESTING` - восстановление HP/маны
+- `RESTING` - восстановление HP
 - `BUFFING` - наложение баффов
 - `FLEEING` - бегство при низком HP
 - `EXPLORING` - исследование новых зон
@@ -99,10 +99,10 @@ data class BotConfig(
     val enabled: Boolean = false,
     var mode: BotMode = BotMode.LEVELING,
 
-    // Пороги HP/маны для действий
+    // Пороги HP для действий
     val fleeHpPercent: Int = 20,      // Бежать при HP < 20%
     val restHpPercent: Int = 70,      // Отдыхать при HP < 70%
-    val restManaPercent: Int = 50,    // Отдыхать при мане < 50%
+    // В Былинах нет маны - используется система заучивания заклинаний
 
     // Боевые настройки
     val autoLoot: Boolean = true,
@@ -269,13 +269,18 @@ val event2 = combatParser.parseLine("Орк мертв!")
 
 ### UI панель
 
-Вкладка "AI-Бот" в интерфейсе клиента:
+Бот реализован как плагин и создаёт свою вкладку через Plugin API:
 - Статус бота и текущее состояние
 - Выбор режима работы
 - Кнопки старт/стоп
 - Статистика сессии (убийства, смерти, опыт)
-- Состояние персонажа (HP, мана, движение)
+- Состояние персонажа (HP, движение, выходы)
 - Статус LLM парсера
+
+```kotlin
+// Создание вкладки через Plugin API (TODO)
+pluginApi.registerTab("bot", "AI-Бот") { BotPanelContent() }
+```
 
 ## Зависимости
 
