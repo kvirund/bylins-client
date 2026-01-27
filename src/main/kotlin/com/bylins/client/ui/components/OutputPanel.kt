@@ -119,16 +119,28 @@ fun OutputPanel(
         val activeTab = tabs.find { it.id == activeTabId }
         val receivedData by clientState.receivedData.collectAsState()
         if (activeTab != null) {
+            // Флаг переключения вкладки: создаётся заново при смене activeTab.id
+            // Начальное значение = true, TabContent установит false после обработки
+            val tabSwitchState = remember(activeTab.id) { mutableStateOf(true) }
+
             // Получаем или создаём scroll state для этой вкладки
             val scrollState = scrollStates.getOrPut(activeTab.id) { ScrollState(0) }
 
+            // Получаем контент вкладки ЗДЕСЬ, а не внутри TabContent
+            // Это унифицирует поведение с главной вкладкой и избегает проблем
+            // с пересозданием подписки при переключении вкладок
+            val tabContent by activeTab.content.collectAsState()
+            val displayText = if (activeTab.id == "main") receivedData else tabContent
+
             TabContent(
                 tab = activeTab,
-                receivedData = receivedData,
+                displayText = displayText,
                 fontFamily = fontFamily,
                 fontSize = fontSize,
                 scrollState = scrollState,
                 previousTextLengths = previousTextLengths,
+                isTabSwitch = tabSwitchState.value,
+                onTabSwitchHandled = { tabSwitchState.value = false },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -195,21 +207,16 @@ private fun getLastLines(text: String, maxLines: Int): String {
 @Composable
 fun TabContent(
     tab: com.bylins.client.tabs.Tab,
-    receivedData: String = "",
+    displayText: String,
     modifier: Modifier = Modifier,
     fontFamily: FontFamily = FontFamily.Monospace,
     fontSize: Int = 14,
     scrollState: ScrollState,
-    previousTextLengths: MutableMap<String, Int>
+    previousTextLengths: MutableMap<String, Int>,
+    isTabSwitch: Boolean = false,
+    onTabSwitchHandled: () -> Unit = {}
 ) {
     val ansiParser = remember(tab.id) { AnsiParser() }
-
-    // Получаем содержимое вкладки
-    val tabContent by tab.content.collectAsState()
-
-    // Для главной вкладки используем receivedData (для правильной работы с промптом)
-    // Для остальных вкладок - tab.content
-    val displayText = if (tab.id == "main") receivedData else tabContent
 
     // КРИТИЧНО: Ограничиваем отображаемый текст последними 1000 строками
     // для избежания O(n²) сложности при парсинге ANSI кодов
@@ -234,13 +241,32 @@ fun TabContent(
     }
 
     // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста
-    LaunchedEffect(outputText.length, tab.id) {
-        val previousLength = previousTextLengths[tab.id] ?: 0
-        val isTextAdded = outputText.length > previousLength
-        previousTextLengths[tab.id] = outputText.length
+    // НЕ скроллим при переключении вкладок - только когда реально добавляется текст
+    val tabId = tab.id
+    val textLength = outputText.length
+    LaunchedEffect(textLength, isTabSwitch) {
+        // При переключении вкладок - только обновляем длину, НЕ скроллим
+        if (isTabSwitch) {
+            previousTextLengths[tabId] = textLength
+            onTabSwitchHandled() // Сбрасываем флаг после обработки
+            return@LaunchedEffect
+        }
 
-        if (isTextAdded) {
+        val previousLength = previousTextLengths[tabId]
+
+        // Если это первый рендер вкладки - просто запоминаем длину, не скроллим
+        if (previousLength == null) {
+            previousTextLengths[tabId] = textLength
+            return@LaunchedEffect
+        }
+
+        // Скроллим только если текст реально увеличился
+        if (textLength > previousLength) {
+            previousTextLengths[tabId] = textLength
             scrollState.scrollTo(scrollState.maxValue)
+        } else if (textLength != previousLength) {
+            // Текст изменился, но не увеличился - просто обновляем длину
+            previousTextLengths[tabId] = textLength
         }
     }
 
@@ -282,7 +308,7 @@ fun TabContent(
                 .fillMaxHeight()
                 .onSizeChanged { trackHeightPx = it.height.toFloat() }
                 .background(Color(0xFF333333), RoundedCornerShape(5.dp))
-                .pointerInput(Unit) {
+                .pointerInput(scrollState) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()
                         val currentMax = scrollState.maxValue
