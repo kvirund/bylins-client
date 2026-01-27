@@ -1,13 +1,12 @@
 package com.bylins.client.ui.components
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +38,12 @@ fun OutputPanel(
 
     var showTabDialog by remember { mutableStateOf(false) }
     var editingTab by remember { mutableStateOf<com.bylins.client.tabs.Tab?>(null) }
+
+    // Храним scroll state для каждой вкладки, чтобы сохранять позицию при переключении
+    val scrollStates = remember { mutableStateMapOf<String, ScrollState>() }
+
+    // Храним предыдущую длину текста для каждой вкладки (для определения нового текста)
+    val previousTextLengths = remember { mutableStateMapOf<String, Int>() }
 
     Column(modifier = modifier) {
         // Вкладки с управлением
@@ -114,11 +119,16 @@ fun OutputPanel(
         val activeTab = tabs.find { it.id == activeTabId }
         val receivedData by clientState.receivedData.collectAsState()
         if (activeTab != null) {
+            // Получаем или создаём scroll state для этой вкладки
+            val scrollState = scrollStates.getOrPut(activeTab.id) { ScrollState(0) }
+
             TabContent(
                 tab = activeTab,
                 receivedData = receivedData,
                 fontFamily = fontFamily,
                 fontSize = fontSize,
+                scrollState = scrollState,
+                previousTextLengths = previousTextLengths,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -188,9 +198,10 @@ fun TabContent(
     receivedData: String = "",
     modifier: Modifier = Modifier,
     fontFamily: FontFamily = FontFamily.Monospace,
-    fontSize: Int = 14
+    fontSize: Int = 14,
+    scrollState: ScrollState,
+    previousTextLengths: MutableMap<String, Int>
 ) {
-    val scrollState = rememberScrollState()
     val ansiParser = remember(tab.id) { AnsiParser() }
 
     // Получаем содержимое вкладки
@@ -222,10 +233,15 @@ fun TabContent(
         }
     }
 
-    // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста (не при переключении вкладок)
-    // Используем limitedText вместо displayText для меньшей частоты вызовов
-    LaunchedEffect(limitedText) {
-        scrollState.scrollTo(scrollState.maxValue)
+    // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста
+    LaunchedEffect(outputText.length, tab.id) {
+        val previousLength = previousTextLengths[tab.id] ?: 0
+        val isTextAdded = outputText.length > previousLength
+        previousTextLengths[tab.id] = outputText.length
+
+        if (isTextAdded) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
     }
 
     val coroutineScope = rememberCoroutineScope()
@@ -237,22 +253,23 @@ fun TabContent(
             .background(Color.Black)
             .padding(8.dp)
     ) {
-        // BasicTextField с readOnly для поддержки выделения текста
-        BasicTextField(
-            value = TextFieldValue(outputText),
-            onValueChange = {},
-            readOnly = true,
-            textStyle = androidx.compose.ui.text.TextStyle(
-                color = Color(0xFFBBBBBB),
-                fontFamily = fontFamily,
-                fontSize = fontSize.sp,
-                lineHeight = (fontSize + 4).sp
-            ),
+        // SelectionContainer позволяет выделять текст без проблем с курсором и фокусом
+        SelectionContainer(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(end = 14.dp) // Место для scrollbar
                 .verticalScroll(scrollState)
-        )
+        ) {
+            Text(
+                text = outputText,
+                style = androidx.compose.ui.text.TextStyle(
+                    color = Color(0xFFBBBBBB),
+                    fontFamily = fontFamily,
+                    fontSize = fontSize.sp,
+                    lineHeight = (fontSize + 4).sp
+                )
+            )
+        }
 
         // Кастомный scrollbar
         val maxScroll = scrollState.maxValue
