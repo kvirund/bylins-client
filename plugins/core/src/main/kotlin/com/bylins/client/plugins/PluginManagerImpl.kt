@@ -23,7 +23,9 @@ class PluginManagerImpl(
     private val _plugins = MutableStateFlow<List<LoadedPlugin>>(emptyList())
     override val plugins: StateFlow<List<LoadedPlugin>> = _plugins
 
-    override val pluginsDirectory = File("plugins")
+    override val pluginsDirectory = File(
+        System.getProperty("bylins.plugins.dir", "plugins")
+    )
 
     private val pluginLoader = PluginLoader()
     private val classLoaders = mutableMapOf<String, PluginClassLoader>()

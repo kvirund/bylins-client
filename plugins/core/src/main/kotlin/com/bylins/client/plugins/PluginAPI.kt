@@ -2,6 +2,7 @@ package com.bylins.client.plugins
 
 import com.bylins.client.plugins.events.PluginEvent
 import com.bylins.client.plugins.events.EventPriority
+import com.bylins.client.plugins.scripting.ScriptEvent
 import com.bylins.client.plugins.ui.PluginTab
 
 /**
@@ -407,6 +408,19 @@ interface PluginAPI {
      * Проверяет загружен ли плагин.
      */
     fun isPluginLoaded(pluginId: String): Boolean
+
+    // ============================================
+    // События скриптов
+    // ============================================
+
+    /**
+     * Отправить событие в систему скриптов клиента.
+     * Позволяет плагинам (например, боту) уведомлять скрипты о событиях.
+     *
+     * @param event Тип события
+     * @param data Данные события (любой объект, будет передан обработчику)
+     */
+    fun fireScriptEvent(event: ScriptEvent, data: Any?)
 }
 
 // ============================================

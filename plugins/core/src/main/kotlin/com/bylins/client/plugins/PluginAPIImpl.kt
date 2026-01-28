@@ -4,6 +4,7 @@ import mu.KotlinLogging
 import com.bylins.client.plugins.events.EventBus
 import com.bylins.client.plugins.events.EventPriority
 import com.bylins.client.plugins.events.PluginEvent
+import com.bylins.client.plugins.scripting.ScriptEvent
 import com.bylins.client.plugins.ui.PluginTab
 import com.bylins.client.plugins.ui.PluginTabImpl
 import kotlinx.coroutines.*
@@ -76,6 +77,7 @@ class PluginAPIImpl(
     private val unregisterPluginTabFunc: (String) -> Unit,
     private val findRoomsMatchingFunc: ((Map<String, Any>) -> Boolean, Int) -> List<Map<String, Any>>,
     private val findNearestMatchingFunc: ((Map<String, Any>) -> Boolean) -> Pair<Map<String, Any>, List<String>>?,
+    private val fireScriptEventFunc: (ScriptEvent, Any?) -> Unit,
     private val dataFolder: File
 ) : PluginAPI {
 
@@ -515,6 +517,12 @@ class PluginAPIImpl(
     }
 
     override fun isPluginLoaded(pluginId: String): Boolean = isPluginLoadedFunc(pluginId)
+
+    // ============================================
+    // События скриптов
+    // ============================================
+
+    override fun fireScriptEvent(event: ScriptEvent, data: Any?) = fireScriptEventFunc(event, data)
 
     // ============================================
     // Внутренние методы

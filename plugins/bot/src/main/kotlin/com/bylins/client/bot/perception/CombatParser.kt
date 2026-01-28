@@ -1,7 +1,7 @@
 package com.bylins.client.bot.perception
 
 import com.bylins.client.bot.*
-import com.bylins.client.scripting.ScriptEvent
+import com.bylins.client.plugins.scripting.ScriptEvent
 import mu.KotlinLogging
 
 /**

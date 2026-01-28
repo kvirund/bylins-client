@@ -113,34 +113,6 @@ class ClientState {
     val statusManager = StatusManager(variableManager)
     private val tabManager = TabManager()
 
-    // AI-бот (lazy initialization)
-    val botManager: com.bylins.client.bot.BotManager by lazy {
-        com.bylins.client.bot.BotManager(
-            sendCommand = { command -> send(command) },
-            echoText = { text -> telnetClient.addLocalOutput(text) },
-            getMsdpValue = { key -> _msdpData.value[key] },
-            getCurrentRoom = {
-                mapManager.getCurrentRoom()?.let { room ->
-                    mapOf<String, Any>(
-                        "id" to room.id,
-                        "name" to room.name,
-                        "zone" to (room.zone ?: ""),
-                        "description" to room.description,
-                        "exits" to room.exits.keys.map { dir -> dir.name }
-                    )
-                }
-            },
-            findPath = { targetRoomId ->
-                mapManager.findPathFromCurrent(targetRoomId)?.map { dir -> dir.name }
-            },
-            fireEvent = { event, data ->
-                if (::scriptManager.isInitialized) {
-                    scriptManager.fireEvent(event, data)
-                }
-            }
-        )
-    }
-
     // Хранилище триггеров из скриптов
     private data class ScriptTrigger(
         val id: String,
@@ -213,15 +185,6 @@ class ClientState {
                 }
                 contextCommandManager.processRoomRules(room, profile.contextCommandRules)
             }
-
-            // Уведомляем AI-бота о входе в комнату
-            botManager.onRoomEnter(mapOf<String, Any>(
-                "id" to room.id,
-                "name" to room.name,
-                "zone" to (room.zone ?: ""),
-                "description" to room.description,
-                "exits" to room.exits.keys.map { dir -> dir.name }
-            ))
         }
     }
 
@@ -466,7 +429,6 @@ class ClientState {
             scope = scope,
             context = commandContext,
             mapManager = mapManager,
-            botManager = botManager,
             soundManager = soundManager,
             contextCommandManager = contextCommandManager,
             getScriptManager = { if (::scriptManager.isInitialized) scriptManager else null },
@@ -1025,9 +987,6 @@ class ClientState {
 
             // Обрабатываем контекстные команды по паттернам
             contextCommandManager.processLine(cleanLine)
-
-            // Передаём строку AI-боту
-            botManager.processLine(cleanLine)
 
             // Обрабатываем контекстные команды из профилей
             if (::profileManager.isInitialized) {
@@ -2211,6 +2170,12 @@ class ClientState {
             },
             findNearestMatchingFunc = { predicate ->
                 mapManager.findNearestMatching(predicate)
+            },
+            // События для скриптов
+            fireScriptEventFunc = { event, data ->
+                if (::scriptManager.isInitialized) {
+                    scriptManager.fireEvent(event, data)
+                }
             },
             dataFolder = dataFolder
         )

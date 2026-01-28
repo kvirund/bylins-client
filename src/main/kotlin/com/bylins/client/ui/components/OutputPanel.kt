@@ -1,20 +1,15 @@
 package com.bylins.client.ui.components
 
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -270,10 +265,6 @@ fun TabContent(
         }
     }
 
-    val coroutineScope = rememberCoroutineScope()
-    var trackHeightPx by remember { mutableStateOf(0f) }
-    val density = androidx.compose.ui.platform.LocalDensity.current
-
     Box(
         modifier = modifier
             .background(Color.Black)
@@ -297,54 +288,20 @@ fun TabContent(
             )
         }
 
-        // Кастомный scrollbar
-        val maxScroll = scrollState.maxValue
-        val currentScroll = scrollState.value
-
-        Box(
+        // Встроенный VerticalScrollbar - корректно обрабатывает drag и density
+        VerticalScrollbar(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .width(10.dp)
-                .fillMaxHeight()
-                .onSizeChanged { trackHeightPx = it.height.toFloat() }
-                .background(Color(0xFF333333), RoundedCornerShape(5.dp))
-                .pointerInput(scrollState) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        val currentMax = scrollState.maxValue
-                        if (trackHeightPx > 0 && currentMax > 0) {
-                            val currentThumbHeight = (trackHeightPx * (trackHeightPx / (trackHeightPx + currentMax))).coerceAtLeast(30f)
-                            val availableTrack = trackHeightPx - currentThumbHeight
-                            if (availableTrack > 0) {
-                                val dragRatio = dragAmount.y / availableTrack
-                                val delta = (dragRatio * currentMax).toInt()
-                                val newScroll = (scrollState.value + delta).coerceIn(0, currentMax)
-                                coroutineScope.launch {
-                                    scrollState.scrollTo(newScroll)
-                                }
-                            }
-                        }
-                    }
-                }
-        ) {
-            // Thumb (ползунок) - показываем только если есть что скроллить
-            if (maxScroll > 0 && trackHeightPx > 0) {
-                val thumbHeightRatio = (trackHeightPx / (trackHeightPx + maxScroll)).coerceIn(0.05f, 1f)
-                val thumbHeightPx = (trackHeightPx * thumbHeightRatio).coerceAtLeast(30f)
-                val scrollRatio = if (maxScroll > 0) currentScroll.toFloat() / maxScroll.toFloat() else 0f
-                val thumbOffsetPx = scrollRatio * (trackHeightPx - thumbHeightPx)
-
-                val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
-                val thumbOffsetDp = with(density) { thumbOffsetPx.toDp() }
-
-                Box(
-                    modifier = Modifier
-                        .offset(y = thumbOffsetDp)
-                        .width(10.dp)
-                        .height(thumbHeightDp)
-                        .background(Color(0xFF888888), RoundedCornerShape(5.dp))
-                )
-            }
-        }
+                .fillMaxHeight(),
+            adapter = rememberScrollbarAdapter(scrollState),
+            style = ScrollbarStyle(
+                minimalHeight = 30.dp,
+                thickness = 10.dp,
+                shape = RoundedCornerShape(5.dp),
+                hoverDurationMillis = 300,
+                unhoverColor = Color(0xFF888888),
+                hoverColor = Color(0xFFAAAAAA)
+            )
+        )
     }
 }

@@ -4,7 +4,8 @@ import com.bylins.client.bot.combat.CombatManager
 import com.bylins.client.bot.llm.LLMParser
 import com.bylins.client.bot.navigation.Navigator
 import com.bylins.client.bot.perception.*
-import com.bylins.client.scripting.ScriptEvent
+import com.bylins.client.plugins.PluginAPI
+import com.bylins.client.plugins.scripting.ScriptEvent
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,18 +16,19 @@ import java.util.UUID
 /**
  * Ядро AI-бота
  * Координирует все подсистемы: FSM, бой, навигацию, парсинг
+ *
+ * Использует PluginAPI для взаимодействия с клиентом:
+ * - Отправка команд: api.send()
+ * - Вывод в консоль: api.echo()
+ * - Данные MSDP: api.getMsdpValue()
+ * - Текущая комната: api.getCurrentRoom()
+ * - Поиск пути: api.findPath()
+ * - События скриптам: api.fireScriptEvent()
  */
 private val logger = KotlinLogging.logger("BotCore")
 
 class BotCore(
-    private val sendCommand: (String) -> Unit,
-    private val echoText: (String) -> Unit,
-    private val getMsdpValue: (String) -> Any?,
-    private val getCurrentRoom: () -> Map<String, Any>?,
-    private val findPath: (String) -> List<String>?,
-    private val fireEvent: (ScriptEvent, Any?) -> Unit,
-    // Callback для поиска ближайшей комнаты по условию (для исследования)
-    private val findNearestMatching: ((Map<String, Any>) -> Boolean) -> Pair<Map<String, Any>, List<String>>? = { null }
+    private val api: PluginAPI
 ) {
     // Состояние
     val stateMachine = BotStateMachine()
@@ -110,7 +112,7 @@ class BotCore(
         currentSession = database.startBotSession(
             sessionId = sessionId,
             mode = mode,
-            zoneId = getCurrentRoom()?.get("zone") as? String
+            zoneId = api.getCurrentRoom()?.get("zone") as? String
         )
 
         deathCount = 0
@@ -221,8 +223,8 @@ class BotCore(
 
         // Получаем state как Map
         @Suppress("UNCHECKED_CAST")
-        val stateMap = getMsdpValue("state") as? Map<String, Any>
-            ?: getMsdpValue("STATE") as? Map<String, Any>
+        val stateMap = api.getMsdpValue("state") as? Map<String, Any>
+            ?: api.getMsdpValue("STATE") as? Map<String, Any>
 
         // HP из MSDP state или из PromptParser
         val promptData = promptParser.lastPromptData
@@ -237,8 +239,8 @@ class BotCore(
             return
         }
 
-        val maxHp = getMsdpValue("max_hit")?.toString()?.toIntOrNull()
-            ?: getMsdpValue("MAX_HIT")?.toString()?.toIntOrNull()
+        val maxHp = api.getMsdpValue("max_hit")?.toString()?.toIntOrNull()
+            ?: api.getMsdpValue("MAX_HIT")?.toString()?.toIntOrNull()
             ?: promptData?.maxHp
             ?: 1
 
@@ -248,23 +250,23 @@ class BotCore(
             ?: promptData?.move
             ?: 0
 
-        val maxMove = getMsdpValue("max_move")?.toString()?.toIntOrNull()
-            ?: getMsdpValue("MAX_MOVE")?.toString()?.toIntOrNull()
+        val maxMove = api.getMsdpValue("max_move")?.toString()?.toIntOrNull()
+            ?: api.getMsdpValue("MAX_MOVE")?.toString()?.toIntOrNull()
             ?: promptData?.maxMove
             ?: 1
 
         // В Былинах нет маны - используется система заучивания заклинаний
 
-        val level = getMsdpValue("level")?.toString()?.toIntOrNull()
-            ?: getMsdpValue("LEVEL")?.toString()?.toIntOrNull()
+        val level = api.getMsdpValue("level")?.toString()?.toIntOrNull()
+            ?: api.getMsdpValue("LEVEL")?.toString()?.toIntOrNull()
             ?: 1
 
-        val exp = getMsdpValue("experience")?.toString()?.toLongOrNull()
-            ?: getMsdpValue("EXPERIENCE")?.toString()?.toLongOrNull()
+        val exp = api.getMsdpValue("experience")?.toString()?.toLongOrNull()
+            ?: api.getMsdpValue("EXPERIENCE")?.toString()?.toLongOrNull()
             ?: 0
 
         // Gold может быть Map {POCKET=X, BANK=Y}
-        val goldRaw = getMsdpValue("gold") ?: getMsdpValue("GOLD")
+        val goldRaw = api.getMsdpValue("gold") ?: api.getMsdpValue("GOLD")
         @Suppress("UNCHECKED_CAST")
         val gold = when (goldRaw) {
             is Number -> goldRaw.toInt()
@@ -274,16 +276,16 @@ class BotCore(
 
         // Room из MSDP
         @Suppress("UNCHECKED_CAST")
-        val roomMap = getMsdpValue("room") as? Map<String, Any>
-            ?: getMsdpValue("ROOM") as? Map<String, Any>
+        val roomMap = api.getMsdpValue("room") as? Map<String, Any>
+            ?: api.getMsdpValue("ROOM") as? Map<String, Any>
 
         val roomId = roomMap?.get("VNUM")?.toString()
             ?: roomMap?.get("vnum")?.toString()
-            ?: getCurrentRoom()?.get("id") as? String
+            ?: api.getCurrentRoom()?.get("id") as? String
 
         val zoneId = roomMap?.get("ZONE")?.toString()
             ?: roomMap?.get("zone")?.toString()
-            ?: getCurrentRoom()?.get("zone") as? String
+            ?: api.getCurrentRoom()?.get("zone") as? String
 
         // TERRAIN из MSDP room (тип поверхности: "Внутри", "Город", "Лес" и т.д.)
         val terrain = roomMap?.get("TERRAIN")?.toString()
@@ -343,7 +345,7 @@ class BotCore(
         if (charState.hpPercent < cfg.fleeHpPercent && stateMachine.currentState.value == BotStateType.COMBAT) {
             log("Low HP detected: ${charState.hpPercent}% < ${cfg.fleeHpPercent}%")
             stateMachine.transition(BotTransition.LOW_HP)
-            fireEvent(ScriptEvent.ON_LOW_HP, charState.hpPercent)
+            api.fireScriptEvent(ScriptEvent.ON_LOW_HP, charState.hpPercent)
             return true
         }
 
@@ -367,7 +369,7 @@ class BotCore(
         echo("[BOT] Смерть #$deathCount")
         log("Player death #$deathCount")
 
-        fireEvent(ScriptEvent.ON_PLAYER_DEATH, deathCount)
+        api.fireScriptEvent(ScriptEvent.ON_PLAYER_DEATH, deathCount)
 
         stateMachine.transition(BotTransition.COMBAT_LOSE)
     }
@@ -450,7 +452,7 @@ class BotCore(
         // Проверяем завершение боя
         if (!combatManager.isInCombat()) {
             currentSession?.totalKills = (currentSession?.totalKills ?: 0) + 1
-            fireEvent(ScriptEvent.ON_MOB_KILLED, combatManager.lastKilledMob)
+            api.fireScriptEvent(ScriptEvent.ON_MOB_KILLED, combatManager.lastKilledMob)
             stateMachine.transition(BotTransition.COMBAT_WIN)
         }
     }
@@ -580,11 +582,11 @@ class BotCore(
 
     fun send(command: String) {
         log("Sending: $command")
-        sendCommand(command)
+        api.send(command)
     }
 
     fun echo(text: String) {
-        echoText(text)
+        api.echo(text)
     }
 
     fun log(message: String) {
@@ -595,21 +597,21 @@ class BotCore(
     /**
      * Получить текущую комнату (для подсистем)
      */
-    fun getRoom(): Map<String, Any>? = getCurrentRoom()
+    fun getRoom(): Map<String, Any>? = api.getCurrentRoom()
 
     /**
      * Найти ближайшую комнату, удовлетворяющую условию
      * Возвращает пару (комната, путь) или null
      */
     fun findNearestRoom(predicate: (Map<String, Any>) -> Boolean): Pair<Map<String, Any>, List<String>>? {
-        return findNearestMatching(predicate)
+        return api.findNearestMatching(predicate)
     }
 
     /**
      * Найти путь к комнате по ID
      */
     fun findPathToRoom(roomId: String): List<String>? {
-        return findPath(roomId)
+        return api.findPath(roomId)
     }
 
     /**
@@ -647,7 +649,7 @@ class BotCore(
             is CombatStateChange.CombatStarted -> {
                 log("Combat started with: ${change.targetName}")
                 combatManager.onCombatStarted(change.targetName, change.targetCondition)
-                fireEvent(ScriptEvent.ON_COMBAT_START, mapOf(
+                api.fireScriptEvent(ScriptEvent.ON_COMBAT_START, mapOf(
                     "target" to change.targetName,
                     "targetCondition" to (change.targetCondition ?: "unknown")
                 ))
@@ -659,7 +661,7 @@ class BotCore(
             is CombatStateChange.CombatEnded -> {
                 log("Combat ended: ${change.reason}")
                 combatManager.onCombatEnded(change.reason)
-                fireEvent(ScriptEvent.ON_COMBAT_END, mapOf(
+                api.fireScriptEvent(ScriptEvent.ON_COMBAT_END, mapOf(
                     "reason" to change.reason.name
                 ))
             }
@@ -703,7 +705,7 @@ class BotCore(
                 // Моб убит
                 log("Mob killed: ${message.target}")
                 currentSession?.totalKills = (currentSession?.totalKills ?: 0) + 1
-                fireEvent(ScriptEvent.ON_MOB_KILLED, mapOf(
+                api.fireScriptEvent(ScriptEvent.ON_MOB_KILLED, mapOf(
                     "name" to (message.target ?: "unknown")
                 ))
             }
@@ -714,24 +716,24 @@ class BotCore(
             CombatMessageType.PLAYER_FLED -> {
                 // Игрок сбежал
                 log("Player fled")
-                fireEvent(ScriptEvent.ON_COMBAT_END, mapOf("reason" to "PLAYER_FLED"))
+                api.fireScriptEvent(ScriptEvent.ON_COMBAT_END, mapOf("reason" to "PLAYER_FLED"))
             }
             CombatMessageType.MOB_FLED -> {
                 // Моб сбежал
                 log("Mob fled: ${message.source}")
-                fireEvent(ScriptEvent.ON_COMBAT_END, mapOf("reason" to "MOB_FLED"))
+                api.fireScriptEvent(ScriptEvent.ON_COMBAT_END, mapOf("reason" to "MOB_FLED"))
             }
             CombatMessageType.EXP_GAIN -> {
                 // Получен опыт
                 message.amount?.let { exp ->
                     currentSession?.totalExpGained = (currentSession?.totalExpGained ?: 0) + exp
-                    fireEvent(ScriptEvent.ON_EXP_GAIN, exp)
+                    api.fireScriptEvent(ScriptEvent.ON_EXP_GAIN, exp)
                 }
             }
             CombatMessageType.LEVEL_UP -> {
                 // Повышение уровня
                 log("Level up: ${message.amount}")
-                fireEvent(ScriptEvent.ON_LEVEL_UP, message.amount)
+                api.fireScriptEvent(ScriptEvent.ON_LEVEL_UP, message.amount)
             }
             else -> { /* MISS, SKILL_USED, AFFECT_APPLIED, AFFECT_EXPIRED, UNKNOWN */ }
         }

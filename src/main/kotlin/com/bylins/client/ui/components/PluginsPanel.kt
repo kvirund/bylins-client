@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import com.bylins.client.plugins.LoadedPlugin
 import com.bylins.client.plugins.PluginState
-import com.bylins.client.plugins.ui.RenderPluginTab
+import com.bylins.client.ui.plugins.RenderPluginTab
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
 

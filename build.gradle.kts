@@ -49,10 +49,10 @@ dependencies {
     // YAML для plugin.yml
     implementation("org.yaml:snakeyaml:2.0")
 
-    // AI Bot plugin dependencies - compileOnly (not included in client, only for compilation)
-    compileOnly("dev.langchain4j:langchain4j:0.35.0")
-    compileOnly("dev.langchain4j:langchain4j-ollama:0.35.0")
-    compileOnly("com.microsoft.onnxruntime:onnxruntime:1.16.3")
+    // Plugin modules
+    // Note: Only plugins:core is a compile-time dependency
+    // Bot plugin is loaded at runtime via PluginManager from build/run/plugins/bot.jar
+    implementation(project(":plugins:core"))
 
     // Testing
     testImplementation(kotlin("test"))
@@ -86,7 +86,8 @@ compose.desktop {
             "-Dstderr.encoding=UTF-8",
             "-Dsun.stdout.encoding=UTF-8",
             "-Dsun.stderr.encoding=UTF-8",
-            "-DCONSOLE_CHARSET=UTF-8"
+            "-DCONSOLE_CHARSET=UTF-8",
+            "-Dbylins.plugins.dir=build/run/plugins"
         )
 
         nativeDistributions {
@@ -106,57 +107,46 @@ tasks.test {
     useJUnitPlatform()
 }
 
-// === AI Bot Plugin Build (Fat JAR) ===
+// === Prepare Run Directory ===
 
-// Конфигурация для зависимостей AI Bot плагина
-val aibotDeps: Configuration by configurations.creating {
-    isTransitive = true
+val prepareRun by tasks.registering(Copy::class) {
+    group = "application"
+    description = "Prepares run directory with plugins and scripts"
+
+    dependsOn(":plugins:bot:buildPlugin")
+
+    // Создаём директорию для плагинов
+    doFirst {
+        layout.buildDirectory.dir("run/plugins").get().asFile.mkdirs()
+    }
+
+    // Копируем JAR плагина
+    from(project(":plugins:bot").layout.buildDirectory.file("libs/bot.jar"))
+    into(layout.buildDirectory.dir("run/plugins"))
 }
 
-dependencies {
-    // AI Bot plugin dependencies (packaged into fat JAR)
-    aibotDeps("dev.langchain4j:langchain4j:0.35.0")
-    aibotDeps("dev.langchain4j:langchain4j-ollama:0.35.0")
-    aibotDeps("com.microsoft.onnxruntime:onnxruntime:1.16.3")
+// Копирование скриптов
+val prepareScripts by tasks.registering(Copy::class) {
+    group = "application"
+    description = "Copies scripts to run directory"
+
+    from("scripts") {
+        exclude("*.disabled")
+    }
+    into(layout.buildDirectory.dir("run/scripts"))
 }
 
-val buildAIBotPlugin by tasks.registering(Jar::class) {
-    group = "plugins"
-    description = "Builds the AI Bot plugin as a fat JAR with all dependencies"
+// Задача для полной подготовки директории запуска
+val prepareRunDir by tasks.registering {
+    group = "application"
+    description = "Prepares complete run directory"
 
-    archiveFileName.set("aibot.jar")
-    destinationDirectory.set(file("plugins"))
+    dependsOn(prepareRun, prepareScripts)
+}
 
-    // Включаем классы плагина
-    from(sourceSets.main.get().output) {
-        include("com/bylins/client/plugins/aibot/**")
-        include("com/bylins/client/bot/**")
-    }
-
-    // plugin.yml в корень JAR
-    from("src/main/resources/plugins/aibot") {
-        include("plugin.yml")
-    }
-
-    // Включаем все зависимости плагина (fat JAR)
-    from({
-        aibotDeps.filter { it.name.endsWith(".jar") }.map { zipTree(it) }
-    }) {
-        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
-        exclude("META-INF/MANIFEST.MF")
-        exclude("META-INF/LICENSE*", "META-INF/NOTICE*")
-        exclude("META-INF/versions/**")  // Исключаем multi-release классы
-    }
-
-    // Для предотвращения дублирования
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    dependsOn("classes")
-
-    doLast {
-        println("AI Bot plugin (fat JAR) built: ${archiveFile.get().asFile.absolutePath}")
-        println("Size: ${archiveFile.get().asFile.length() / 1024 / 1024} MB")
-    }
+// Обновляем run задачу чтобы зависела от prepareRun
+afterEvaluate {
+    tasks.findByName("run")?.dependsOn(prepareRunDir)
 }
 
 // === Packaging Tasks ===

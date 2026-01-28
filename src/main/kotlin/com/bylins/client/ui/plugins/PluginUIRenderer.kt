@@ -1,4 +1,4 @@
-package com.bylins.client.plugins.ui
+package com.bylins.client.ui.plugins
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bylins.client.plugins.ui.PluginTab
+import com.bylins.client.plugins.ui.PluginUINode
 import com.bylins.client.ui.theme.LocalAppColorScheme
 
 /**
@@ -65,8 +67,9 @@ fun RenderPluginUI(
 
         is PluginUINode.Scrollable -> {
             val scrollState = rememberScrollState()
-            val scrollModifier = if (node.maxHeight != null) {
-                modifier.heightIn(max = node.maxHeight.dp)
+            val maxHeightValue = node.maxHeight
+            val scrollModifier = if (maxHeightValue != null) {
+                modifier.heightIn(max = maxHeightValue.dp)
             } else {
                 modifier
             }
@@ -160,14 +163,15 @@ fun RenderPluginUI(
         }
 
         is PluginUINode.Slider -> {
+            val sliderLabel = node.label
             Column(modifier = modifier) {
-                if (node.label != null) {
+                if (sliderLabel != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = node.label,
+                            text = sliderLabel,
                             color = colorScheme.onSurface,
                             fontSize = 12.sp
                         )
@@ -192,14 +196,15 @@ fun RenderPluginUI(
         }
 
         is PluginUINode.ProgressBar -> {
+            val progressLabel = node.label
             Column(modifier = modifier) {
-                if (node.label != null) {
+                if (progressLabel != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = node.label,
+                            text = progressLabel,
                             color = colorScheme.onSurface,
                             fontSize = 12.sp
                         )
@@ -221,11 +226,12 @@ fun RenderPluginUI(
 
         is PluginUINode.Dropdown -> {
             var expanded by remember { mutableStateOf(false) }
+            val dropdownLabel = node.label
 
             Column(modifier = modifier) {
-                if (node.label != null) {
+                if (dropdownLabel != null) {
                     Text(
-                        text = node.label,
+                        text = dropdownLabel,
                         color = colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(bottom = 4.dp)

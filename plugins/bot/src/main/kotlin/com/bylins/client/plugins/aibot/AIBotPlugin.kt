@@ -69,16 +69,8 @@ class AIBotPlugin : PluginBase() {
     override fun onEnable() {
         logger.info("AI Bot плагин включается...")
 
-        // Инициализируем ядро бота
-        botCore = BotCore(
-            sendCommand = { cmd -> api.send(cmd) },
-            echoText = { text -> api.echo(text) },
-            getMsdpValue = { key -> api.getMsdpValue(key) },
-            getCurrentRoom = { api.getCurrentRoom() },
-            findPath = { roomId -> api.findPath(roomId) },
-            fireEvent = { _, _ -> }, // TODO: добавить поддержку событий
-            findNearestMatching = { predicate -> api.findNearestMatching(predicate) }
-        )
+        // Инициализируем ядро бота с PluginAPI
+        botCore = BotCore(api)
 
         // Настраиваем callbacks
         botCore.onLog = { message ->

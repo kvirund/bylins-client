@@ -3,7 +3,7 @@ package com.bylins.client.bot.combat
 import com.bylins.client.bot.*
 import com.bylins.client.bot.perception.CombatEndReason
 import com.bylins.client.bot.perception.DamageIntensity
-import com.bylins.client.scripting.ScriptEvent
+import com.bylins.client.plugins.scripting.ScriptEvent
 import kotlinx.serialization.json.*
 import mu.KotlinLogging
 

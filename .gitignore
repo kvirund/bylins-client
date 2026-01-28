@@ -25,7 +25,11 @@ logs/
 
 ### User data ###
 config/*.json
-/plugins/
+
+### Plugins - ignore compiled JARs but allow source modules ###
+/plugins/*.jar
+/plugins/core/build/
+/plugins/bot/build/
 
 ### User scripts (but keep README and examples) ###
 scripts/*

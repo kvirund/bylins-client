@@ -2,7 +2,6 @@ package com.bylins.client.commands
 
 import mu.KotlinLogging
 import com.bylins.client.audio.SoundManager
-import com.bylins.client.bot.BotManager
 import com.bylins.client.contextcommands.ContextCommandManager
 import com.bylins.client.mapper.Direction
 import com.bylins.client.mapper.MapManager
@@ -42,7 +41,6 @@ class CommandProcessor(
     private val scope: CoroutineScope,
     private val context: CommandContext,
     private val mapManager: MapManager,
-    private val botManager: BotManager,
     private val soundManager: SoundManager,
     private val contextCommandManager: ContextCommandManager,
     private val getScriptManager: () -> ScriptManager?,
@@ -56,12 +54,6 @@ class CommandProcessor(
         when {
             command == "#help" -> {
                 showHelp()
-                return true
-            }
-
-            command.startsWith("#bot") -> {
-                val args = if (command.length > 4) command.substring(4).trim() else ""
-                botManager.handleCommand(args)
                 return true
             }
 
