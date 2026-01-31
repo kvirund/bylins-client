@@ -14,6 +14,11 @@ import kotlinx.serialization.decodeFromString
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.reflect.KClass
+import kotlin.reflect.KMutableProperty1
+import kotlin.reflect.KProperty1
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.jvm.javaType
 
 /**
  * Реализация PluginAPI.
@@ -78,7 +83,17 @@ class PluginAPIImpl(
     private val findRoomsMatchingFunc: ((Map<String, Any>) -> Boolean, Int) -> List<Map<String, Any>>,
     private val findNearestMatchingFunc: ((Map<String, Any>) -> Boolean) -> Pair<Map<String, Any>, List<String>>?,
     private val fireScriptEventFunc: (ScriptEvent, Any?) -> Unit,
-    private val dataFolder: File
+    private val dataFolder: File,
+    private val createOutputTabFunc: (String, String) -> Boolean,
+    private val appendToOutputTabFunc: (String, String) -> Unit,
+    private val closeOutputTabFunc: (String) -> Unit,
+    // Панель статуса
+    private val addStatusBarFunc: (String, String, Int, Int, String, Boolean, Boolean, Int) -> Unit,
+    private val addStatusTextFunc: (String, String, String?, String?, Boolean, String?, Int) -> Unit,
+    private val addStatusModifiedValueFunc: (String, String, Int, Int?, Int?, String?, Int) -> Unit,
+    private val addStatusGroupFunc: (String, String, List<StatusElementData>, Boolean, Int) -> Unit,
+    private val removeStatusFunc: (String) -> Unit,
+    private val clearStatusFunc: () -> Unit
 ) : PluginAPI {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -426,6 +441,25 @@ class PluginAPIImpl(
     }
 
     // ============================================
+    // Вкладки вывода (текстовые)
+    // ============================================
+
+    override fun createOutputTab(id: String, title: String): Boolean {
+        val fullId = "${pluginId}_$id"
+        return createOutputTabFunc(fullId, title)
+    }
+
+    override fun appendToOutputTab(id: String, text: String) {
+        val fullId = "${pluginId}_$id"
+        appendToOutputTabFunc(fullId, text)
+    }
+
+    override fun closeOutputTab(id: String) {
+        val fullId = "${pluginId}_$id"
+        closeOutputTabFunc(fullId)
+    }
+
+    // ============================================
     // Маппер - поиск с callback
     // ============================================
 
@@ -469,41 +503,159 @@ class PluginAPIImpl(
     @Suppress("UNCHECKED_CAST")
     override fun saveConfig(config: Any) {
         try {
-            val configFile = File(dataFolder, "config.json")
+            val configFile = File(dataFolder, "config.yaml")
             if (!dataFolder.exists()) {
                 dataFolder.mkdirs()
             }
-            // Получаем сериализатор для конкретного типа через рефлексию
-            val kClass = config::class
-            @Suppress("UNCHECKED_CAST", "USELESS_CAST")
-            val serializer = kotlinx.serialization.serializer(kClass.java) as kotlinx.serialization.KSerializer<Any>
-            val jsonString = json.encodeToString(serializer, config)
-            configFile.writeText(jsonString)
+            // Используем SnakeYAML для сохранения
+            val options = org.yaml.snakeyaml.DumperOptions().apply {
+                defaultFlowStyle = org.yaml.snakeyaml.DumperOptions.FlowStyle.BLOCK
+                isPrettyFlow = true
+            }
+            val yaml = org.yaml.snakeyaml.Yaml(options)
+            // Конвертируем объект в Map для YAML через Kotlin reflection
+            val map = configToMap(config)
+            configFile.writeText(yaml.dump(map))
+            logger.debug { "Saved config to ${configFile.absolutePath}: $map" }
         } catch (e: Exception) {
             logger.error { "Error saving config: ${e.message}" }
+            e.printStackTrace()
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun configToMap(config: Any): Map<String, Any?> {
+        val result = mutableMapOf<String, Any?>()
+        // Используем Kotlin reflection для получения свойств
+        val kClass = config::class
+        for (prop in kClass.memberProperties) {
+            try {
+                val value = (prop as KProperty1<Any, *>).get(config)
+                result[prop.name] = value
+            } catch (e: Exception) {
+                // Игнорируем недоступные свойства
+            }
+        }
+        return result
     }
 
     @Suppress("UNCHECKED_CAST")
     override fun <T> loadConfig(type: Class<T>): T? {
         return try {
-            val configFile = File(dataFolder, "config.json")
-            if (!configFile.exists()) {
+            // Проверяем сначала YAML, потом JSON для обратной совместимости
+            val yamlFile = File(dataFolder, "config.yaml")
+            val jsonFile = File(dataFolder, "config.json")
+
+            val configMap: Map<String, Any?>? = when {
+                yamlFile.exists() -> {
+                    val yaml = org.yaml.snakeyaml.Yaml()
+                    yaml.load<Map<String, Any?>>(yamlFile.readText())
+                }
+                jsonFile.exists() -> {
+                    // Миграция: читаем JSON и сохраняем как YAML
+                    val jsonString = jsonFile.readText()
+                    val map = json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(jsonString)
+                    val converted = map.mapValues { jsonElementToValue(it.value) }
+                    // Сохраняем как YAML
+                    val options = org.yaml.snakeyaml.DumperOptions().apply {
+                        defaultFlowStyle = org.yaml.snakeyaml.DumperOptions.FlowStyle.BLOCK
+                    }
+                    val yaml = org.yaml.snakeyaml.Yaml(options)
+                    yamlFile.writeText(yaml.dump(converted))
+                    converted
+                }
+                else -> null
+            }
+
+            if (configMap == null) {
+                logger.debug { "No config file found for ${type.simpleName}" }
                 return null
             }
-            val jsonString = configFile.readText()
-            // Для String возвращаем сырой JSON - плагин сам десериализует
-            if (type == String::class.java) {
-                jsonString as T
-            } else {
-                // Для других типов пытаемся использовать Gson если доступен
-                // или возвращаем null - плагин должен сам парсить JSON
-                logger.info { "loadConfig: Complex types require plugin-side deserialization. Use loadConfig(String::class.java)" }
-                null
+
+            logger.debug { "Loaded config map: $configMap" }
+
+            // Создаём экземпляр класса и заполняем поля через Java reflection
+            val instance = type.getDeclaredConstructor().newInstance()
+
+            for ((key, value) in configMap) {
+                try {
+                    // Ищем поле напрямую
+                    val field = try {
+                        type.getDeclaredField(key)
+                    } catch (e: NoSuchFieldException) {
+                        null
+                    }
+                    if (field != null) {
+                        field.isAccessible = true
+                        val convertedValue = convertValue(value, field.type)
+                        field.set(instance, convertedValue)
+                    }
+                } catch (e: Exception) {
+                    logger.debug { "Failed to set property $key: ${e.message}" }
+                }
             }
+            instance
         } catch (e: Exception) {
             logger.error { "Error loading config: ${e.message}" }
+            e.printStackTrace()
             null
+        }
+    }
+
+    private fun jsonElementToValue(element: kotlinx.serialization.json.JsonElement): Any? {
+        return when (element) {
+            is kotlinx.serialization.json.JsonPrimitive -> {
+                when {
+                    element.isString -> element.content
+                    element.content == "true" -> true
+                    element.content == "false" -> false
+                    element.content.contains('.') -> element.content.toDoubleOrNull()
+                    else -> element.content.toLongOrNull() ?: element.content.toIntOrNull() ?: element.content
+                }
+            }
+            is kotlinx.serialization.json.JsonArray -> element.map { jsonElementToValue(it) }
+            is kotlinx.serialization.json.JsonObject -> element.mapValues { jsonElementToValue(it.value) }
+            else -> null
+        }
+    }
+
+    private fun convertValue(value: Any?, targetType: Class<*>): Any? {
+        if (value == null) return null
+        return when {
+            targetType == String::class.java -> value.toString()
+            targetType == Boolean::class.java || targetType == java.lang.Boolean::class.java -> {
+                when (value) {
+                    is Boolean -> value
+                    is String -> value.toBoolean()
+                    else -> false
+                }
+            }
+            targetType == Int::class.java || targetType == java.lang.Integer::class.java -> {
+                when (value) {
+                    is Number -> value.toInt()
+                    is String -> value.toIntOrNull() ?: 0
+                    else -> 0
+                }
+            }
+            targetType == Long::class.java || targetType == java.lang.Long::class.java -> {
+                when (value) {
+                    is Number -> value.toLong()
+                    is String -> value.toLongOrNull() ?: 0L
+                    else -> 0L
+                }
+            }
+            targetType == Double::class.java || targetType == java.lang.Double::class.java -> {
+                when (value) {
+                    is Number -> value.toDouble()
+                    is String -> value.toDoubleOrNull() ?: 0.0
+                    else -> 0.0
+                }
+            }
+            targetType.isEnum -> {
+                val enumConstants = targetType.enumConstants
+                enumConstants?.firstOrNull { (it as Enum<*>).name == value.toString() } ?: enumConstants?.firstOrNull()
+            }
+            else -> value
         }
     }
 
@@ -523,6 +675,72 @@ class PluginAPIImpl(
     // ============================================
 
     override fun fireScriptEvent(event: ScriptEvent, data: Any?) = fireScriptEventFunc(event, data)
+
+    // ============================================
+    // Панель статуса
+    // ============================================
+
+    override fun addStatusBar(
+        id: String,
+        label: String,
+        value: Int,
+        max: Int,
+        color: String,
+        showText: Boolean,
+        showMax: Boolean,
+        order: Int
+    ) {
+        val fullId = "${pluginId}_$id"
+        addStatusBarFunc(fullId, label, value, max, color, showText, showMax, order)
+    }
+
+    override fun addStatusText(
+        id: String,
+        label: String,
+        value: String?,
+        color: String?,
+        bold: Boolean,
+        background: String?,
+        order: Int
+    ) {
+        val fullId = "${pluginId}_$id"
+        addStatusTextFunc(fullId, label, value, color, bold, background, order)
+    }
+
+    override fun addStatusModifiedValue(
+        id: String,
+        label: String,
+        value: Int,
+        base: Int?,
+        modifier: Int?,
+        color: String?,
+        order: Int
+    ) {
+        val fullId = "${pluginId}_$id"
+        addStatusModifiedValueFunc(fullId, label, value, base, modifier, color, order)
+    }
+
+    override fun addStatusGroup(
+        id: String,
+        label: String,
+        collapsed: Boolean,
+        order: Int,
+        builder: StatusGroupBuilder.() -> Unit
+    ) {
+        val fullId = "${pluginId}_$id"
+        val groupBuilder = StatusGroupBuilderImpl(pluginId)
+        groupBuilder.builder()
+        addStatusGroupFunc(fullId, label, groupBuilder.elements, collapsed, order)
+    }
+
+    override fun removeStatus(id: String) {
+        val fullId = "${pluginId}_$id"
+        removeStatusFunc(fullId)
+    }
+
+    override fun clearStatus() {
+        clearStatusFunc()
+    }
 
     // ============================================
     // Внутренние методы
@@ -588,3 +806,87 @@ private data class PluginAlias(
     val priority: Int,
     val handler: AliasHandler
 )
+
+/**
+ * Данные элемента статуса для передачи между модулями
+ */
+sealed class StatusElementData {
+    data class Bar(
+        val id: String,
+        val label: String,
+        val value: Int,
+        val max: Int,
+        val color: String,
+        val showText: Boolean,
+        val showMax: Boolean,
+        val order: Int
+    ) : StatusElementData()
+
+    data class Text(
+        val id: String,
+        val label: String,
+        val value: String?,
+        val color: String?,
+        val bold: Boolean,
+        val order: Int
+    ) : StatusElementData()
+
+    data class ModifiedValue(
+        val id: String,
+        val label: String,
+        val value: Int,
+        val base: Int?,
+        val modifier: Int?,
+        val color: String?,
+        val order: Int
+    ) : StatusElementData()
+}
+
+/**
+ * Реализация билдера группы статусов
+ */
+private class StatusGroupBuilderImpl(private val pluginId: String) : StatusGroupBuilder {
+    val elements = mutableListOf<StatusElementData>()
+
+    override fun bar(
+        id: String,
+        label: String,
+        value: Int,
+        max: Int,
+        color: String,
+        showText: Boolean,
+        showMax: Boolean,
+        order: Int
+    ) {
+        elements.add(StatusElementData.Bar(
+            "${pluginId}_$id", label, value, max, color, showText, showMax, order
+        ))
+    }
+
+    override fun text(
+        id: String,
+        label: String,
+        value: String?,
+        color: String?,
+        bold: Boolean,
+        order: Int
+    ) {
+        elements.add(StatusElementData.Text(
+            "${pluginId}_$id", label, value, color, bold, order
+        ))
+    }
+
+    override fun modifiedValue(
+        id: String,
+        label: String,
+        value: Int,
+        base: Int?,
+        modifier: Int?,
+        color: String?,
+        order: Int
+    ) {
+        elements.add(StatusElementData.ModifiedValue(
+            "${pluginId}_$id", label, value, base, modifier, color, order
+        ))
+    }
+}

@@ -31,6 +31,8 @@ class StatusManager(
                 is StatusElement.Flags -> element.order
                 is StatusElement.MiniMap -> element.order
                 is StatusElement.PathPanel -> element.order
+                is StatusElement.Group -> element.order
+                is StatusElement.ModifiedValue -> element.order
             }
         }
     }
@@ -140,6 +142,42 @@ class StatusManager(
     }
 
     /**
+     * Добавляет или обновляет группу элементов
+     */
+    fun addGroup(
+        id: String,
+        label: String,
+        elements: List<StatusElement>,
+        collapsed: Boolean = false,
+        order: Int = _elements.value.size
+    ) {
+        val group = StatusElement.Group(id, label, elements, collapsed, order)
+        _elements.value = _elements.value + (id to group)
+        updateStatusVariable(id, group)
+    }
+
+    /**
+     * Добавляет или обновляет значение с модификатором
+     * @param value Эффективное (текущее) значение
+     * @param base Базовое значение до модификатора (null если неизвестно)
+     * @param modifier Модификатор (+3 или -2, null если неизвестно)
+     * @param color Цвет значения (null = по умолчанию)
+     */
+    fun addModifiedValue(
+        id: String,
+        label: String,
+        value: Int,
+        base: Int? = null,
+        modifier: Int? = null,
+        color: String? = null,
+        order: Int = _elements.value.size
+    ) {
+        val modifiedValue = StatusElement.ModifiedValue(id, label, value, base, modifier, color, order)
+        _elements.value = _elements.value + (id to modifiedValue)
+        updateStatusVariable(id, modifiedValue)
+    }
+
+    /**
      * Вызывает callback кнопки панели пути
      */
     fun invokePathPanelCallback(id: String, buttonType: String) {
@@ -195,6 +233,24 @@ class StatusManager(
                     order = (updates["order"] as? Number)?.toInt() ?: existing.order
                 )
             }
+            is StatusElement.Group -> {
+                @Suppress("UNCHECKED_CAST")
+                val newElements = updates["elements"] as? List<StatusElement>
+                existing.copy(
+                    label = updates["label"] as? String ?: existing.label,
+                    elements = newElements ?: existing.elements,
+                    collapsed = updates["collapsed"] as? Boolean ?: existing.collapsed,
+                    order = (updates["order"] as? Number)?.toInt() ?: existing.order
+                )
+            }
+            is StatusElement.ModifiedValue -> existing.copy(
+                label = updates["label"] as? String ?: existing.label,
+                value = (updates["value"] as? Number)?.toInt() ?: existing.value,
+                base = if (updates.containsKey("base")) (updates["base"] as? Number)?.toInt() else existing.base,
+                modifier = if (updates.containsKey("modifier")) (updates["modifier"] as? Number)?.toInt() else existing.modifier,
+                color = if (updates.containsKey("color")) updates["color"] as? String else existing.color,
+                order = (updates["order"] as? Number)?.toInt() ?: existing.order
+            )
         }
 
         _elements.value = _elements.value + (id to updated)
@@ -279,6 +335,20 @@ class StatusManager(
                 "stepsCount" to element.stepsCount,
                 "directions" to element.directions
             )
+            is StatusElement.Group -> mapOf(
+                "type" to "group",
+                "label" to element.label,
+                "elements" to element.elements.size,
+                "collapsed" to element.collapsed
+            )
+            is StatusElement.ModifiedValue -> buildMap<String, Any> {
+                put("type", "modified")
+                put("label", element.label)
+                put("value", element.value)
+                element.base?.let { put("base", it) }
+                element.modifier?.let { put("modifier", it) }
+                element.color?.let { put("color", it) }
+            }
         }
 
         variableManager.setStatusVariable("_status_$id", value)

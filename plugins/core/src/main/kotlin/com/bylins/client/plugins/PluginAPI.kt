@@ -333,6 +333,35 @@ interface PluginAPI {
     fun getTab(id: String): PluginTab?
 
     // ============================================
+    // Вкладки вывода (текстовые, как главный вывод)
+    // ============================================
+
+    /**
+     * Создаёт текстовую вкладку вывода на панели "Вывод".
+     * В отличие от createTab(), это простая текстовая вкладка без UI элементов.
+     *
+     * @param id Уникальный идентификатор вкладки
+     * @param title Заголовок вкладки
+     * @return true если вкладка создана, false если уже существует
+     */
+    fun createOutputTab(id: String, title: String): Boolean
+
+    /**
+     * Добавляет текст в вкладку вывода.
+     *
+     * @param id Идентификатор вкладки
+     * @param text Текст для добавления
+     */
+    fun appendToOutputTab(id: String, text: String)
+
+    /**
+     * Закрывает вкладку вывода.
+     *
+     * @param id Идентификатор вкладки
+     */
+    fun closeOutputTab(id: String)
+
+    // ============================================
     // Маппер - поиск с callback
     // ============================================
 
@@ -421,6 +450,72 @@ interface PluginAPI {
      * @param data Данные события (любой объект, будет передан обработчику)
      */
     fun fireScriptEvent(event: ScriptEvent, data: Any?)
+
+    // ============================================
+    // Панель статуса
+    // ============================================
+
+    /**
+     * Добавляет прогресс-бар на панель статуса.
+     */
+    fun addStatusBar(
+        id: String,
+        label: String,
+        value: Int,
+        max: Int,
+        color: String = "green",
+        showText: Boolean = true,
+        showMax: Boolean = true,
+        order: Int = 0
+    )
+
+    /**
+     * Добавляет текстовый элемент на панель статуса.
+     */
+    fun addStatusText(
+        id: String,
+        label: String,
+        value: String? = null,
+        color: String? = null,
+        bold: Boolean = false,
+        background: String? = null,
+        order: Int = 0
+    )
+
+    /**
+     * Добавляет значение с модификатором на панель статуса.
+     * Пример: "Сила: 18 (15+3)" где value=18, base=15, modifier=3
+     */
+    fun addStatusModifiedValue(
+        id: String,
+        label: String,
+        value: Int,
+        base: Int? = null,
+        modifier: Int? = null,
+        color: String? = null,
+        order: Int = 0
+    )
+
+    /**
+     * Добавляет группу элементов на панель статуса.
+     */
+    fun addStatusGroup(
+        id: String,
+        label: String,
+        collapsed: Boolean = false,
+        order: Int = 0,
+        builder: StatusGroupBuilder.() -> Unit
+    )
+
+    /**
+     * Удаляет элемент с панели статуса.
+     */
+    fun removeStatus(id: String)
+
+    /**
+     * Очищает панель статуса.
+     */
+    fun clearStatus()
 }
 
 // ============================================
@@ -511,3 +606,51 @@ class TimerHandle internal constructor(internal val id: String)
 
 /** Подписка на событие для отписки */
 class EventSubscription internal constructor(internal val id: String)
+
+// ============================================
+// Панель статуса - билдеры
+// ============================================
+
+/**
+ * Билдер для группы элементов статуса.
+ */
+interface StatusGroupBuilder {
+    /**
+     * Добавляет прогресс-бар в группу.
+     */
+    fun bar(
+        id: String,
+        label: String,
+        value: Int,
+        max: Int,
+        color: String = "green",
+        showText: Boolean = true,
+        showMax: Boolean = true,
+        order: Int = 0
+    )
+
+    /**
+     * Добавляет текстовый элемент в группу.
+     */
+    fun text(
+        id: String,
+        label: String,
+        value: String? = null,
+        color: String? = null,
+        bold: Boolean = false,
+        order: Int = 0
+    )
+
+    /**
+     * Добавляет значение с модификатором в группу.
+     */
+    fun modifiedValue(
+        id: String,
+        label: String,
+        value: Int,
+        base: Int? = null,
+        modifier: Int? = null,
+        color: String? = null,
+        order: Int = 0
+    )
+}

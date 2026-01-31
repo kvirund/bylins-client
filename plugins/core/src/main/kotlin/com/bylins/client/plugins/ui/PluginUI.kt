@@ -34,6 +34,16 @@ sealed class PluginUINode {
         val style: TextStyle = TextStyle.BODY
     ) : PluginUINode()
 
+    /**
+     * Selectable text that can be copied.
+     * Use for logs, output, etc.
+     */
+    data class SelectableText(
+        val text: String,
+        val style: TextStyle = TextStyle.MONOSPACE,
+        val maxHeight: Int? = null  // Optional max height with scroll
+    ) : PluginUINode()
+
     // Interactive primitives
     data class Button(
         val text: String,

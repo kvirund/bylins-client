@@ -70,6 +70,31 @@ sealed class StatusElement {
         val hasFollowCallback: Boolean = false,  // Показывать кнопку "Следовать"
         val order: Int = 0
     ) : StatusElement()
+
+    /**
+     * Группа элементов (для логической группировки параметров)
+     */
+    data class Group(
+        override val id: String,
+        val label: String,                // Название группы
+        val elements: List<StatusElement>, // Дочерние элементы
+        val collapsed: Boolean = false,   // Свёрнута ли группа
+        val order: Int = 0
+    ) : StatusElement()
+
+    /**
+     * Значение с модификатором (базовое + бонус/штраф)
+     * Пример: "Сила: 18 (15+3)" или "Ловкость: 12 (15-3)"
+     */
+    data class ModifiedValue(
+        override val id: String,
+        val label: String,
+        val value: Int,                   // Эффективное значение
+        val base: Int? = null,            // Базовое значение (если известно)
+        val modifier: Int? = null,        // Модификатор (+3 или -3)
+        val color: String? = null,        // Цвет значения
+        val order: Int = 0
+    ) : StatusElement()
 }
 
 /**

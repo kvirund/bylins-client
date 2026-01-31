@@ -1,6 +1,8 @@
 package com.bylins.client.ui.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
@@ -9,10 +11,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 
 @Composable
@@ -61,55 +66,72 @@ fun InputPanel(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        OutlinedTextField(
-            value = inputText,
-            onValueChange = { newValue ->
-                // Игнорируем ввод сразу после срабатывания хоткея (предотвращает дублирование NumPad цифр)
-                if (!clientState.wasHotkeyRecentlyProcessed()) {
-                    inputText = newValue
-                }
-            },
-            label = { Text(if (isConnected) "Команда" else "Команда (# для локальных)") },
-            enabled = true,  // Всегда включено для локальных команд (#vars, #help и т.д.)
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .focusRequester(focusRequester)
-                .onPreviewKeyEvent { event ->
-                    when {
-                        (event.key == Key.Enter || event.key == Key.NumPadEnter) && event.type == KeyEventType.KeyDown -> {
-                            sendCommand()
-                            true
-                        }
-                        event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown -> {
-                            if (commandHistory.isNotEmpty()) {
-                                historyIndex = (historyIndex + 1).coerceAtMost(commandHistory.size - 1)
-                                val command = commandHistory[commandHistory.size - 1 - historyIndex]
-                                inputText = TextFieldValue(
-                                    text = command,
-                                    selection = TextRange(command.length)
-                                )
-                            }
-                            true
-                        }
-                        event.key == Key.DirectionDown && event.type == KeyEventType.KeyDown -> {
-                            if (historyIndex > 0) {
-                                historyIndex--
-                                val command = commandHistory[commandHistory.size - 1 - historyIndex]
-                                inputText = TextFieldValue(
-                                    text = command,
-                                    selection = TextRange(command.length)
-                                )
-                            } else {
-                                historyIndex = -1
-                                inputText = TextFieldValue("")
-                            }
-                            true
-                        }
-                        else -> false
+                .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            val placeholderText = if (isConnected) "Команда" else "Команда (# для локальных)"
+            if (inputText.text.isEmpty()) {
+                Text(
+                    text = placeholderText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 14.sp
+                )
+            }
+            BasicTextField(
+                value = inputText,
+                onValueChange = { newValue ->
+                    if (!clientState.wasHotkeyRecentlyProcessed()) {
+                        inputText = newValue
                     }
                 },
-            singleLine = true
-        )
+                textStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onPreviewKeyEvent { event ->
+                        when {
+                            (event.key == Key.Enter || event.key == Key.NumPadEnter) && event.type == KeyEventType.KeyDown -> {
+                                sendCommand()
+                                true
+                            }
+                            event.key == Key.DirectionUp && event.type == KeyEventType.KeyDown -> {
+                                if (commandHistory.isNotEmpty()) {
+                                    historyIndex = (historyIndex + 1).coerceAtMost(commandHistory.size - 1)
+                                    val command = commandHistory[commandHistory.size - 1 - historyIndex]
+                                    inputText = TextFieldValue(
+                                        text = command,
+                                        selection = TextRange(command.length)
+                                    )
+                                }
+                                true
+                            }
+                            event.key == Key.DirectionDown && event.type == KeyEventType.KeyDown -> {
+                                if (historyIndex > 0) {
+                                    historyIndex--
+                                    val command = commandHistory[commandHistory.size - 1 - historyIndex]
+                                    inputText = TextFieldValue(
+                                        text = command,
+                                        selection = TextRange(command.length)
+                                    )
+                                } else {
+                                    historyIndex = -1
+                                    inputText = TextFieldValue("")
+                                }
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+            )
+        }
 
         IconButton(
             onClick = { sendCommand() },

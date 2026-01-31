@@ -21,9 +21,6 @@ class PluginClassLoader(
      * Это необходимо для корректной работы API плагинов.
      */
     private val parentFirstPackages = listOf(
-        // API плагинов
-        "com.bylins.client.plugins.",
-
         // Kotlin стандартная библиотека
         "kotlin.",
         "kotlinx.",
@@ -36,6 +33,26 @@ class PluginClassLoader(
 
         // Compose (если плагин использует UI)
         "androidx.compose."
+    )
+
+    /**
+     * Пакеты Plugin API, которые загружаются из родительского ClassLoader,
+     * но НЕ включают пакеты конкретных плагинов (aibot, etc).
+     */
+    private val pluginApiPackages = listOf(
+        "com.bylins.client.plugins.events.",
+        "com.bylins.client.plugins.loader.",
+        "com.bylins.client.plugins.scripting.",
+        "com.bylins.client.plugins.ui.",
+        "com.bylins.client.plugins.PluginBase",
+        "com.bylins.client.plugins.Plugin",
+        "com.bylins.client.plugins.PluginAPI",
+        "com.bylins.client.plugins.PluginAPIImpl",
+        "com.bylins.client.plugins.PluginManager",
+        "com.bylins.client.plugins.PluginManagerImpl",
+        "com.bylins.client.plugins.LoadedPlugin",
+        "com.bylins.client.plugins.PluginMetadata",
+        "com.bylins.client.plugins.TriggerResult"
     )
 
     /**
@@ -75,7 +92,15 @@ class PluginClassLoader(
      * Проверяет, должен ли класс загружаться из родительского ClassLoader.
      */
     private fun shouldLoadFromParent(name: String): Boolean {
-        return parentFirstPackages.any { name.startsWith(it) }
+        // Системные пакеты всегда из родителя
+        if (parentFirstPackages.any { name.startsWith(it) }) {
+            return true
+        }
+        // Plugin API классы/пакеты из родителя (но не классы плагинов!)
+        if (pluginApiPackages.any { name.startsWith(it) }) {
+            return true
+        }
+        return false
     }
 
     /**

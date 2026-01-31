@@ -96,7 +96,10 @@ fun PluginsPanel(
                 if (pluginTab != null) {
                     RenderPluginTab(
                         tab = pluginTab,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        onTextFieldFocusChanged = { focused ->
+                            clientState.setSecondaryTextFieldFocused(focused)
+                        }
                     )
                 }
             }

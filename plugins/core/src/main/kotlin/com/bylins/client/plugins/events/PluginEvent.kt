@@ -73,7 +73,9 @@ data class LineReceivedEvent(
     /** Очищенная строка (без ANSI кодов) */
     val line: String,
     /** Оригинальная строка с ANSI кодами */
-    val rawLine: String
+    val rawLine: String,
+    /** Timestamp получения строки (для определения промпта по интервалам) */
+    val timestamp: Long = System.currentTimeMillis()
 ) : PluginEvent, CancellableEvent {
     override var isCancelled: Boolean = false
 

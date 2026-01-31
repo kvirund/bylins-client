@@ -1,14 +1,13 @@
 package com.bylins.client.ui.plugins
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-// SelectionContainer removed - it interferes with button clicks
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -21,11 +20,14 @@ import com.bylins.client.ui.theme.LocalAppColorScheme
  * Renders a PluginUINode tree to Compose UI.
  * This allows plugins to define their UI using universal primitives,
  * and the client renders them consistently with the app theme.
+ *
+ * @param onTextFieldFocusChanged callback when a text field gains/loses focus
  */
 @Composable
 fun RenderPluginUI(
     node: PluginUINode,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTextFieldFocusChanged: ((Boolean) -> Unit)? = null
 ) {
     val colorScheme = LocalAppColorScheme.current
 
@@ -40,7 +42,7 @@ fun RenderPluginUI(
                 verticalArrangement = Arrangement.spacedBy(node.spacing.dp)
             ) {
                 node.children.forEach { child ->
-                    RenderPluginUI(child)
+                    RenderPluginUI(child, onTextFieldFocusChanged = onTextFieldFocusChanged)
                 }
             }
         }
@@ -52,7 +54,7 @@ fun RenderPluginUI(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 node.children.forEach { child ->
-                    RenderPluginUI(child)
+                    RenderPluginUI(child, onTextFieldFocusChanged = onTextFieldFocusChanged)
                 }
             }
         }
@@ -61,7 +63,7 @@ fun RenderPluginUI(
             Box(
                 modifier = modifier.padding(node.padding.dp)
             ) {
-                RenderPluginUI(node.child)
+                RenderPluginUI(node.child, onTextFieldFocusChanged = onTextFieldFocusChanged)
             }
         }
 
@@ -73,10 +75,16 @@ fun RenderPluginUI(
             } else {
                 modifier
             }
-            Column(
-                modifier = scrollModifier.verticalScroll(scrollState)
-            ) {
-                RenderPluginUI(node.child)
+            Box(modifier = scrollModifier) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(scrollState)
+                ) {
+                    RenderPluginUI(node.child, onTextFieldFocusChanged = onTextFieldFocusChanged)
+                }
+                VerticalScrollbar(
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                    adapter = rememberScrollbarAdapter(scrollState)
+                )
             }
         }
 
@@ -107,6 +115,51 @@ fun RenderPluginUI(
             )
         }
 
+        is PluginUINode.SelectableText -> {
+            val (fontSize, fontWeight) = when (node.style) {
+                PluginUINode.TextStyle.TITLE -> 16.sp to FontWeight.Bold
+                PluginUINode.TextStyle.SUBTITLE -> 14.sp to FontWeight.SemiBold
+                PluginUINode.TextStyle.BODY -> 12.sp to FontWeight.Normal
+                PluginUINode.TextStyle.CAPTION -> 10.sp to FontWeight.Normal
+                PluginUINode.TextStyle.MONOSPACE -> 12.sp to FontWeight.Normal
+            }
+            val fontFamily = when (node.style) {
+                PluginUINode.TextStyle.MONOSPACE -> FontFamily.Monospace
+                else -> FontFamily.Default
+            }
+
+            val maxHeightValue = node.maxHeight
+            val scrollState = rememberScrollState()
+
+            Box(
+                modifier = modifier
+                    .then(if (maxHeightValue != null) Modifier.heightIn(max = maxHeightValue.dp) else Modifier)
+                    .background(colorScheme.surface)
+                    .border(1.dp, colorScheme.border)
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = node.text,
+                        color = colorScheme.onSurface,
+                        fontSize = fontSize,
+                        fontWeight = fontWeight,
+                        fontFamily = fontFamily,
+                        lineHeight = fontSize * 1.2,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (maxHeightValue != null) Modifier.verticalScroll(scrollState) else Modifier)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+                if (maxHeightValue != null) {
+                    VerticalScrollbar(
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                        adapter = rememberScrollbarAdapter(scrollState)
+                    )
+                }
+            }
+        }
+
         is PluginUINode.Button -> {
             Button(
                 onClick = node.onClick,
@@ -125,18 +178,45 @@ fun RenderPluginUI(
         }
 
         is PluginUINode.TextField -> {
+            // Используем локальное состояние чтобы ввод не сбрасывался при обновлении UI
+            val key = node.label ?: node.placeholder ?: "textfield"
+            var localValue by remember(key) { mutableStateOf(node.value) }
+            var hasFocus by remember { mutableStateOf(false) }
+
+            // Синхронизируем с внешним значением только когда нет фокуса
+            LaunchedEffect(node.value) {
+                if (!hasFocus) {
+                    localValue = node.value
+                }
+            }
+
+            // Используем placeholder вместо label для компактности
+            val placeholderText = node.placeholder ?: node.label
+
             OutlinedTextField(
-                value = node.value,
-                onValueChange = node.onValueChange,
-                label = node.label?.let { { Text(it, color = colorScheme.onSurfaceVariant) } },
-                placeholder = node.placeholder?.let { { Text(it, color = colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) } },
+                value = localValue,
+                onValueChange = { newValue ->
+                    localValue = newValue
+                    // Не вызываем onValueChange на каждый символ - только при потере фокуса
+                },
+                placeholder = placeholderText?.let { { Text(it, color = colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) } },
+                singleLine = true,
                 colors = TextFieldDefaults.outlinedTextFieldColors(
                     textColor = colorScheme.onSurface,
                     focusedBorderColor = colorScheme.success,
                     unfocusedBorderColor = colorScheme.border,
                     backgroundColor = colorScheme.surface
                 ),
-                modifier = modifier
+                modifier = modifier.onFocusChanged { focusState ->
+                    val wasFocused = hasFocus
+                    hasFocus = focusState.isFocused
+                    onTextFieldFocusChanged?.invoke(focusState.isFocused)
+
+                    // Коммитим значение при потере фокуса
+                    if (wasFocused && !focusState.isFocused && localValue != node.value) {
+                        node.onValueChange(localValue)
+                    }
+                }
             )
         }
 
@@ -295,7 +375,8 @@ fun RenderPluginUI(
 @Composable
 fun RenderPluginTab(
     tab: PluginTab,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTextFieldFocusChanged: ((Boolean) -> Unit)? = null
 ) {
     val content by tab.content.collectAsState()
     val colorScheme = LocalAppColorScheme.current
@@ -307,6 +388,6 @@ fun RenderPluginTab(
             .padding(16.dp)
     ) {
         // SelectionContainer убран - он мешает кликам по кнопкам
-        RenderPluginUI(content)
+        RenderPluginUI(content, onTextFieldFocusChanged = onTextFieldFocusChanged)
     }
 }

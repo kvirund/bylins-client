@@ -3,6 +3,7 @@ package com.bylins.client.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
@@ -60,6 +61,8 @@ fun StatusPanel(
                     is StatusElement.Flags -> StatusFlagsElement(element)
                     is StatusElement.MiniMap -> StatusMiniMapElement(element, clientState)
                     is StatusElement.PathPanel -> StatusPathPanelElement(element, clientState)
+                    is StatusElement.Group -> StatusGroupElement(element, clientState)
+                    is StatusElement.ModifiedValue -> StatusModifiedValueElement(element)
                 }
             }
         }
@@ -150,6 +153,118 @@ private fun StatusTextElement(text: StatusElement.Text) {
     } else {
         // Без фона
         content()
+    }
+}
+
+@Composable
+private fun StatusGroupElement(group: StatusElement.Group, clientState: ClientState) {
+    var expanded by remember { mutableStateOf(!group.collapsed) }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Заголовок группы (кликабельный для сворачивания)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectTapGestures { expanded = !expanded }
+                    },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = group.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (expanded) "▼" else "▶",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+
+            // Содержимое группы
+            if (expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    group.elements.forEach { element ->
+                        when (element) {
+                            is StatusElement.Bar -> StatusBarElement(element)
+                            is StatusElement.Text -> StatusTextElement(element)
+                            is StatusElement.ModifiedValue -> StatusModifiedValueElement(element)
+                            is StatusElement.Flags -> StatusFlagsElement(element)
+                            else -> { /* Вложенные группы не поддерживаются */ }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusModifiedValueElement(modified: StatusElement.ModifiedValue) {
+    val baseColor = modified.color?.let { parseColor(it) }
+        ?: MaterialTheme.colorScheme.onSurface
+
+    // Цвет модификатора: зелёный для положительного, красный для отрицательного
+    val modifierColor = when {
+        modified.modifier == null -> baseColor
+        modified.modifier > 0 -> Color(0xFF4CAF50)  // Зелёный
+        modified.modifier < 0 -> Color(0xFFF44336)  // Красный
+        else -> baseColor
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "${modified.label}:",
+            style = MaterialTheme.typography.bodySmall,
+            color = baseColor.copy(alpha = 0.7f)
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Эффективное значение
+            Text(
+                text = "${modified.value}",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = baseColor
+            )
+
+            // Базовое и модификатор (если есть)
+            if (modified.base != null || modified.modifier != null) {
+                val modText = buildString {
+                    append("(")
+                    if (modified.base != null) {
+                        append(modified.base)
+                    }
+                    if (modified.modifier != null && modified.modifier != 0) {
+                        if (modified.modifier > 0) append("+")
+                        append(modified.modifier)
+                    }
+                    append(")")
+                }
+                Text(
+                    text = modText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = modifierColor.copy(alpha = 0.8f)
+                )
+            }
+        }
     }
 }
 

@@ -1779,9 +1779,9 @@ class ClientState {
                     tabManager.addToMainTab(text + "\n")
                 },
                 logMessage = { message ->
-                    val formatted = "\u001B[1;36m$message\u001B[0m"
-                    telnetClient.addLocalOutput(formatted)
-                    tabManager.addToMainTab(formatted + "\n")
+                    // log() идёт только в системный лог, не в главное окно
+                    // Для вывода пользователю используйте print()
+                    logger.info { message }
                 },
                 requestFocus = { requestInputFocus() },
                 triggerActions = createTriggerActions(),
@@ -2177,7 +2177,67 @@ class ClientState {
                     scriptManager.fireEvent(event, data)
                 }
             },
-            dataFolder = dataFolder
+            dataFolder = dataFolder,
+            // Вкладки вывода (текстовые)
+            createOutputTabFunc = { id, title ->
+                if (tabManager.getTab(id) != null) {
+                    false
+                } else {
+                    tabManager.addTab(com.bylins.client.tabs.Tab(
+                        id = id,
+                        name = title,
+                        filters = emptyList(),
+                        captureMode = com.bylins.client.tabs.CaptureMode.COPY,
+                        maxLines = 500
+                    ))
+                    true
+                }
+            },
+            appendToOutputTabFunc = { id, text ->
+                val tab = tabManager.getTab(id)
+                if (tab != null) {
+                    tab.appendText(text, markUnread = true)
+                    tab.flush()
+                }
+            },
+            closeOutputTabFunc = { id ->
+                tabManager.removeTab(id)
+            },
+            // Панель статуса
+            addStatusBarFunc = { id, label, value, max, color, showText, showMax, order ->
+                statusManager.addBar(id, label, value, max, color, showText, showMax, order)
+            },
+            addStatusTextFunc = { id, label, value, color, bold, background, order ->
+                statusManager.addText(id, label, value, color, bold, background, order)
+            },
+            addStatusModifiedValueFunc = { id, label, value, base, modifier, color, order ->
+                statusManager.addModifiedValue(id, label, value, base, modifier, color, order)
+            },
+            addStatusGroupFunc = { id, label, elements, collapsed, order ->
+                // Преобразуем StatusElementData в StatusElement
+                val statusElements = elements.map { data ->
+                    when (data) {
+                        is com.bylins.client.plugins.StatusElementData.Bar ->
+                            com.bylins.client.status.StatusElement.Bar(
+                                data.id, data.label, data.value, data.max,
+                                data.color, data.showText, data.showMax, data.order
+                            )
+                        is com.bylins.client.plugins.StatusElementData.Text ->
+                            com.bylins.client.status.StatusElement.Text(
+                                data.id, data.label, data.value, data.color,
+                                data.bold, null, data.order
+                            )
+                        is com.bylins.client.plugins.StatusElementData.ModifiedValue ->
+                            com.bylins.client.status.StatusElement.ModifiedValue(
+                                data.id, data.label, data.value, data.base,
+                                data.modifier, data.color, data.order
+                            )
+                    }
+                }
+                statusManager.addGroup(id, label, statusElements, collapsed, order)
+            },
+            removeStatusFunc = { id -> statusManager.remove(id) },
+            clearStatusFunc = { statusManager.clear() }
         )
     }
 
@@ -2795,6 +2855,24 @@ class ClientState {
                     "directions" to element.directions,
                     "order" to element.order
                 )
+                is com.bylins.client.status.StatusElement.Group -> mapOf(
+                    "type" to "group",
+                    "id" to element.id,
+                    "label" to element.label,
+                    "elements" to element.elements.size,
+                    "collapsed" to element.collapsed,
+                    "order" to element.order
+                )
+                is com.bylins.client.status.StatusElement.ModifiedValue -> buildMap {
+                    put("type", "modified")
+                    put("id", element.id)
+                    put("label", element.label)
+                    put("value", element.value)
+                    element.base?.let { put("base", it) }
+                    element.modifier?.let { put("modifier", it) }
+                    element.color?.let { put("color", it) }
+                    put("order", element.order)
+                }
             }
         }
 

@@ -15,6 +15,9 @@ dependencies {
     // Kotlin serialization for plugin metadata
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
 
+    // Kotlin reflection for config handling
+    implementation(kotlin("reflect"))
+
     // YAML for plugin.yml
     implementation("org.yaml:snakeyaml:2.0")
 

@@ -325,20 +325,18 @@ fun MainWindow() {
 
                 Divider()
 
-                // Поле ввода команд с плавающим баром контекстных команд на нижней границе
-                Box(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                // Поле ввода команд с контекстными командами
+                Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                    // Контекстные команды (Alt+1-0) - над полем ввода
+                    ContextCommandBar(
+                        clientState = clientState,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+
                     InputPanel(
                         clientState = clientState,
                         focusRequester = inputFocusRequester,
                         modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Контекстные команды (Alt+1-0) - плавает на нижней границе поля ввода
-                    ContextCommandBar(
-                        clientState = clientState,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = 8.dp, y = 8.dp)
                     )
                 }
             }
