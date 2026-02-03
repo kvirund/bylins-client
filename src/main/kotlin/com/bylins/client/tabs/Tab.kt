@@ -12,7 +12,8 @@ data class Tab(
     val name: String,
     val filters: List<TabFilter> = emptyList(),
     val captureMode: CaptureMode = CaptureMode.COPY,
-    val maxLines: Int = 2000  // Уменьшено с 10000 до 2000 для экономии памяти
+    val maxLines: Int = 2000,  // Уменьшено с 10000 до 2000 для экономии памяти
+    val isPluginTab: Boolean = false  // Вкладка создана плагином (не редактируется пользователем)
 ) {
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content

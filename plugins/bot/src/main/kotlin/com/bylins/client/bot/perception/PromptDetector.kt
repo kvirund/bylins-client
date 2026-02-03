@@ -213,7 +213,8 @@ class PromptDetector(
         "hasPattern" to (promptRegex != null),
         "patternDoubtful" to isRegexDoubtful,
         "currentBatchSize" to currentBatch.size,
-        "recentPromptsCount" to recentPrompts.size,
+        "promptCount" to recentPrompts.size,
+        "lastPrompt" to (recentPrompts.lastOrNull() ?: ""),
         "pattern" to (promptRegex?.pattern ?: "")
     )
 }

@@ -313,6 +313,9 @@ class ClientState {
     private val _msdpReportedVariables = MutableStateFlow<Set<String>>(emptySet())
     val msdpReportedVariables: StateFlow<Set<String>> = _msdpReportedVariables
 
+    // Ref-counted MSDP subscriptions: variable -> set of subscriber IDs
+    private val msdpSubscribers = mutableMapOf<String, MutableSet<String>>()
+
     // GMCP данные (Generic MUD Communication Protocol)
     private val _gmcpData = MutableStateFlow<Map<String, kotlinx.serialization.json.JsonElement>>(emptyMap())
     val gmcpData: StateFlow<Map<String, kotlinx.serialization.json.JsonElement>> = _gmcpData
@@ -607,6 +610,7 @@ class ClientState {
         _msdpData.value = emptyMap()
         _msdpReportableVariables.value = emptyList()
         _msdpReportedVariables.value = emptySet()
+        msdpSubscribers.clear()
 
         // Обновляем системные переменные
         variableManager.setSystemVariable("connected", 0)
@@ -752,6 +756,8 @@ class ClientState {
             if (::scriptManager.isInitialized) {
                 scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_MSDP_ENABLED)
             }
+            // Уведомляем плагины
+            firePluginEvent(com.bylins.client.plugins.events.MsdpEnabledEvent)
         }
     }
 
@@ -806,14 +812,82 @@ class ClientState {
         logger.debug { "MSDP SEND $variableName sent" }
     }
 
+    /**
+     * Подписывается на MSDP переменную с ref-counting.
+     * Если никто ещё не подписан - отправляет REPORT.
+     * @param variableName имя переменной
+     * @param subscriberId уникальный ID подписчика (plugin ID, script name и т.д.)
+     */
+    fun subscribeMsdpVariable(variableName: String, subscriberId: String) {
+        val subscribers = msdpSubscribers.getOrPut(variableName) { mutableSetOf() }
+        val wasEmpty = subscribers.isEmpty()
+        subscribers.add(subscriberId)
+
+        if (wasEmpty && _msdpEnabled.value) {
+            sendMsdpReport(variableName)
+            logger.info { "MSDP subscribed to $variableName (first subscriber: $subscriberId)" }
+        } else {
+            logger.debug { "MSDP $variableName: added subscriber $subscriberId (total: ${subscribers.size})" }
+        }
+    }
+
+    /**
+     * Отписывается от MSDP переменной с ref-counting.
+     * Если больше никто не подписан - отправляет UNREPORT.
+     * @param variableName имя переменной
+     * @param subscriberId уникальный ID подписчика
+     */
+    fun unsubscribeMsdpVariable(variableName: String, subscriberId: String) {
+        val subscribers = msdpSubscribers[variableName] ?: return
+        subscribers.remove(subscriberId)
+
+        if (subscribers.isEmpty()) {
+            msdpSubscribers.remove(variableName)
+            if (_msdpEnabled.value) {
+                sendMsdpUnreport(variableName)
+                logger.info { "MSDP unsubscribed from $variableName (last subscriber: $subscriberId)" }
+            }
+        } else {
+            logger.debug { "MSDP $variableName: removed subscriber $subscriberId (remaining: ${subscribers.size})" }
+        }
+    }
+
+    /**
+     * Отписывает подписчика от всех MSDP переменных.
+     * Используется при выгрузке плагина/скрипта.
+     */
+    fun unsubscribeMsdpAll(subscriberId: String) {
+        val variablesToUnsubscribe = msdpSubscribers.filter { it.value.contains(subscriberId) }.keys.toList()
+        for (varName in variablesToUnsubscribe) {
+            unsubscribeMsdpVariable(varName, subscriberId)
+        }
+    }
+
+    /**
+     * Проверяет, подписан ли кто-то на переменную.
+     */
+    fun isMsdpVariableSubscribed(variableName: String): Boolean {
+        return msdpSubscribers[variableName]?.isNotEmpty() == true
+    }
+
+    /**
+     * Возвращает количество подписчиков для переменной.
+     */
+    fun getMsdpSubscriberCount(variableName: String): Int {
+        return msdpSubscribers[variableName]?.size ?: 0
+    }
+
     fun updateMsdpData(data: Map<String, Any>) {
         _msdpData.value = _msdpData.value + data
 
         // Проверяем специальные переменные (ответы на LIST)
         data["REPORTABLE_VARIABLES"]?.let { value ->
             if (value is List<*>) {
-                _msdpReportableVariables.value = value.filterIsInstance<String>()
-                logger.info { "Received REPORTABLE_VARIABLES list: ${_msdpReportableVariables.value.size} variables" }
+                val variables = value.filterIsInstance<String>()
+                _msdpReportableVariables.value = variables
+                logger.info { "Received REPORTABLE_VARIABLES list: ${variables.size} variables" }
+                // Уведомляем плагины
+                firePluginEvent(com.bylins.client.plugins.events.MsdpReportableVariablesEvent(variables))
             }
         }
 
@@ -2101,6 +2175,13 @@ class ClientState {
             getAllVariablesFunc = { variableManager.getAllVariables() },
             msdpGetter = { key -> _msdpData.value[key] },
             getAllMsdpFunc = { _msdpData.value },
+            isMsdpEnabledFunc = { _msdpEnabled.value },
+            getMsdpReportableFunc = { _msdpReportableVariables.value },
+            subscribeMsdpFunc = { varName, subId -> subscribeMsdpVariable(varName, subId) },
+            unsubscribeMsdpFunc = { varName, subId -> unsubscribeMsdpVariable(varName, subId) },
+            unsubscribeMsdpAllFunc = { subId -> unsubscribeMsdpAll(subId) },
+            requestMsdpListFunc = { listType -> sendMsdpList(listType) },
+            sendMsdpRequestFunc = { varName -> sendMsdpSend(varName) },
             gmcpGetter = { packageName -> _gmcpData.value[packageName]?.toString() },
             getAllGmcpFunc = { _gmcpData.value.mapValues { it.value.toString() } },
             gmcpSender = { _, _ -> /* TODO: отправка GMCP */ },
@@ -2180,17 +2261,24 @@ class ClientState {
             dataFolder = dataFolder,
             // Вкладки вывода (текстовые)
             createOutputTabFunc = { id, title ->
-                if (tabManager.getTab(id) != null) {
-                    false
-                } else {
+                // Если вкладка уже существует (из сохранённых), удаляем и создаём заново
+                // с флагом isPluginTab=true
+                val existingTab = tabManager.getTab(id)
+                if (existingTab != null && !existingTab.isPluginTab) {
+                    tabManager.removeTab(id)
+                }
+                if (tabManager.getTab(id) == null) {
                     tabManager.addTab(com.bylins.client.tabs.Tab(
                         id = id,
                         name = title,
                         filters = emptyList(),
                         captureMode = com.bylins.client.tabs.CaptureMode.COPY,
-                        maxLines = 500
+                        maxLines = 500,
+                        isPluginTab = true  // Вкладки плагинов не редактируются
                     ))
                     true
+                } else {
+                    false  // Вкладка уже существует и уже isPluginTab
                 }
             },
             appendToOutputTabFunc = { id, text ->
@@ -2220,24 +2308,78 @@ class ClientState {
                         is com.bylins.client.plugins.StatusElementData.Bar ->
                             com.bylins.client.status.StatusElement.Bar(
                                 data.id, data.label, data.value, data.max,
-                                data.color, data.showText, data.showMax, data.order
+                                data.color, data.showText, data.showMax, data.order, data.hint
                             )
                         is com.bylins.client.plugins.StatusElementData.Text ->
                             com.bylins.client.status.StatusElement.Text(
                                 data.id, data.label, data.value, data.color,
-                                data.bold, null, data.order
+                                data.bold, null, data.order, data.hint
                             )
                         is com.bylins.client.plugins.StatusElementData.ModifiedValue ->
                             com.bylins.client.status.StatusElement.ModifiedValue(
                                 data.id, data.label, data.value, data.base,
-                                data.modifier, data.color, data.order
+                                data.modifier, data.color, data.order, data.hint
                             )
                     }
                 }
                 statusManager.addGroup(id, label, statusElements, collapsed, order)
             },
             removeStatusFunc = { id -> statusManager.remove(id) },
-            clearStatusFunc = { statusManager.clear() }
+            clearStatusFunc = { statusManager.clear() },
+            updateStatusFunc = { id, updates -> statusManager.update(id, updates) },
+            addMiniMapFunc = { id, currentRoomId, visible, order ->
+                val actualOrder = if (order < 0) statusManager.elements.value.size else order
+                statusManager.addMiniMap(id, currentRoomId, visible, actualOrder)
+            },
+            handleRoomFromMsdpFunc = { vnum, name, zone, area, terrain, exits ->
+                // Сохраняем имя зоны (area name) по zone_id
+                if (!zone.isNullOrBlank() && !area.isNullOrBlank()) {
+                    mapManager.setZoneName(zone, area)
+                }
+
+                // Обрабатываем выходы - формат Map<direction, targetVnum>
+                val exitsWithTargets: Map<com.bylins.client.mapper.Direction, String> = exits.mapNotNull { (key, value) ->
+                    val dir = com.bylins.client.mapper.Direction.fromCommand(key)
+                    if (dir != null) dir to value else null
+                }.toMap()
+
+                // Получаем или создаём комнату
+                val existingRoom = mapManager.getRoom(vnum)
+                val room = if (existingRoom != null) {
+                    existingRoom.copy(
+                        name = name,
+                        zone = zone ?: existingRoom.zone,
+                        terrain = terrain ?: existingRoom.terrain,
+                        visited = true
+                    )
+                } else {
+                    com.bylins.client.mapper.Room(
+                        id = vnum,
+                        name = name,
+                        zone = zone,
+                        terrain = terrain,
+                        visited = true
+                    )
+                }
+
+                // Добавляем выходы с целевыми комнатами
+                exitsWithTargets.forEach { (direction, targetVnum) ->
+                    room.addExit(direction, targetVnum)
+                    // Создаём целевую комнату если её нет
+                    if (mapManager.getRoom(targetVnum) == null) {
+                        val unexploredRoom = com.bylins.client.mapper.Room(
+                            id = targetVnum,
+                            name = "",
+                            visited = false
+                        )
+                        mapManager.addRoom(unexploredRoom)
+                    }
+                }
+
+                mapManager.addRoom(room)
+                mapManager.setCurrentRoom(vnum)
+                room.toMap()
+            }
         )
     }
 

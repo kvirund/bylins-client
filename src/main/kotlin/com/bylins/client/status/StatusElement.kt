@@ -17,7 +17,8 @@ sealed class StatusElement {
         val color: String = "green",  // "green", "red", "yellow", "blue" или "#RRGGBB"
         val showText: Boolean = true,
         val showMax: Boolean = true,  // false = показывать только value без "/ max"
-        val order: Int = 0
+        val order: Int = 0,
+        val hint: String? = null      // Подсказка при наведении
     ) : StatusElement()
 
     /**
@@ -27,6 +28,7 @@ sealed class StatusElement {
      * @param color Цвет текста: "white", "red", "green", "yellow", "blue", "cyan", "magenta" или "#RRGGBB"
      * @param bold Жирный шрифт
      * @param background Цвет фона карточки (null = без фона)
+     * @param hint Подсказка при наведении
      */
     data class Text(
         override val id: String,
@@ -35,7 +37,8 @@ sealed class StatusElement {
         val color: String? = null,      // null = цвет по умолчанию из темы
         val bold: Boolean = false,
         val background: String? = null, // null = без фона, иначе карточка с закруглёнными углами
-        val order: Int = 0
+        val order: Int = 0,
+        val hint: String? = null
     ) : StatusElement()
 
     /**
@@ -93,7 +96,8 @@ sealed class StatusElement {
         val base: Int? = null,            // Базовое значение (если известно)
         val modifier: Int? = null,        // Модификатор (+3 или -3)
         val color: String? = null,        // Цвет значения
-        val order: Int = 0
+        val order: Int = 0,
+        val hint: String? = null          // Подсказка при наведении
     ) : StatusElement()
 }
 

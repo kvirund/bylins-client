@@ -35,6 +35,13 @@ import kotlin.reflect.jvm.javaType
  * @param getAllVariablesFunc Функция для получения всех переменных
  * @param msdpGetter Функция для получения MSDP значения
  * @param getAllMsdpFunc Функция для получения всех MSDP данных
+ * @param isMsdpEnabledFunc Функция для проверки включён ли MSDP
+ * @param getMsdpReportableFunc Функция для получения списка reportable переменных
+ * @param subscribeMsdpFunc Функция для подписки на MSDP переменную
+ * @param unsubscribeMsdpFunc Функция для отписки от MSDP переменной
+ * @param unsubscribeMsdpAllFunc Функция для отписки от всех MSDP переменных
+ * @param requestMsdpListFunc Функция для запроса списка переменных
+ * @param sendMsdpRequestFunc Функция для отправки SEND запроса
  * @param gmcpGetter Функция для получения GMCP пакета
  * @param getAllGmcpFunc Функция для получения всех GMCP данных
  * @param gmcpSender Функция для отправки GMCP данных
@@ -58,6 +65,13 @@ class PluginAPIImpl(
     private val getAllVariablesFunc: () -> Map<String, String>,
     private val msdpGetter: (String) -> Any?,
     private val getAllMsdpFunc: () -> Map<String, Any>,
+    private val isMsdpEnabledFunc: () -> Boolean,
+    private val getMsdpReportableFunc: () -> List<String>,
+    private val subscribeMsdpFunc: (String, String) -> Unit,
+    private val unsubscribeMsdpFunc: (String, String) -> Unit,
+    private val unsubscribeMsdpAllFunc: (String) -> Unit,
+    private val requestMsdpListFunc: (String) -> Unit,
+    private val sendMsdpRequestFunc: (String) -> Unit,
     private val gmcpGetter: (String) -> String?,
     private val getAllGmcpFunc: () -> Map<String, String>,
     private val gmcpSender: (String, String) -> Unit,
@@ -93,7 +107,11 @@ class PluginAPIImpl(
     private val addStatusModifiedValueFunc: (String, String, Int, Int?, Int?, String?, Int) -> Unit,
     private val addStatusGroupFunc: (String, String, List<StatusElementData>, Boolean, Int) -> Unit,
     private val removeStatusFunc: (String) -> Unit,
-    private val clearStatusFunc: () -> Unit
+    private val clearStatusFunc: () -> Unit,
+    private val updateStatusFunc: (String, Map<String, Any>) -> Unit,
+    private val addMiniMapFunc: (String, String?, Boolean, Int) -> Unit,
+    // Маппер - MSDP
+    private val handleRoomFromMsdpFunc: (String, String, String?, String?, String?, Map<String, String>) -> Map<String, Any>?
 ) : PluginAPI {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -352,6 +370,26 @@ class PluginAPIImpl(
     }
 
     override fun getAllMsdpData(): Map<String, Any> = getAllMsdpFunc()
+
+    override fun isMsdpEnabled(): Boolean = isMsdpEnabledFunc()
+
+    override fun getMsdpReportableVariables(): List<String> = getMsdpReportableFunc()
+
+    override fun subscribeMsdp(variableName: String) {
+        subscribeMsdpFunc(variableName, pluginId)
+    }
+
+    override fun unsubscribeMsdp(variableName: String) {
+        unsubscribeMsdpFunc(variableName, pluginId)
+    }
+
+    override fun requestMsdpReportableVariables() {
+        requestMsdpListFunc("REPORTABLE_VARIABLES")
+    }
+
+    override fun sendMsdpRequest(variableName: String) {
+        sendMsdpRequestFunc(variableName)
+    }
 
     // ============================================
     // GMCP
@@ -742,6 +780,46 @@ class PluginAPIImpl(
         clearStatusFunc()
     }
 
+    override fun addMiniMap(id: String, currentRoomId: String?, visible: Boolean, order: Int) {
+        val fullId = "${pluginId}_$id"
+        addMiniMapFunc(fullId, currentRoomId, visible, order)
+    }
+
+    override fun updateStatusBar(id: String, value: Int) {
+        val fullId = "${pluginId}_$id"
+        updateStatusFunc(fullId, mapOf("value" to value))
+    }
+
+    override fun updateStatusBar(id: String, value: Int, max: Int) {
+        val fullId = "${pluginId}_$id"
+        updateStatusFunc(fullId, mapOf("value" to value, "max" to max))
+    }
+
+    override fun updateStatusBarMax(id: String, max: Int) {
+        val fullId = "${pluginId}_$id"
+        updateStatusFunc(fullId, mapOf("max" to max))
+    }
+
+    override fun updateStatusText(id: String, value: String) {
+        val fullId = "${pluginId}_$id"
+        updateStatusFunc(fullId, mapOf("value" to value))
+    }
+
+    // ============================================
+    // Маппер - MSDP
+    // ============================================
+
+    override fun handleRoomFromMsdp(
+        vnum: String,
+        name: String,
+        zone: String?,
+        area: String?,
+        terrain: String?,
+        exits: Map<String, String>
+    ): Map<String, Any>? {
+        return handleRoomFromMsdpFunc(vnum, name, zone, area, terrain, exits)
+    }
+
     // ============================================
     // Внутренние методы
     // ============================================
@@ -761,6 +839,9 @@ class PluginAPIImpl(
         // Отписываемся от всех событий
         subscriptions.values.forEach { eventBus.unsubscribe(it) }
         subscriptions.clear()
+
+        // Отписываемся от всех MSDP переменных
+        unsubscribeMsdpAllFunc(pluginId)
 
         // Закрываем все вкладки плагина
         pluginTabs.values.toList().forEach { it.close() }
@@ -819,7 +900,8 @@ sealed class StatusElementData {
         val color: String,
         val showText: Boolean,
         val showMax: Boolean,
-        val order: Int
+        val order: Int,
+        val hint: String? = null
     ) : StatusElementData()
 
     data class Text(
@@ -828,7 +910,8 @@ sealed class StatusElementData {
         val value: String?,
         val color: String?,
         val bold: Boolean,
-        val order: Int
+        val order: Int,
+        val hint: String? = null
     ) : StatusElementData()
 
     data class ModifiedValue(
@@ -838,7 +921,8 @@ sealed class StatusElementData {
         val base: Int?,
         val modifier: Int?,
         val color: String?,
-        val order: Int
+        val order: Int,
+        val hint: String? = null
     ) : StatusElementData()
 }
 
@@ -856,10 +940,11 @@ private class StatusGroupBuilderImpl(private val pluginId: String) : StatusGroup
         color: String,
         showText: Boolean,
         showMax: Boolean,
-        order: Int
+        order: Int,
+        hint: String?
     ) {
         elements.add(StatusElementData.Bar(
-            "${pluginId}_$id", label, value, max, color, showText, showMax, order
+            "${pluginId}_$id", label, value, max, color, showText, showMax, order, hint
         ))
     }
 
@@ -869,10 +954,11 @@ private class StatusGroupBuilderImpl(private val pluginId: String) : StatusGroup
         value: String?,
         color: String?,
         bold: Boolean,
-        order: Int
+        order: Int,
+        hint: String?
     ) {
         elements.add(StatusElementData.Text(
-            "${pluginId}_$id", label, value, color, bold, order
+            "${pluginId}_$id", label, value, color, bold, order, hint
         ))
     }
 
@@ -883,10 +969,11 @@ private class StatusGroupBuilderImpl(private val pluginId: String) : StatusGroup
         base: Int?,
         modifier: Int?,
         color: String?,
-        order: Int
+        order: Int,
+        hint: String?
     ) {
         elements.add(StatusElementData.ModifiedValue(
-            "${pluginId}_$id", label, value, base, modifier, color, order
+            "${pluginId}_$id", label, value, base, modifier, color, order, hint
         ))
     }
 }

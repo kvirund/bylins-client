@@ -11,6 +11,7 @@ import mu.KotlinLogging
  * Функционал:
  * - Определение промпта (PromptDetector)
  * - Парсинг статов из промпта через regex
+ * - Парсинг команды "сч" (ScoreParser)
  */
 private val logger = KotlinLogging.logger("BotCore")
 
@@ -19,6 +20,7 @@ class BotCore(
 ) {
     // Парсинг
     val promptParser by lazy { PromptParser() }
+    val scoreParser by lazy { ScoreParser() }
     val promptDetector by lazy {
         PromptDetector(
             onTextReceived = { batchText -> handleTextReceived(batchText) },
@@ -32,6 +34,12 @@ class BotCore(
 
     // Callback для логирования
     var onLog: ((String) -> Unit)? = null
+
+    // Callback для обработки распарсенного промпта
+    var onPromptParsed: ((prompt: String, parsed: Map<String, String>) -> Unit)? = null
+
+    // Callback для обработки блока текста (для ScoreParser и др.)
+    var onTextBlock: ((text: String) -> Unit)? = null
 
     /**
      * Обработать входящую строку от сервера
@@ -52,16 +60,23 @@ class BotCore(
     // ============================================
 
     private fun handleTextReceived(batchText: String) {
-        val lineCount = batchText.lines().size
-        log("Text: $lineCount lines")
+        // Пробуем распарсить как вывод "сч"
+        val score = scoreParser.tryParse(batchText)
+        if (score != null) {
+            log("Score parsed: level=${score.level}, hp=${score.hp}/${score.maxHp}")
+        }
+
+        // Вызываем callback для внешней обработки
+        onTextBlock?.invoke(batchText)
     }
 
-    @Suppress("UNUSED_PARAMETER")
     private fun handlePromptReceived(prompt: String, parsed: Map<String, String>?) {
         if (parsed != null && parsed.isNotEmpty()) {
-            log("Prompt: $prompt -> ${parsed.entries.joinToString { "${it.key}=${it.value}" }}")
+            log("Prompt parsed: ${parsed.entries.joinToString { "${it.key}=${it.value}" }}")
+            // Вызываем callback с распарсенными данными
+            onPromptParsed?.invoke(prompt, parsed)
         } else {
-            log("Prompt: $prompt")
+            log("Prompt (no match): $prompt")
         }
     }
 

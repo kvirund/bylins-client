@@ -188,15 +188,32 @@ class TabManagerTest {
     }
 
     @Test
-    fun `getTabsForSave returns all tabs including main`() {
+    fun `getTabsForSave returns all tabs including main and logs`() {
         val manager = TabManager()
         val tab = Tab(id = "test", name = "Test")
         manager.addTab(tab)
 
         val tabsToSave = manager.getTabsForSave()
 
-        assertEquals(2, tabsToSave.size)
+        // TabManager создаёт main и logs, плюс мы добавили test
+        assertEquals(3, tabsToSave.size)
         assertTrue(tabsToSave.any { it.id == "main" })
+        assertTrue(tabsToSave.any { it.id == "logs" })
         assertTrue(tabsToSave.any { it.id == "test" })
+    }
+
+    @Test
+    fun `getTabsForSave excludes plugin tabs`() {
+        val manager = TabManager()
+        val pluginTab = Tab(id = "plugin_test", name = "Plugin Tab", isPluginTab = true)
+        manager.addTab(pluginTab)
+
+        val tabsToSave = manager.getTabsForSave()
+
+        // Plugin tabs should be excluded
+        assertFalse(tabsToSave.any { it.id == "plugin_test" })
+        // But main and logs should still be there
+        assertTrue(tabsToSave.any { it.id == "main" })
+        assertTrue(tabsToSave.any { it.id == "logs" })
     }
 }

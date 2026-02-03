@@ -101,6 +101,12 @@ data class CommandSendEvent(
 // ============================================
 
 /**
+ * Событие включения MSDP протокола.
+ * Вызывается после согласования протокола с сервером.
+ */
+object MsdpEnabledEvent : PluginEvent
+
+/**
  * Событие получения MSDP данных.
  */
 data class MsdpEvent(
@@ -108,6 +114,14 @@ data class MsdpEvent(
     val variable: String,
     /** Значение (может быть String, Map или List) */
     val value: Any
+) : PluginEvent
+
+/**
+ * Событие получения списка reportable переменных MSDP.
+ */
+data class MsdpReportableVariablesEvent(
+    /** Список доступных переменных */
+    val variables: List<String>
 ) : PluginEvent
 
 /**

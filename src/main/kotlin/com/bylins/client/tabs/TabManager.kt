@@ -64,6 +64,7 @@ class TabManager {
             current.add(tab)
         }
         _tabs.value = current
+        logger.info { "Tab added: ${tab.id} (${tab.name}), total tabs: ${_tabs.value.size}, ids: ${_tabs.value.map { it.id }}" }
     }
 
     /**
@@ -232,6 +233,9 @@ class TabManager {
      * Загружает вкладки из списка
      */
     fun loadTabs(tabs: List<Tab>) {
+        // Сохраняем существующие вкладки плагинов (они уже были созданы до loadTabs)
+        val existingPluginTabs = _tabs.value.filter { it.isPluginTab }
+
         // Ищем сохранённые системные вкладки
         val savedMainTab = tabs.find { it.id == "main" }
         val savedLogsTab = tabs.find { it.id == "logs" }
@@ -259,14 +263,17 @@ class TabManager {
         mainTab.appendText("\nДобро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n")
         mainTab.flush()
 
-        // Сохраняем: mainTab, пользовательские вкладки, logsTab (в конце)
-        _tabs.value = listOf(mainTab) + otherTabs + listOf(logsTab)
+        // Сохраняем: mainTab, пользовательские вкладки, вкладки плагинов, logsTab (в конце)
+        // Вкладки плагинов добавляются перед logsTab, чтобы сохранить порядок
+        _tabs.value = listOf(mainTab) + otherTabs + existingPluginTabs + listOf(logsTab)
+        logger.info { "Tabs loaded: ${_tabs.value.map { it.id }}, plugin tabs preserved: ${existingPluginTabs.map { it.id }}" }
     }
 
     /**
-     * Возвращает все вкладки (включая главную) для сохранения
+     * Возвращает все вкладки (включая главную) для сохранения.
+     * Вкладки плагинов исключаются - они создаются плагинами при загрузке.
      */
     fun getTabsForSave(): List<Tab> {
-        return _tabs.value
+        return _tabs.value.filter { !it.isPluginTab }
     }
 }

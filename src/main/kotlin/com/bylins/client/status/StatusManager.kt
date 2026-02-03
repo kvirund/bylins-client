@@ -48,9 +48,10 @@ class StatusManager(
         color: String = "green",
         showText: Boolean = true,
         showMax: Boolean = true,
-        order: Int = _elements.value.size
+        order: Int = _elements.value.size,
+        hint: String? = null
     ) {
-        val bar = StatusElement.Bar(id, label, value, max, color, showText, showMax, order)
+        val bar = StatusElement.Bar(id, label, value, max, color, showText, showMax, order, hint)
         _elements.value = _elements.value + (id to bar)
         updateStatusVariable(id, bar)
     }
@@ -61,6 +62,7 @@ class StatusManager(
      * @param color цвет текста (null = по умолчанию)
      * @param bold жирный шрифт
      * @param background цвет фона карточки (null = без фона)
+     * @param hint подсказка при наведении
      */
     fun addText(
         id: String,
@@ -69,9 +71,10 @@ class StatusManager(
         color: String? = null,
         bold: Boolean = false,
         background: String? = null,
-        order: Int = _elements.value.size
+        order: Int = _elements.value.size,
+        hint: String? = null
     ) {
-        val text = StatusElement.Text(id, label, value, color, bold, background, order)
+        val text = StatusElement.Text(id, label, value, color, bold, background, order, hint)
         _elements.value = _elements.value + (id to text)
         updateStatusVariable(id, text)
     }
@@ -162,6 +165,7 @@ class StatusManager(
      * @param base Базовое значение до модификатора (null если неизвестно)
      * @param modifier Модификатор (+3 или -2, null если неизвестно)
      * @param color Цвет значения (null = по умолчанию)
+     * @param hint Подсказка при наведении
      */
     fun addModifiedValue(
         id: String,
@@ -170,9 +174,10 @@ class StatusManager(
         base: Int? = null,
         modifier: Int? = null,
         color: String? = null,
-        order: Int = _elements.value.size
+        order: Int = _elements.value.size,
+        hint: String? = null
     ) {
-        val modifiedValue = StatusElement.ModifiedValue(id, label, value, base, modifier, color, order)
+        val modifiedValue = StatusElement.ModifiedValue(id, label, value, base, modifier, color, order, hint)
         _elements.value = _elements.value + (id to modifiedValue)
         updateStatusVariable(id, modifiedValue)
     }
@@ -185,13 +190,66 @@ class StatusManager(
     }
 
     /**
-     * Обновляет существующий элемент
+     * Обновляет существующий элемент (включая элементы внутри групп)
      * @param updates Map с полями для обновления
      */
     fun update(id: String, updates: Map<String, Any>) {
-        val existing = _elements.value[id] ?: return
+        // Сначала ищем элемент на верхнем уровне
+        val existing = _elements.value[id]
+        if (existing != null) {
+            val updated = updateElement(existing, updates)
+            _elements.value = _elements.value + (id to updated)
+            updateStatusVariable(id, updated)
+            return
+        }
 
-        val updated = when (existing) {
+        // Если не нашли, ищем внутри групп
+        var found = false
+        val updatedElements = _elements.value.mapValues { (groupId, element) ->
+            if (element is StatusElement.Group) {
+                val updatedGroupElements = element.elements.map { nested ->
+                    val nestedId = when (nested) {
+                        is StatusElement.Bar -> nested.id
+                        is StatusElement.Text -> nested.id
+                        is StatusElement.ModifiedValue -> nested.id
+                        is StatusElement.Flags -> nested.id
+                        is StatusElement.MiniMap -> nested.id
+                        is StatusElement.PathPanel -> nested.id
+                        is StatusElement.Group -> nested.id
+                    }
+                    if (nestedId == id) {
+                        found = true
+                        updateElement(nested, updates)
+                    } else {
+                        nested
+                    }
+                }
+                if (updatedGroupElements != element.elements) {
+                    element.copy(elements = updatedGroupElements)
+                } else {
+                    element
+                }
+            } else {
+                element
+            }
+        }
+
+        if (found) {
+            _elements.value = updatedElements
+            // Update variable for the group containing this element
+            updatedElements.forEach { (groupId, element) ->
+                if (element is StatusElement.Group) {
+                    updateStatusVariable(groupId, element)
+                }
+            }
+        }
+    }
+
+    /**
+     * Обновляет один элемент статуса
+     */
+    private fun updateElement(existing: StatusElement, updates: Map<String, Any>): StatusElement {
+        return when (existing) {
             is StatusElement.Bar -> existing.copy(
                 label = updates["label"] as? String ?: existing.label,
                 value = (updates["value"] as? Number)?.toInt() ?: existing.value,
@@ -252,9 +310,6 @@ class StatusManager(
                 order = (updates["order"] as? Number)?.toInt() ?: existing.order
             )
         }
-
-        _elements.value = _elements.value + (id to updated)
-        updateStatusVariable(id, updated)
     }
 
     /**

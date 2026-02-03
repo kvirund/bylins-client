@@ -18,6 +18,8 @@ import com.bylins.client.ClientState
 import com.bylins.client.ui.AnsiParser
 import kotlinx.coroutines.launch
 
+private val outputPanelLogger = mu.KotlinLogging.logger("OutputPanel")
+
 @Composable
 fun OutputPanel(
     clientState: ClientState,
@@ -25,6 +27,11 @@ fun OutputPanel(
 ) {
     val tabs by clientState.tabs.collectAsState()
     val activeTabId by clientState.activeTabId.collectAsState()
+
+    // Логируем вкладки при изменении
+    LaunchedEffect(tabs) {
+        outputPanelLogger.info { "Tabs updated: ${tabs.map { "${it.id}(${it.name})" }}" }
+    }
 
     // Получаем настройки шрифта
     val fontFamilyName by clientState.fontFamily.collectAsState()
@@ -75,8 +82,8 @@ fun OutputPanel(
                                             .background(Color(0xFFFF9800), shape = CircleShape)
                                     )
                                 }
-                                // Кнопки управления (кроме системных вкладок)
-                                if (tab.id != "main" && tab.id != "logs") {
+                                // Кнопки управления (только для пользовательских вкладок, не для системных)
+                                if (tab.id != "main" && tab.id != "logs" && !tab.isPluginTab) {
                                     IconButton(
                                         onClick = {
                                             editingTab = tab

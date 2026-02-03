@@ -170,6 +170,11 @@ interface PluginAPI {
     // ============================================
 
     /**
+     * Проверяет, включён ли MSDP протокол.
+     */
+    fun isMsdpEnabled(): Boolean
+
+    /**
      * Получает MSDP значение.
      */
     fun getMsdpValue(key: String): Any?
@@ -183,6 +188,34 @@ interface PluginAPI {
      * Получает все MSDP данные.
      */
     fun getAllMsdpData(): Map<String, Any>
+
+    /**
+     * Получает список reportable переменных MSDP.
+     */
+    fun getMsdpReportableVariables(): List<String>
+
+    /**
+     * Подписывается на MSDP переменную (с ref-counting).
+     * При первой подписке отправляется REPORT на сервер.
+     * При выгрузке плагина все подписки автоматически удаляются.
+     */
+    fun subscribeMsdp(variableName: String)
+
+    /**
+     * Отписывается от MSDP переменной (с ref-counting).
+     * UNREPORT отправляется только если больше нет подписчиков.
+     */
+    fun unsubscribeMsdp(variableName: String)
+
+    /**
+     * Запрашивает LIST REPORTABLE_VARIABLES от сервера.
+     */
+    fun requestMsdpReportableVariables()
+
+    /**
+     * Отправляет SEND для получения текущего значения переменной.
+     */
+    fun sendMsdpRequest(variableName: String)
 
     // ============================================
     // GMCP
@@ -283,6 +316,31 @@ interface PluginAPI {
      * @return Информация о комнате или null при ошибке
      */
     fun handleMovement(direction: String, roomName: String, exits: List<String>): Map<String, Any>?
+
+    // ============================================
+    // Маппер - MSDP интеграция
+    // ============================================
+
+    /**
+     * Обрабатывает данные комнаты из MSDP.
+     * Создаёт или обновляет комнату на карте и устанавливает её как текущую.
+     *
+     * @param vnum VNUM комнаты (уникальный ID)
+     * @param name Название комнаты
+     * @param zone ID зоны (опционально)
+     * @param area Название области/зоны (опционально)
+     * @param terrain Тип местности (опционально)
+     * @param exits Карта выходов: направление -> VNUM целевой комнаты
+     * @return Информация о комнате или null при ошибке
+     */
+    fun handleRoomFromMsdp(
+        vnum: String,
+        name: String,
+        zone: String? = null,
+        area: String? = null,
+        terrain: String? = null,
+        exits: Map<String, String> = emptyMap()
+    ): Map<String, Any>?
 
     // ============================================
     // Маппер - управление
@@ -508,6 +566,16 @@ interface PluginAPI {
     )
 
     /**
+     * Добавляет миникарту на панель статуса.
+     */
+    fun addMiniMap(
+        id: String,
+        currentRoomId: String? = null,
+        visible: Boolean = true,
+        order: Int = 0
+    )
+
+    /**
      * Удаляет элемент с панели статуса.
      */
     fun removeStatus(id: String)
@@ -516,6 +584,30 @@ interface PluginAPI {
      * Очищает панель статуса.
      */
     fun clearStatus()
+
+    // ============================================
+    // Панель статуса - обновление
+    // ============================================
+
+    /**
+     * Обновляет только значение прогресс-бара (без пересоздания).
+     */
+    fun updateStatusBar(id: String, value: Int)
+
+    /**
+     * Обновляет значение и максимум прогресс-бара.
+     */
+    fun updateStatusBar(id: String, value: Int, max: Int)
+
+    /**
+     * Обновляет только максимум прогресс-бара.
+     */
+    fun updateStatusBarMax(id: String, max: Int)
+
+    /**
+     * Обновляет только текстовое значение элемента.
+     */
+    fun updateStatusText(id: String, value: String)
 }
 
 // ============================================
@@ -626,7 +718,8 @@ interface StatusGroupBuilder {
         color: String = "green",
         showText: Boolean = true,
         showMax: Boolean = true,
-        order: Int = 0
+        order: Int = 0,
+        hint: String? = null
     )
 
     /**
@@ -638,7 +731,8 @@ interface StatusGroupBuilder {
         value: String? = null,
         color: String? = null,
         bold: Boolean = false,
-        order: Int = 0
+        order: Int = 0,
+        hint: String? = null
     )
 
     /**
@@ -651,6 +745,7 @@ interface StatusGroupBuilder {
         base: Int? = null,
         modifier: Int? = null,
         color: String? = null,
-        order: Int = 0
+        order: Int = 0,
+        hint: String? = null
     )
 }

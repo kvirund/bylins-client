@@ -1,6 +1,9 @@
 package com.bylins.client.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
+import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,6 +27,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +37,52 @@ import com.bylins.client.mapper.Room
 import com.bylins.client.status.StatusElement
 import com.bylins.client.status.FlagItem
 import com.bylins.client.ui.theme.LocalAppColorScheme
+import androidx.compose.ui.layout.onGloballyPositioned
+
+/**
+ * Обёртка с тултипом для статус-элементов.
+ * Использует TooltipArea из Compose Foundation для корректного отображения.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun WithHint(
+    hint: String?,
+    content: @Composable () -> Unit
+) {
+    if (hint == null) {
+        content()
+        return
+    }
+
+    val colorScheme = LocalAppColorScheme.current
+
+    TooltipArea(
+        tooltip = {
+            Surface(
+                color = colorScheme.surface,
+                shape = MaterialTheme.shapes.small,
+                shadowElevation = 4.dp,
+                modifier = Modifier.widthIn(max = 320.dp)
+            ) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp
+                    ),
+                    color = colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        },
+        delayMillis = 300,  // Небольшая задержка перед показом
+        tooltipPlacement = TooltipPlacement.CursorPoint(
+            offset = DpOffset(16.dp, 16.dp)  // Смещение от курсора
+        )
+    ) {
+        content()
+    }
+}
 
 @Composable
 fun StatusPanel(
@@ -74,29 +124,31 @@ private fun StatusBarElement(bar: StatusElement.Bar) {
     val color = parseColor(bar.color)
     val progress = if (bar.max > 0) bar.value.toFloat() / bar.max.toFloat() else 0f
 
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = bar.label,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium
-            )
-            if (bar.showText) {
+    WithHint(bar.hint) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
-                    text = if (bar.showMax) "${bar.value} / ${bar.max}" else "${bar.value}",
-                    style = MaterialTheme.typography.bodySmall
+                    text = bar.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium
                 )
+                if (bar.showText) {
+                    Text(
+                        text = if (bar.showMax) "${bar.value} / ${bar.max}" else "${bar.value}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
+            LinearProgressIndicator(
+                progress = progress.coerceIn(0f, 1f),
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = color,
+                trackColor = color.copy(alpha = 0.2f)
+            )
         }
-        LinearProgressIndicator(
-            progress = progress.coerceIn(0f, 1f),
-            modifier = Modifier.fillMaxWidth().height(8.dp),
-            color = color,
-            trackColor = color.copy(alpha = 0.2f)
-        )
     }
 }
 
@@ -138,21 +190,23 @@ private fun StatusTextElement(text: StatusElement.Text) {
         }
     }
 
-    if (text.background != null) {
-        // С фоновой карточкой
-        val backgroundColor = parseColor(text.background)
-        Surface(
-            color = backgroundColor.copy(alpha = 0.3f),
-            shape = MaterialTheme.shapes.small,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                content()
+    WithHint(text.hint) {
+        if (text.background != null) {
+            // С фоновой карточкой
+            val backgroundColor = parseColor(text.background)
+            Surface(
+                color = backgroundColor.copy(alpha = 0.3f),
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    content()
+                }
             }
+        } else {
+            // Без фона
+            content()
         }
-    } else {
-        // Без фона
-        content()
     }
 }
 
@@ -226,43 +280,47 @@ private fun StatusModifiedValueElement(modified: StatusElement.ModifiedValue) {
         else -> baseColor
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = "${modified.label}:",
-            style = MaterialTheme.typography.bodySmall,
-            color = baseColor.copy(alpha = 0.7f)
-        )
-
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            // Эффективное значение
+    WithHint(modified.hint) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
             Text(
-                text = "${modified.value}",
+                text = "${modified.label}:",
                 style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
-                color = baseColor
+                color = baseColor.copy(alpha = 0.7f)
             )
 
-            // Базовое и модификатор (если есть)
-            if (modified.base != null || modified.modifier != null) {
-                val modText = buildString {
-                    append("(")
-                    if (modified.base != null) {
-                        append(modified.base)
-                    }
-                    if (modified.modifier != null && modified.modifier != 0) {
-                        if (modified.modifier > 0) append("+")
-                        append(modified.modifier)
-                    }
-                    append(")")
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Эффективное значение
                 Text(
-                    text = modText,
+                    text = "${modified.value}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = modifierColor.copy(alpha = 0.8f)
+                    fontWeight = FontWeight.Bold,
+                    color = baseColor
                 )
+
+                // Базовое и модификатор (если есть)
+                if (modified.base != null || modified.modifier != null) {
+                    val modText = buildString {
+                        append("(")
+                        if (modified.base != null) {
+                            append(modified.base)
+                        }
+                        if (modified.modifier != null && modified.modifier != 0) {
+                            // Формат: "(23 + 2)" или "(23 - 2)" с пробелами
+                            if (modified.modifier > 0) append(" + ")
+                            else append(" - ")
+                            append(kotlin.math.abs(modified.modifier))
+                        }
+                        append(")")
+                    }
+                    Text(
+                        text = modText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = modifierColor.copy(alpha = 0.8f)
+                    )
+                }
             }
         }
     }

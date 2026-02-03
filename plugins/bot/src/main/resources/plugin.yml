@@ -1,5 +1,5 @@
 id: aibot
-name: AI Bot
+name: Ассистент
 version: 1.0.0
 main: com.bylins.client.plugins.aibot.AIBotPlugin
 author: Bylins Client
