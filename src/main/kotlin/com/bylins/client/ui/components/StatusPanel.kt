@@ -212,7 +212,8 @@ private fun StatusTextElement(text: StatusElement.Text) {
 
 @Composable
 private fun StatusGroupElement(group: StatusElement.Group, clientState: ClientState) {
-    var expanded by remember { mutableStateOf(!group.collapsed) }
+    // Используем collapsed состояние из группы напрямую
+    val expanded = !group.collapsed
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -227,8 +228,11 @@ private fun StatusGroupElement(group: StatusElement.Group, clientState: ClientSt
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectTapGestures { expanded = !expanded }
+                    .pointerInput(group.id) {
+                        detectTapGestures {
+                            // Переключаем через StatusManager для синхронизации и сохранения
+                            clientState.statusManager.toggleGroupCollapsed(group.id)
+                        }
                     },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
