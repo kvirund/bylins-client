@@ -256,6 +256,9 @@ class ClientState {
     private val _hiddenTabs = MutableStateFlow<Set<String>>(emptySet())
     val hiddenTabs: StateFlow<Set<String>> = _hiddenTabs
 
+    // Состояние свёрнутости групп статус-панели
+    private val _statusGroupCollapsed = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+
     // Целевой профиль для добавления хоткеев/триггеров/алиасов в UI панелях (null = база)
     private val _panelTargetProfileId = MutableStateFlow<String?>(null)
     val panelTargetProfileId: StateFlow<String?> = _panelTargetProfileId
@@ -462,7 +465,14 @@ class ClientState {
         _fontSize.value = configData.fontSize
         _ignoreNumLock.value = configData.ignoreNumLock
         _hiddenTabs.value = configData.hiddenTabs
+        _statusGroupCollapsed.value = configData.statusGroupCollapsed
         logManager.setLogWithColors(configData.logWithColors)
+
+        // Устанавливаем callback для сохранения состояния свёрнутости групп
+        statusManager.onCollapsedStateChanged = { groupId, collapsed ->
+            _statusGroupCollapsed.value = _statusGroupCollapsed.value + (groupId to collapsed)
+            saveConfig()
+        }
 
         // Загружаем профили подключений из конфига (должно быть до lastMapRoomId)
         _connectionProfiles.value = configData.connectionProfiles
@@ -651,6 +661,18 @@ class ClientState {
     }
 
     fun send(command: String) {
+        // Если команда содержит ";", разделяем на несколько и отправляем по очереди
+        if (command.contains(";")) {
+            val commands = command.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+            for (cmd in commands) {
+                sendSingleCommand(cmd)
+            }
+            return
+        }
+        sendSingleCommand(command)
+    }
+
+    private fun sendSingleCommand(command: String) {
         // Сначала проверяем команды управления переменными
         val varHandled = variableManager.processCommand(command) { message ->
             // Выводим сообщения от VariableManager с сохранением промпта
@@ -1393,7 +1415,8 @@ class ClientState {
             activeProfileStack = if (::profileManager.isInitialized) profileManager.activeStack.value else emptyList(),
             hiddenTabs = _hiddenTabs.value,
             lastMapRoomId = lastMapRoomId,
-            logWithColors = logManager.logWithColors.value
+            logWithColors = logManager.logWithColors.value,
+            statusGroupCollapsed = _statusGroupCollapsed.value
         )
     }
 
@@ -1730,24 +1753,36 @@ class ClientState {
         mapManager.setRoomTerrain(roomId, terrain)
     }
 
-    fun setRoomTags(roomId: String, tags: Set<String>) {
-        mapManager.setRoomTags(roomId, tags)
+    fun setRoomProperty(roomId: String, key: String, value: String) {
+        mapManager.setRoomProperty(roomId, key, value)
+    }
+
+    fun removeRoomProperty(roomId: String, key: String) {
+        mapManager.removeRoomProperty(roomId, key)
+    }
+
+    fun setRoomProperties(roomId: String, properties: Map<String, String>) {
+        mapManager.setRoomProperties(roomId, properties)
+    }
+
+    fun getRoomProperties(roomId: String): Map<String, String> {
+        return mapManager.getRoom(roomId)?.properties ?: emptyMap()
     }
 
     /**
-     * Полное обновление комнаты - название, заметки, terrain, теги, зона, выходы, visited
+     * Полное обновление комнаты - название, заметки, terrain, свойства, зона, выходы, visited
      */
     fun updateRoom(
         roomId: String,
         name: String,
         note: String,
         terrain: String?,
-        tags: Set<String>,
+        properties: Map<String, String>,
         zone: String,
         exits: Map<com.bylins.client.mapper.Direction, com.bylins.client.mapper.Exit>,
         visited: Boolean
     ) {
-        mapManager.updateRoom(roomId, name, note, terrain, tags, zone, exits, visited)
+        mapManager.updateRoom(roomId, name, note, terrain, properties, zone, exits, visited)
     }
 
     fun exportMap(): Map<String, com.bylins.client.mapper.Room> {
@@ -2189,12 +2224,18 @@ class ClientState {
             getCurrentRoomFunc = { mapManager.getCurrentRoom()?.toMap() },
             getRoomFunc = { roomId -> mapManager.getRoom(roomId)?.toMap() },
             searchRoomsFunc = { query -> mapManager.searchRooms(query).map { it.toMap() } },
-            findPathFunc = { targetId -> mapManager.findPathFromCurrent(targetId)?.map { it.name } },
+            findPathFunc = { targetId -> mapManager.findPathFromCurrent(targetId)?.map { it.shortName } },
+            findPathRoomIdsFunc = { targetId -> mapManager.findPathRoomIds(targetId) },
             // Маппер - модификация
             setRoomNoteFunc = { roomId, note -> mapManager.setRoomNote(roomId, note) },
             setRoomColorFunc = { roomId, color -> mapManager.setRoomColor(roomId, color) },
             setRoomZoneFunc = { roomId, zone -> mapManager.setRoomZone(roomId, zone) },
-            setRoomTagsFunc = { roomId, tags -> mapManager.setRoomTags(roomId, tags.toSet()) },
+            setRoomPropertyFunc = { roomId, key, value -> mapManager.setRoomProperty(roomId, key, value) },
+            removeRoomPropertyFunc = { roomId, key -> mapManager.removeRoomProperty(roomId, key) },
+            getRoomPropertiesFunc = { roomId -> mapManager.getRoom(roomId)?.properties ?: emptyMap() },
+            setZonePropertyFunc = { zoneId, key, value -> mapManager.setZoneProperty(zoneId, key, value) },
+            removeZonePropertyFunc = { zoneId, key -> mapManager.removeZoneProperty(zoneId, key) },
+            getZonePropertiesFunc = { zoneId -> mapManager.getZoneProperties(zoneId) },
             // Маппер - создание
             createRoomFunc = { id, name ->
                 if (mapManager.getRoom(id) != null) false
@@ -2284,7 +2325,8 @@ class ClientState {
             appendToOutputTabFunc = { id, text ->
                 val tab = tabManager.getTab(id)
                 if (tab != null) {
-                    tab.appendText(text, markUnread = true)
+                    val isActive = tabManager.activeTabId.value == id
+                    tab.appendText(text, markUnread = !isActive)
                     tab.flush()
                 }
             },
@@ -2313,7 +2355,7 @@ class ClientState {
                         is com.bylins.client.plugins.StatusElementData.Text ->
                             com.bylins.client.status.StatusElement.Text(
                                 data.id, data.label, data.value, data.color,
-                                data.bold, null, data.order, data.hint
+                                data.bold, data.background, data.order, data.hint
                             )
                         is com.bylins.client.plugins.StatusElementData.ModifiedValue ->
                             com.bylins.client.status.StatusElement.ModifiedValue(
@@ -2322,7 +2364,9 @@ class ClientState {
                             )
                     }
                 }
-                statusManager.addGroup(id, label, statusElements, collapsed, order)
+                // Используем сохранённое состояние свёрнутости, если есть
+                val effectiveCollapsed = _statusGroupCollapsed.value[id] ?: collapsed
+                statusManager.addGroup(id, label, statusElements, effectiveCollapsed, order)
             },
             removeStatusFunc = { id -> statusManager.remove(id) },
             clearStatusFunc = { statusManager.clear() },
@@ -2379,6 +2423,30 @@ class ClientState {
                 mapManager.addRoom(room)
                 mapManager.setCurrentRoom(vnum)
                 room.toMap()
+            },
+            registerMapCommandFunc = { name, callback ->
+                registerMapCommand(name) { room -> callback(room.toMap()) }
+            },
+            unregisterMapCommandFunc = { name -> unregisterMapCommand(name) },
+            setPathHighlightFunc = { roomIds, targetRoomId ->
+                mapManager.setPathHighlight(roomIds.toSet(), targetRoomId)
+            },
+            clearPathHighlightFunc = { mapManager.clearPathHighlight() },
+            // Контекстные команды
+            addContextCommandFunc = { command, description, ttlStr ->
+                val ttl = when {
+                    ttlStr == "room" -> com.bylins.client.contextcommands.ContextCommandTTL.UntilRoomChange
+                    ttlStr == "zone" -> com.bylins.client.contextcommands.ContextCommandTTL.UntilZoneChange
+                    ttlStr == "permanent" -> com.bylins.client.contextcommands.ContextCommandTTL.Permanent
+                    ttlStr == "once" -> com.bylins.client.contextcommands.ContextCommandTTL.OneTime
+                    ttlStr.toIntOrNull() != null -> com.bylins.client.contextcommands.ContextCommandTTL.FixedTime(ttlStr.toInt())
+                    else -> com.bylins.client.contextcommands.ContextCommandTTL.UntilRoomChange
+                }
+                contextCommandManager.addManualCommand(command, ttl, description)
+            },
+            removeContextCommandFunc = { command ->
+                val queue = contextCommandManager.commandQueue.value
+                queue.filter { it.command == command }.forEach { contextCommandManager.removeCommand(it.id) }
             }
         )
     }
@@ -2558,7 +2626,7 @@ class ClientState {
         }
 
         override fun findPath(targetRoomId: String): List<String>? {
-            return mapManager.findPathFromCurrent(targetRoomId)?.map { it.name }
+            return mapManager.findPathFromCurrent(targetRoomId)?.map { it.shortName }
         }
 
         override fun setRoomNote(roomId: String, note: String) {
@@ -2573,8 +2641,28 @@ class ClientState {
             mapManager.setRoomZone(roomId, zone)
         }
 
-        override fun setRoomTags(roomId: String, tags: List<String>) {
-            mapManager.setRoomTags(roomId, tags.toSet())
+        override fun setRoomProperty(roomId: String, key: String, value: String) {
+            mapManager.setRoomProperty(roomId, key, value)
+        }
+
+        override fun removeRoomProperty(roomId: String, key: String) {
+            mapManager.removeRoomProperty(roomId, key)
+        }
+
+        override fun getRoomProperties(roomId: String): Map<String, String> {
+            return mapManager.getRoom(roomId)?.properties ?: emptyMap()
+        }
+
+        override fun setZoneProperty(zoneId: String, key: String, value: String) {
+            mapManager.setZoneProperty(zoneId, key, value)
+        }
+
+        override fun removeZoneProperty(zoneId: String, key: String) {
+            mapManager.removeZoneProperty(zoneId, key)
+        }
+
+        override fun getZoneProperties(zoneId: String): Map<String, String> {
+            return mapManager.getZoneProperties(zoneId)
         }
 
         override fun createRoom(id: String, name: String): Boolean {

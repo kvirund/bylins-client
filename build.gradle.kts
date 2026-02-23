@@ -51,7 +51,7 @@ dependencies {
 
     // Plugin modules
     // Note: Only plugins:core is a compile-time dependency
-    // Bot plugin is loaded at runtime via PluginManager from build/run/plugins/bot.jar
+    // Assistant plugin is loaded at runtime via PluginManager from plugins/assistant.jar
     implementation(project(":plugins:core"))
 
     // Testing
@@ -113,7 +113,7 @@ val prepareRun by tasks.registering(Copy::class) {
     group = "application"
     description = "Prepares run directory with plugins and scripts"
 
-    dependsOn(":plugins:bot:buildPlugin")
+    dependsOn(":plugins:assistant:buildPlugin")
 
     // Создаём директорию для плагинов
     doFirst {
@@ -121,7 +121,7 @@ val prepareRun by tasks.registering(Copy::class) {
     }
 
     // Копируем JAR плагина
-    from(project(":plugins:bot").layout.buildDirectory.file("libs/bot.jar"))
+    from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"))
     into(layout.buildDirectory.dir("run/plugins"))
 }
 

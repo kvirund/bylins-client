@@ -1,0 +1,18 @@
+id: assistant
+name: Ассистент
+version: 1.0.0
+main: com.bylins.client.plugins.assistant.AssistantPlugin
+author: Bylins Client
+description: |
+  Ассистент для игры:
+  - Определение промпта (PromptDetector)
+  - Парсинг статов из промпта
+  - FSM для автоматических действий
+  - LLM парсинг текста (Ollama/LangChain4j)
+
+  Команды:
+  - #assistant start - запуск
+  - #assistant stop - остановка
+  - #assistant status - статус
+  - #assistant mode zone/world - область исследования
+  - #assistant llm init - инициализация LLM

@@ -370,23 +370,23 @@ private fun ContextRuleItem(
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
-                            // Теги как цветные карточки
-                            scope.roomTags.take(3).forEach { tag ->
+                            // Ключи свойств как цветные карточки
+                            scope.roomPropertyKeys.take(3).forEach { propKey ->
                                 Surface(
                                     color = colorScheme.warning.copy(alpha = 0.2f),
                                     shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
-                                        text = tag,
+                                        text = propKey,
                                         color = colorScheme.warning,
                                         fontSize = 10.sp,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
                             }
-                            if (scope.roomTags.size > 3) {
+                            if (scope.roomPropertyKeys.size > 3) {
                                 Text(
-                                    text = "+${scope.roomTags.size - 3}",
+                                    text = "+${scope.roomPropertyKeys.size - 3}",
                                     color = colorScheme.onSurfaceVariant,
                                     fontSize = 10.sp
                                 )
@@ -602,9 +602,9 @@ private fun ContextRuleDialog(
     }
 
     // Room Tags (for Room scope)
-    var roomTags by remember {
+    var roomPropertyKeys by remember {
         mutableStateOf(
-            (rule?.scope as? ContextScope.Room)?.roomTags?.joinToString(", ") ?: ""
+            (rule?.scope as? ContextScope.Room)?.roomPropertyKeys?.joinToString(", ") ?: ""
         )
     }
 
@@ -887,8 +887,8 @@ private fun ContextRuleDialog(
                                 fontFamily = FontFamily.Monospace
                             )
                             OutlinedTextField(
-                                value = roomTags,
-                                onValueChange = { roomTags = it },
+                                value = roomPropertyKeys,
+                                onValueChange = { roomPropertyKeys = it },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("shop, blacksmith, quest_npc", color = Color.Gray, fontSize = 12.sp) },
                                 colors = TextFieldDefaults.outlinedTextFieldColors(
@@ -1353,12 +1353,12 @@ private fun ContextRuleDialog(
                             val actualScope: ContextScope = when (selectedScope) {
                                 "room" -> {
                                     val ids = roomIds.lines().filter { it.isNotBlank() }.toSet()
-                                    val tags = roomTags.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
+                                    val tags = roomPropertyKeys.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
                                     if (ids.isEmpty() && tags.isEmpty()) {
                                         errorMessage = "At least one room ID or tag is required"
                                         return@Button
                                     }
-                                    ContextScope.Room(roomIds = ids, roomTags = tags)
+                                    ContextScope.Room(roomIds = ids, roomPropertyKeys = tags)
                                 }
                                 "zone" -> {
                                     val zoneList = zones.lines().filter { it.isNotBlank() }.toSet()

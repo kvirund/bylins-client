@@ -160,7 +160,7 @@ class ContextCommandManager(
                 // Проверяем scope
                 val inScope = when (val scope = rule.scope) {
                     is ContextScope.World -> true
-                    is ContextScope.Room -> room != null && scope.matches(room.id, room.tags)
+                    is ContextScope.Room -> room != null && scope.matches(room.id, room.properties)
                     is ContextScope.Zone -> room?.zone in scope.zones
                 }
                 if (!inScope) continue
@@ -206,7 +206,7 @@ class ContextCommandManager(
 
             // Проверяем scope
             val inScope = when (val scope = rule.scope) {
-                is ContextScope.Room -> scope.matches(room.id, room.tags)
+                is ContextScope.Room -> scope.matches(room.id, room.properties)
                 is ContextScope.Zone -> room.zone != null && room.zone in scope.zones
                 is ContextScope.World -> true  // Permanent + World = всегда активно
             }

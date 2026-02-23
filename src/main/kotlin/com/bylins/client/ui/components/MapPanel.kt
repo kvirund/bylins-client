@@ -625,13 +625,13 @@ fun MapPanel(
             room = selectedRoom!!,
             allRooms = rooms,
             onDismiss = { showRoomDialog = false },
-            onSave = { name, note, terrain, tags, zone, exits, visited ->
+            onSave = { name, note, terrain, properties, zone, exits, visited ->
                 clientState.updateRoom(
                     roomId = selectedRoom!!.id,
                     name = name,
                     note = note,
                     terrain = terrain,
-                    tags = tags,
+                    properties = properties,
                     zone = zone,
                     exits = exits,
                     visited = visited

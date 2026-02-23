@@ -1,4 +1,4 @@
-package com.bylins.client.bot.perception
+package com.bylins.client.assistant.perception
 
 import mu.KotlinLogging
 
@@ -23,7 +23,9 @@ private val logger = KotlinLogging.logger("PromptDetector")
 class PromptDetector(
     private val onTextReceived: (batchText: String) -> Unit,
     private val onPromptReceived: (prompt: String, parsed: Map<String, String>?) -> Unit,
-    private val onPatternInvalid: (prompt: String, pattern: Regex) -> Unit
+    private val onPatternInvalid: (prompt: String, pattern: Regex) -> Unit,
+    /** Callback для raw текста (с ANSI-кодами) */
+    private val onRawTextReceived: ((rawBatchText: String) -> Unit)? = null
 ) {
     // Минимальный таймаут для определения промпта (мс)
     // Если после строки прошло больше этого времени - это промпт
@@ -34,9 +36,11 @@ class PromptDetector(
     private var regexMatchedLine: String? = null  // Строка, на которой сработал regex в текущем батче
 
     private var pendingLine: String? = null
+    private var pendingRawLine: String? = null
     private var pendingLineTimestamp: Long = 0
 
     private val currentBatch = mutableListOf<String>()
+    private val currentRawBatch = mutableListOf<String>()
     private val lineTimestamps = mutableListOf<Long>()
     private val recentPrompts = mutableListOf<String>()
 
@@ -64,22 +68,26 @@ class PromptDetector(
 
     /**
      * Обработать входящую строку.
-     * @param line - текст строки
+     * @param line - текст строки (без ANSI-кодов)
      * @param timestamp - время получения строки
+     * @param rawLine - оригинальная строка с ANSI-кодами (опционально)
      */
-    fun processLine(line: String, timestamp: Long) {
+    fun processLine(line: String, timestamp: Long, rawLine: String? = null) {
         // Проверяем таймаут для предыдущей строки
         if (pendingLine != null) {
             val waitTime = timestamp - pendingLineTimestamp
 
             if (waitTime > promptTimeoutMs) {
                 // Время ожидания превысило таймаут - pendingLine был промптом
-                finalizeBatch(pendingLine!!)
+                finalizeBatch(pendingLine!!, pendingRawLine)
             }
         }
 
         // Добавляем строку в текущий батч
         currentBatch.add(line)
+        if (rawLine != null) {
+            currentRawBatch.add(rawLine)
+        }
         lineTimestamps.add(timestamp)
 
         // Проверяем regex для отслеживания doubtful состояния
@@ -98,6 +106,7 @@ class PromptDetector(
         }
 
         pendingLine = line
+        pendingRawLine = rawLine
         pendingLineTimestamp = timestamp
     }
 
@@ -111,19 +120,30 @@ class PromptDetector(
         val waitTime = currentTime - pendingLineTimestamp
 
         if (waitTime > promptTimeoutMs) {
-            finalizeBatch(pendingLine!!)
+            finalizeBatch(pendingLine!!, pendingRawLine)
             pendingLine = null
+            pendingRawLine = null
         }
     }
 
     /**
      * Завершить батч: определить промпт и вызвать callback'и.
      */
-    private fun finalizeBatch(promptLine: String) {
+    private fun finalizeBatch(promptLine: String, rawPromptLine: String?) {
+        logger.debug { "finalizeBatch: batch=${currentBatch.size}, rawBatch=${currentRawBatch.size}" }
+
         // Текст батча = все строки кроме последней (которая промпт)
         val batchText = if (currentBatch.size > 1) {
             currentBatch.dropLast(1).joinToString("\n")
         } else ""
+
+        // Raw текст батча (если есть)
+        val rawBatchText = if (currentRawBatch.size > 1) {
+            currentRawBatch.dropLast(1).joinToString("\n")
+        } else {
+            logger.debug { "finalizeBatch: rawBatch too small (${currentRawBatch.size}), skipping raw callback" }
+            ""
+        }
 
         // Пытаемся применить regex к ОПРЕДЕЛЁННОМУ промпту
         val regex = promptRegex
@@ -148,6 +168,12 @@ class PromptDetector(
         if (batchText.isNotEmpty()) {
             onTextReceived(batchText)
         }
+
+        // Raw callback (если зарегистрирован и есть данные)
+        if (rawBatchText.isNotEmpty() && onRawTextReceived != null) {
+            onRawTextReceived.invoke(rawBatchText)
+        }
+
         onPromptReceived(promptLine, parsed)
 
         // Сохраняем промпт для истории
@@ -160,6 +186,7 @@ class PromptDetector(
 
         // Сбрасываем состояние батча
         currentBatch.clear()
+        currentRawBatch.clear()
         lineTimestamps.clear()
         regexMatchedLine = null
     }
@@ -198,8 +225,10 @@ class PromptDetector(
      */
     fun reset() {
         pendingLine = null
+        pendingRawLine = null
         pendingLineTimestamp = 0
         currentBatch.clear()
+        currentRawBatch.clear()
         lineTimestamps.clear()
         regexMatchedLine = null
         isRegexDoubtful = false

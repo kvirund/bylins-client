@@ -1,6 +1,9 @@
 package com.bylins.client.mapper
 
 import mu.KotlinLogging
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.sql.Connection
@@ -11,11 +14,12 @@ import java.time.Instant
  * База данных для хранения карт в SQLite
  *
  * Схема:
- * - zones: зоны (id, name, notes, updated_at)
- * - rooms: комнаты (id, name, description, zone_id, terrain, color, notes, tags, visited, updated_at)
+ * - zones: зоны (id, name, notes, properties, updated_at)
+ * - rooms: комнаты (id, name, description, zone_id, terrain, color, notes, properties, visited, updated_at)
  * - exits: выходы между комнатами (room_id, direction, target_room_id, door)
  */
 private val logger = KotlinLogging.logger("MapDatabase")
+private val json = Json { ignoreUnknownKeys = true }
 
 class MapDatabase(dbFileName: String = "maps.db") {
     private var connection: Connection? = null
@@ -218,6 +222,7 @@ class MapDatabase(dbFileName: String = "maps.db") {
                     id TEXT PRIMARY KEY,
                     name TEXT,
                     notes TEXT DEFAULT '',
+                    properties TEXT DEFAULT '{}',
                     updated_at INTEGER NOT NULL
                 )
             """.trimIndent())
@@ -232,7 +237,7 @@ class MapDatabase(dbFileName: String = "maps.db") {
                     terrain TEXT,
                     color TEXT,
                     notes TEXT DEFAULT '',
-                    tags TEXT DEFAULT '',
+                    properties TEXT DEFAULT '{}',
                     visited INTEGER DEFAULT 0,
                     updated_at INTEGER NOT NULL,
                     FOREIGN KEY (zone_id) REFERENCES zones(id)
@@ -256,10 +261,134 @@ class MapDatabase(dbFileName: String = "maps.db") {
             statement?.execute("CREATE INDEX IF NOT EXISTS idx_exits_target ON exits(target_room_id)")
 
             statement?.close()
+
+            // Миграция tags → properties (если колонка tags существует)
+            migrateTagsToProperties()
+            // Добавление колонки properties для зон (если её нет)
+            addZonePropertiesColumn()
+
             logger.info { "Tables created/verified successfully" }
         } catch (e: Exception) {
             logger.error { "Error creating tables: ${e.message}" }
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Миграция tags (CSV) → properties (JSON)
+     */
+    private fun migrateTagsToProperties() {
+        try {
+            // Проверяем есть ли колонка tags
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("PRAGMA table_info(rooms)")
+            var hasTagsColumn = false
+            var hasPropertiesColumn = false
+            while (rs?.next() == true) {
+                val colName = rs.getString("name")
+                if (colName == "tags") hasTagsColumn = true
+                if (colName == "properties") hasPropertiesColumn = true
+            }
+            rs?.close()
+            stmt?.close()
+
+            if (!hasTagsColumn) return  // Нет колонки tags - ничего не делаем
+
+            // Если нет колонки properties - добавляем
+            if (!hasPropertiesColumn) {
+                val addStmt = connection?.createStatement()
+                addStmt?.execute("ALTER TABLE rooms ADD COLUMN properties TEXT DEFAULT '{}'")
+                addStmt?.close()
+                logger.info { "Added properties column to rooms table" }
+            }
+
+            // Мигрируем данные из tags в properties
+            val selectStmt = connection?.prepareStatement("SELECT id, tags FROM rooms WHERE tags IS NOT NULL AND tags != '' AND (properties IS NULL OR properties = '{}' OR properties = '')")
+            val selectRs = selectStmt?.executeQuery()
+            val updates = mutableListOf<Pair<String, String>>()  // roomId to propertiesJson
+
+            while (selectRs?.next() == true) {
+                val roomId = selectRs.getString("id")
+                val tagsStr = selectRs.getString("tags") ?: ""
+                if (tagsStr.isNotBlank()) {
+                    val props = migrateTagsStringToProperties(tagsStr)
+                    if (props.isNotEmpty()) {
+                        updates.add(roomId to json.encodeToString(props))
+                    }
+                }
+            }
+            selectRs?.close()
+            selectStmt?.close()
+
+            // Применяем обновления
+            if (updates.isNotEmpty()) {
+                val updateStmt = connection?.prepareStatement("UPDATE rooms SET properties = ? WHERE id = ?")
+                for ((roomId, propsJson) in updates) {
+                    updateStmt?.setString(1, propsJson)
+                    updateStmt?.setString(2, roomId)
+                    updateStmt?.executeUpdate()
+                }
+                updateStmt?.close()
+                logger.info { "Migrated tags to properties for ${updates.size} rooms" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error migrating tags to properties: ${e.message}" }
+        }
+    }
+
+    /**
+     * Конвертирует строку тегов (CSV или JSON) в Map свойств
+     */
+    private fun migrateTagsStringToProperties(tagsString: String): Map<String, String> {
+        if (tagsString.isBlank()) return emptyMap()
+
+        // Если уже JSON - декодируем
+        if (tagsString.trimStart().startsWith("{")) {
+            return try {
+                json.decodeFromString<Map<String, String>>(tagsString)
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        }
+
+        // CSV → Map с конвертацией safe/not-safe
+        return tagsString.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .associate { tag ->
+                when (tag) {
+                    "safe" -> "safe" to "true"
+                    "not-safe" -> "safe" to "false"
+                    else -> tag to ""  // Маркерные теги
+                }
+            }
+    }
+
+    /**
+     * Добавляет колонку properties для зон если её нет
+     */
+    private fun addZonePropertiesColumn() {
+        try {
+            val stmt = connection?.createStatement()
+            val rs = stmt?.executeQuery("PRAGMA table_info(zones)")
+            var hasPropertiesColumn = false
+            while (rs?.next() == true) {
+                if (rs.getString("name") == "properties") {
+                    hasPropertiesColumn = true
+                    break
+                }
+            }
+            rs?.close()
+            stmt?.close()
+
+            if (!hasPropertiesColumn) {
+                val addStmt = connection?.createStatement()
+                addStmt?.execute("ALTER TABLE zones ADD COLUMN properties TEXT DEFAULT '{}'")
+                addStmt?.close()
+                logger.info { "Added properties column to zones table" }
+            }
+        } catch (e: Exception) {
+            logger.error { "Error adding properties column to zones: ${e.message}" }
         }
     }
 
@@ -270,13 +399,13 @@ class MapDatabase(dbFileName: String = "maps.db") {
     /**
      * Сохраняет или обновляет зону
      */
-    fun saveZone(zoneId: String, name: String? = null, notes: String? = null) {
+    fun saveZone(zoneId: String, name: String? = null, notes: String? = null, properties: Map<String, String>? = null) {
         if (zoneId.isBlank()) return
         try {
             val now = Instant.now().epochSecond
 
             // Проверяем существует ли зона
-            val existingStmt = connection?.prepareStatement("SELECT name, notes FROM zones WHERE id = ?")
+            val existingStmt = connection?.prepareStatement("SELECT name, notes, properties FROM zones WHERE id = ?")
             existingStmt?.setString(1, zoneId)
             val rs = existingStmt?.executeQuery()
 
@@ -284,19 +413,26 @@ class MapDatabase(dbFileName: String = "maps.db") {
                 // Обновляем существующую зону
                 val currentName = rs.getString("name")
                 val currentNotes = rs.getString("notes")
+                val currentPropsStr = rs.getString("properties") ?: "{}"
                 rs.close()
                 existingStmt.close()
 
                 val newName = name ?: currentName
                 val newNotes = notes ?: currentNotes
+                val newPropsJson = if (properties != null) {
+                    json.encodeToString(properties)
+                } else {
+                    currentPropsStr
+                }
 
                 val updateStmt = connection?.prepareStatement("""
-                    UPDATE zones SET name = ?, notes = ?, updated_at = ? WHERE id = ?
+                    UPDATE zones SET name = ?, notes = ?, properties = ?, updated_at = ? WHERE id = ?
                 """.trimIndent())
                 updateStmt?.setString(1, newName)
                 updateStmt?.setString(2, newNotes)
-                updateStmt?.setLong(3, now)
-                updateStmt?.setString(4, zoneId)
+                updateStmt?.setString(3, newPropsJson)
+                updateStmt?.setLong(4, now)
+                updateStmt?.setString(5, zoneId)
                 updateStmt?.executeUpdate()
                 updateStmt?.close()
             } else {
@@ -304,13 +440,15 @@ class MapDatabase(dbFileName: String = "maps.db") {
                 existingStmt?.close()
 
                 // Вставляем новую зону
+                val propsJson = if (properties != null) json.encodeToString(properties) else "{}"
                 val insertStmt = connection?.prepareStatement("""
-                    INSERT INTO zones (id, name, notes, updated_at) VALUES (?, ?, ?, ?)
+                    INSERT INTO zones (id, name, notes, properties, updated_at) VALUES (?, ?, ?, ?, ?)
                 """.trimIndent())
                 insertStmt?.setString(1, zoneId)
                 insertStmt?.setString(2, name ?: "")
                 insertStmt?.setString(3, notes ?: "")
-                insertStmt?.setLong(4, now)
+                insertStmt?.setString(4, propsJson)
+                insertStmt?.setLong(5, now)
                 insertStmt?.executeUpdate()
                 insertStmt?.close()
             }
@@ -320,19 +458,38 @@ class MapDatabase(dbFileName: String = "maps.db") {
     }
 
     /**
-     * Загружает все зоны: Map<zoneId, Pair<name, notes>>
+     * Данные зоны: имя, заметки, свойства
      */
-    fun loadAllZones(): Map<String, Pair<String?, String>> {
+    data class ZoneData(
+        val name: String?,
+        val notes: String,
+        val properties: Map<String, String>
+    )
+
+    /**
+     * Загружает все зоны: Map<zoneId, ZoneData>
+     */
+    fun loadAllZones(): Map<String, ZoneData> {
         return try {
-            val result = mutableMapOf<String, Pair<String?, String>>()
+            val result = mutableMapOf<String, ZoneData>()
             val stmt = connection?.createStatement()
-            val rs = stmt?.executeQuery("SELECT id, name, notes FROM zones")
+            val rs = stmt?.executeQuery("SELECT id, name, notes, properties FROM zones")
             while (rs?.next() == true) {
                 val id = rs.getString("id")
                 val name = rs.getString("name")
                 val notes = rs.getString("notes") ?: ""
+                val propsStr = rs.getString("properties") ?: "{}"
+                val properties = try {
+                    if (propsStr.isNotBlank() && propsStr.trimStart().startsWith("{")) {
+                        json.decodeFromString<Map<String, String>>(propsStr)
+                    } else {
+                        emptyMap()
+                    }
+                } catch (e: Exception) {
+                    emptyMap()
+                }
                 if (id.isNotBlank()) {
-                    result[id] = Pair(name, notes)
+                    result[id] = ZoneData(name, notes, properties)
                 }
             }
             rs?.close()
@@ -357,12 +514,12 @@ class MapDatabase(dbFileName: String = "maps.db") {
             connection?.autoCommit = false
 
             val now = Instant.now().epochSecond
-            val tagsJson = room.tags.joinToString(",")
+            val propertiesJson = json.encodeToString(room.properties)
 
             // UPSERT комнаты
             val roomStmt = connection?.prepareStatement("""
                 INSERT OR REPLACE INTO rooms
-                (id, name, description, zone_id, terrain, color, notes, tags, visited, updated_at)
+                (id, name, description, zone_id, terrain, color, notes, properties, visited, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent())
             roomStmt?.setString(1, room.id)
@@ -372,7 +529,7 @@ class MapDatabase(dbFileName: String = "maps.db") {
             roomStmt?.setString(5, room.terrain)
             roomStmt?.setString(6, room.color)
             roomStmt?.setString(7, room.notes)
-            roomStmt?.setString(8, tagsJson)
+            roomStmt?.setString(8, propertiesJson)
             roomStmt?.setInt(9, if (room.visited) 1 else 0)
             roomStmt?.setLong(10, now)
             roomStmt?.executeUpdate()
@@ -435,8 +592,16 @@ class MapDatabase(dbFileName: String = "maps.db") {
             val roomsRs = roomsStmt?.executeQuery("SELECT * FROM rooms")
 
             while (roomsRs?.next() == true) {
-                val tagsStr = roomsRs.getString("tags") ?: ""
-                val tags = if (tagsStr.isNotEmpty()) tagsStr.split(",").toSet() else emptySet()
+                val propsStr = roomsRs.getString("properties") ?: "{}"
+                val properties = try {
+                    if (propsStr.isNotBlank() && propsStr.trimStart().startsWith("{")) {
+                        json.decodeFromString<Map<String, String>>(propsStr)
+                    } else {
+                        emptyMap()
+                    }
+                } catch (e: Exception) {
+                    emptyMap()
+                }
 
                 val room = Room(
                     id = roomsRs.getString("id"),
@@ -447,7 +612,7 @@ class MapDatabase(dbFileName: String = "maps.db") {
                     notes = roomsRs.getString("notes") ?: "",
                     terrain = roomsRs.getString("terrain") ?: "",
                     zone = roomsRs.getString("zone_id") ?: "",
-                    tags = tags
+                    properties = properties
                 )
                 rooms[room.id] = room
             }

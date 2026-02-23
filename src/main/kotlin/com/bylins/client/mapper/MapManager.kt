@@ -49,6 +49,10 @@ class MapManager(
     private val _zoneNames = MutableStateFlow<Map<String, String>>(emptyMap())
     val zoneNames: StateFlow<Map<String, String>> = _zoneNames
 
+    // Zone properties
+    private val _zoneProperties = MutableStateFlow<Map<String, Map<String, String>>>(emptyMap())
+    val zoneProperties: StateFlow<Map<String, Map<String, String>>> = _zoneProperties
+
     private val pathfinder = Pathfinder()
     private val database = MapDatabase(dbFileName)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -84,19 +88,24 @@ class MapManager(
             logger.info { "Loaded ${savedRooms.size} rooms from database" }
         }
 
-        // Load zones (name and notes)
+        // Load zones (name, notes, and properties)
         val savedZones = database.loadAllZones()
         if (savedZones.isNotEmpty()) {
             val names = mutableMapOf<String, String>()
             val notes = mutableMapOf<String, String>()
-            savedZones.forEach { (zoneId, pair) ->
-                pair.first?.let { names[zoneId] = it }
-                if (pair.second.isNotEmpty()) {
-                    notes[zoneId] = pair.second
+            val props = mutableMapOf<String, Map<String, String>>()
+            savedZones.forEach { (zoneId, zoneData) ->
+                zoneData.name?.let { names[zoneId] = it }
+                if (zoneData.notes.isNotEmpty()) {
+                    notes[zoneId] = zoneData.notes
+                }
+                if (zoneData.properties.isNotEmpty()) {
+                    props[zoneId] = zoneData.properties
                 }
             }
             _zoneNames.value = names
             _zoneNotes.value = notes
+            _zoneProperties.value = props
             logger.info { "Loaded ${savedZones.size} zones from database" }
         }
     }
@@ -440,43 +449,43 @@ class MapManager(
     }
 
     /**
-     * Добавляет тег к комнате
+     * Устанавливает свойство комнаты
      */
-    fun addRoomTag(roomId: String, tag: String) {
+    fun setRoomProperty(roomId: String, key: String, value: String) {
         val room = _rooms.value[roomId] ?: return
-        val updatedTags = room.tags + tag
-        val updated = room.copy(tags = updatedTags)
+        val updatedProperties = room.properties + (key to value)
+        val updated = room.copy(properties = updatedProperties)
         addRoom(updated)
     }
 
     /**
-     * Удаляет тег у комнаты
+     * Удаляет свойство комнаты
      */
-    fun removeRoomTag(roomId: String, tag: String) {
+    fun removeRoomProperty(roomId: String, key: String) {
         val room = _rooms.value[roomId] ?: return
-        val updatedTags = room.tags - tag
-        val updated = room.copy(tags = updatedTags)
+        val updatedProperties = room.properties - key
+        val updated = room.copy(properties = updatedProperties)
         addRoom(updated)
     }
 
     /**
-     * Устанавливает теги для комнаты
+     * Устанавливает все свойства комнаты
      */
-    fun setRoomTags(roomId: String, tags: Set<String>) {
+    fun setRoomProperties(roomId: String, properties: Map<String, String>) {
         val room = _rooms.value[roomId] ?: return
-        val updated = room.copy(tags = tags)
+        val updated = room.copy(properties = properties)
         addRoom(updated)
     }
 
     /**
-     * Полное обновление комнаты - название, заметки, terrain, теги, зона, выходы, visited
+     * Полное обновление комнаты - название, заметки, terrain, свойства, зона, выходы, visited
      */
     fun updateRoom(
         roomId: String,
         name: String,
         note: String,
         terrain: String?,
-        tags: Set<String>,
+        properties: Map<String, String>,
         zone: String,
         exits: Map<Direction, Exit>,
         visited: Boolean
@@ -486,7 +495,7 @@ class MapManager(
             name = name,
             notes = note,
             terrain = terrain,
-            tags = tags,
+            properties = properties,
             zone = zone.ifBlank { null },
             exits = exits.toMutableMap(),
             visited = visited
@@ -496,17 +505,24 @@ class MapManager(
     }
 
     /**
-     * Получает все уникальные теги со всех комнат
+     * Получает все уникальные ключи свойств со всех комнат
      */
-    fun getAllTags(): Set<String> {
-        return _rooms.value.values.flatMap { it.tags }.toSet()
+    fun getAllPropertyKeys(): Set<String> {
+        return _rooms.value.values.flatMap { it.properties.keys }.toSet()
     }
 
     /**
-     * Фильтрует комнаты по тегу
+     * Фильтрует комнаты по наличию свойства (любое значение)
      */
-    fun getRoomsByTag(tag: String): List<Room> {
-        return _rooms.value.values.filter { tag in it.tags }
+    fun getRoomsByProperty(key: String): List<Room> {
+        return _rooms.value.values.filter { key in it.properties }
+    }
+
+    /**
+     * Фильтрует комнаты по свойству и значению
+     */
+    fun getRoomsByPropertyValue(key: String, value: String): List<Room> {
+        return _rooms.value.values.filter { it.properties[key] == value }
     }
 
     /**
@@ -549,6 +565,37 @@ class MapManager(
     fun findPathFromCurrent(endRoomId: String): List<Direction>? {
         val currentId = _currentRoomId.value ?: return null
         return findPathAStar(currentId, endRoomId)
+    }
+
+    /**
+     * Возвращает список ID комнат вдоль пути от текущей комнаты до целевой.
+     * Включает все комнаты пути КРОМЕ стартовой, включая целевую.
+     */
+    fun findPathRoomIds(endRoomId: String): List<String>? {
+        val currentId = _currentRoomId.value ?: return null
+        return getPathRoomIds(currentId, endRoomId)
+    }
+
+    /**
+     * Возвращает список ID комнат вдоль пути между двумя комнатами.
+     * Включает все комнаты пути КРОМЕ стартовой, включая целевую.
+     */
+    fun getPathRoomIds(startRoomId: String, endRoomId: String): List<String>? {
+        val directions = findPathAStar(startRoomId, endRoomId) ?: return null
+        if (directions.isEmpty()) return emptyList()
+
+        val roomIds = mutableListOf<String>()
+        var currentRoomId = startRoomId
+
+        for (direction in directions) {
+            val currentRoom = _rooms.value[currentRoomId] ?: break
+            val exit = currentRoom.exits[direction] ?: break
+            val nextRoomId = exit.targetRoomId
+            roomIds.add(nextRoomId)
+            currentRoomId = nextRoomId
+        }
+
+        return roomIds
     }
 
     /**
@@ -771,6 +818,52 @@ class MapManager(
             database.saveZone(zoneId, name = areaName)
         }
         logger.debug { "Saved zone name: $zoneId -> $areaName" }
+    }
+
+    // === Работа со свойствами зон ===
+
+    /**
+     * Получает свойства зоны
+     */
+    fun getZoneProperties(zoneId: String): Map<String, String> {
+        return _zoneProperties.value[zoneId] ?: emptyMap()
+    }
+
+    /**
+     * Устанавливает свойство зоны
+     */
+    fun setZoneProperty(zoneId: String, key: String, value: String) {
+        if (zoneId.isBlank()) return
+        val current = _zoneProperties.value[zoneId] ?: emptyMap()
+        val updated = current + (key to value)
+        _zoneProperties.value = _zoneProperties.value + (zoneId to updated)
+        scope.launch {
+            database.saveZone(zoneId, properties = updated)
+        }
+    }
+
+    /**
+     * Удаляет свойство зоны
+     */
+    fun removeZoneProperty(zoneId: String, key: String) {
+        if (zoneId.isBlank()) return
+        val current = _zoneProperties.value[zoneId] ?: return
+        val updated = current - key
+        _zoneProperties.value = _zoneProperties.value + (zoneId to updated)
+        scope.launch {
+            database.saveZone(zoneId, properties = updated)
+        }
+    }
+
+    /**
+     * Устанавливает все свойства зоны
+     */
+    fun setZoneProperties(zoneId: String, properties: Map<String, String>) {
+        if (zoneId.isBlank()) return
+        _zoneProperties.value = _zoneProperties.value + (zoneId to properties)
+        scope.launch {
+            database.saveZone(zoneId, properties = properties)
+        }
     }
 
     /**

@@ -54,7 +54,8 @@ class ConfigManager {
         activeProfileStack: List<String> = emptyList(),
         hiddenTabs: Set<String> = emptySet(),
         lastMapRoomId: String? = null,
-        logWithColors: Boolean = false
+        logWithColors: Boolean = false,
+        statusGroupCollapsed: Map<String, Boolean> = emptyMap()
     ) {
         try {
             val config = ClientConfig(
@@ -78,7 +79,8 @@ class ConfigManager {
                 activeProfileStack = activeProfileStack,
                 hiddenTabs = hiddenTabs,
                 lastMapRoomId = lastMapRoomId,
-                logWithColors = logWithColors
+                logWithColors = logWithColors,
+                statusGroupCollapsed = statusGroupCollapsed
             )
 
             val jsonString = json.encodeToString(config)
@@ -132,6 +134,7 @@ class ConfigManager {
             val hiddenTabs = config.hiddenTabs
             val lastMapRoomId = config.lastMapRoomId
             val logWithColors = config.logWithColors
+            val statusGroupCollapsed = config.statusGroupCollapsed
 
             val contextCommandRules = config.contextCommandRules
             val contextCommandMaxQueueSize = config.contextCommandMaxQueueSize
@@ -158,7 +161,8 @@ class ConfigManager {
                 activeProfileStack = activeProfileStack,
                 hiddenTabs = hiddenTabs,
                 lastMapRoomId = lastMapRoomId,
-                logWithColors = logWithColors
+                logWithColors = logWithColors,
+                statusGroupCollapsed = statusGroupCollapsed
             )
         } catch (e: Exception) {
             logger.error { "Failed to load config: ${e.message}" }
@@ -282,5 +286,6 @@ data class ConfigData(
     val activeProfileStack: List<String> = emptyList(),
     val hiddenTabs: Set<String> = emptySet(),
     val lastMapRoomId: String? = null,
-    val logWithColors: Boolean = false
+    val logWithColors: Boolean = false,
+    val statusGroupCollapsed: Map<String, Boolean> = emptyMap()
 )

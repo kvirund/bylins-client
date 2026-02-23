@@ -41,18 +41,18 @@ sealed class ContextTriggerType {
  */
 sealed class ContextScope {
     /**
-     * Действует только в указанных комнатах (по ID или тегам)
+     * Действует только в указанных комнатах (по ID или свойствам)
      */
     data class Room(
         val roomIds: Set<String> = emptySet(),
-        val roomTags: Set<String> = emptySet()
+        val roomPropertyKeys: Set<String> = emptySet()  // Свойства комнаты, любое значение
     ) : ContextScope() {
         /**
          * Проверяет, соответствует ли комната этому scope
          */
-        fun matches(roomId: String, tags: Collection<String>): Boolean {
+        fun matches(roomId: String, properties: Map<String, String>): Boolean {
             if (roomIds.contains(roomId)) return true
-            if (roomTags.isNotEmpty() && tags.any { roomTags.contains(it) }) return true
+            if (roomPropertyKeys.isNotEmpty() && roomPropertyKeys.any { it in properties }) return true
             return false
         }
     }

@@ -22,6 +22,8 @@ import com.bylins.client.plugins.PluginState
 import com.bylins.client.ui.plugins.RenderPluginTab
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
 
 private val logger = KotlinLogging.logger("PluginsPanel")
 
@@ -368,6 +370,27 @@ private fun PluginItem(
                             fontFamily = FontFamily.Monospace
                         )
                     }
+
+                    // Путь к JAR файлу и время загрузки
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = plugin.jarFile.absolutePath,
+                            color = colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "загружен: ${formatTime(plugin.loadedAt)}",
+                            color = colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
 
                 // Кнопки управления
@@ -386,7 +409,7 @@ private fun PluginItem(
                         contentPadding = PaddingValues(horizontal = 12.dp)
                     ) {
                         Text(
-                            text = if (isEnabled) "Стоп" else "Старт",
+                            text = if (isEnabled) "Выкл" else "Вкл",
                             color = Color.White,
                             fontSize = 12.sp
                         )
@@ -399,9 +422,9 @@ private fun PluginItem(
                             backgroundColor = colorScheme.secondary
                         ),
                         modifier = Modifier.height(32.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 12.dp)
                     ) {
-                        Text("R", fontSize = 14.sp, color = Color.White)
+                        Text("Reload", fontSize = 12.sp, color = Color.White)
                     }
 
                     // Кнопка выгрузки
@@ -411,9 +434,9 @@ private fun PluginItem(
                             backgroundColor = colorScheme.error
                         ),
                         modifier = Modifier.height(32.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 12.dp)
                     ) {
-                        Text("X", color = Color.White, fontSize = 14.sp)
+                        Text("Удалить", color = Color.White, fontSize = 12.sp)
                     }
                 }
             }
@@ -454,4 +477,9 @@ private fun openDirectory(path: String) {
     } catch (e: Exception) {
         logger.error { "Error opening directory: ${e.message}" }
     }
+}
+
+private fun formatTime(timestamp: Long): String {
+    val sdf = SimpleDateFormat("HH:mm:ss")
+    return sdf.format(Date(timestamp))
 }

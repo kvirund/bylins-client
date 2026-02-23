@@ -41,16 +41,14 @@ class RoomContentParser {
     // ANSI escape codes
     private val ESC = "\u001B"
 
-    // Название комнаты: cyan текст (VNUM опционален)
-    // Пример: [1;36mКомнаты отдыха[0;37m или [1;36mЮжные ворота Киева [3041][0;37m
-    private val roomTitlePattern = Regex("""\u001B\[1;36m([^\u001B]+)""")
-
     // Regex для удаления ANSI кодов
     private val ansiStripPattern = Regex("""\u001B\[[0-9;]*m""")
 
-    // Regex для поиска первого ANSI кода цвета в строке
+    // Regex для поиска ANSI кодов цвета в строке
     // Ищем [1;31m (bright red) или [1;33m (bright yellow)
-    private val firstColorPattern = Regex("""\u001B\[1;(31|33)m""")
+    // Важно: используем ПОСЛЕДНИЙ код цвета перед текстом, т.к. сервер может
+    // отправить &Y&q сразу перед &R&q если объектов нет
+    private val colorPattern = Regex("""\u001B\[1;(31|33)m""")
 
     /**
      * Попытаться распарсить текст с ANSI-кодами для извлечения мобов и объектов.
@@ -66,14 +64,12 @@ class RoomContentParser {
     fun tryParse(rawText: String): RoomContent? {
         // Проверяем, есть ли вообще ANSI-коды
         if (!rawText.contains(ESC)) {
+            logger.debug { "RoomContentParser: no ANSI codes in text (${rawText.length} chars)" }
             return null
         }
 
-        // Проверяем, похоже ли это на описание комнаты (есть название)
-        val hasRoomTitle = roomTitlePattern.containsMatchIn(rawText)
-        if (!hasRoomTitle) {
-            return null
-        }
+        // LLM уже проверила, что это описание комнаты - просто парсим
+        logger.debug { "RoomContentParser: parsing text with ${rawText.lines().size} lines" }
 
         val mobs = mutableListOf<String>()
         val objects = mutableListOf<String>()
@@ -86,15 +82,6 @@ class RoomContentParser {
         val lines = rawText.split("\n")
 
         for (line in lines) {
-            // Пропускаем название комнаты (cyan)
-            if (line.contains("$ESC[1;36m")) {
-                // Завершаем предыдущую сущность, если была
-                finishEntity(currentEntityType, currentEntityText.toString(), mobs, objects)
-                currentEntityType = null
-                currentEntityText = StringBuilder()
-                continue
-            }
-
             // Пустая строка (или только ANSI-коды) - завершает текущую сущность
             val strippedLine = ansiStripPattern.replace(line, "").trim()
             if (strippedLine.isEmpty()) {
@@ -104,15 +91,17 @@ class RoomContentParser {
                 continue
             }
 
-            // Ищем первый значимый цветовой код (bright red или bright yellow)
-            val firstColorMatch = firstColorPattern.find(line)
+            // Ищем ВСЕ цветовые коды в строке и берём ПОСЛЕДНИЙ
+            // Это важно: сервер отправляет &Y&q потом &R&q на одной строке если объектов нет
+            val colorMatches = colorPattern.findAll(line).toList()
+            val lastColorMatch = colorMatches.lastOrNull()
 
-            if (firstColorMatch != null) {
+            if (lastColorMatch != null) {
                 // Новая сущность - сначала завершаем предыдущую
                 finishEntity(currentEntityType, currentEntityText.toString(), mobs, objects)
 
-                // Определяем тип по коду цвета (31=red=mob, 33=yellow=object)
-                val colorCode = firstColorMatch.groupValues[1]
+                // Определяем тип по ПОСЛЕДНЕМУ коду цвета (31=red=mob, 33=yellow=object)
+                val colorCode = lastColorMatch.groupValues[1]
                 currentEntityType = if (colorCode == "31") "mob" else "object"
 
                 // Извлекаем текст строки без ANSI-кодов

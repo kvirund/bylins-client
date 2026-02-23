@@ -210,7 +210,7 @@ data class ContextCommandRuleDto(
     val scope: String = "world",          // "room", "zone", "world"
     val pattern: String? = null,          // For pattern trigger
     val roomIds: List<String>? = null,    // For room scope (by ID)
-    val roomTags: List<String>? = null,   // For room scope (by tag)
+    val roomPropertyKeys: List<String>? = null,   // For room scope (by property key)
     val zones: List<String>? = null,      // For zone scope
     val command: String,
     val ttlType: String = "room_change",  // "room_change", "zone_change", "fixed_time", "permanent", "one_time"
@@ -231,7 +231,7 @@ data class ContextCommandRuleDto(
         val actualScope = when (scope) {
             "room" -> ContextScope.Room(
                 roomIds = roomIds?.toSet() ?: emptySet(),
-                roomTags = roomTags?.toSet() ?: emptySet()
+                roomPropertyKeys = roomPropertyKeys?.toSet() ?: emptySet()
             )
             "zone" -> ContextScope.Zone(zones?.toSet() ?: emptySet())
             "world" -> ContextScope.World
@@ -266,9 +266,9 @@ data class ContextCommandRuleDto(
             }
             val patternStr = (rule.triggerType as? ContextTriggerType.Pattern)?.regex?.pattern
 
-            data class ScopeData(val scopeStr: String, val roomIds: List<String>?, val roomTags: List<String>?, val zones: List<String>?)
+            data class ScopeData(val scopeStr: String, val roomIds: List<String>?, val roomPropertyKeys: List<String>?, val zones: List<String>?)
             val scopeData = when (val s = rule.scope) {
-                is ContextScope.Room -> ScopeData("room", s.roomIds.toList().ifEmpty { null }, s.roomTags.toList().ifEmpty { null }, null)
+                is ContextScope.Room -> ScopeData("room", s.roomIds.toList().ifEmpty { null }, s.roomPropertyKeys.toList().ifEmpty { null }, null)
                 is ContextScope.Zone -> ScopeData("zone", null, null, s.zones.toList())
                 is ContextScope.World -> ScopeData("world", null, null, null)
             }
@@ -288,7 +288,7 @@ data class ContextCommandRuleDto(
                 scope = scopeData.scopeStr,
                 pattern = patternStr,
                 roomIds = scopeData.roomIds,
-                roomTags = scopeData.roomTags,
+                roomPropertyKeys = scopeData.roomPropertyKeys,
                 zones = scopeData.zones,
                 command = rule.command,
                 ttlType = ttlTypeStr,
@@ -321,5 +321,6 @@ data class ClientConfig(
     val activeProfileStack: List<String> = emptyList(),  // Стек активных профилей персонажей
     val hiddenTabs: Set<String> = emptySet(),  // Скрытые вкладки (по ID)
     val lastMapRoomId: String? = null,  // Последняя текущая комната на карте
-    val logWithColors: Boolean = false  // Сохранять ANSI-цвета в логах
+    val logWithColors: Boolean = false,  // Сохранять ANSI-цвета в логах
+    val statusGroupCollapsed: Map<String, Boolean> = emptyMap()  // Состояние свёрнутости групп статус-панели
 )

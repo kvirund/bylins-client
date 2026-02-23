@@ -253,40 +253,40 @@ class MapManagerTest {
     }
 
     @Test
-    fun `addRoomTag adds tag to room`() {
+    fun `setRoomProperty adds property to room`() {
         val mapManager = createTestMapManager()
         mapManager.addRoom(Room(id = "100", name = "Room"))
 
-        mapManager.addRoomTag("100", "shop")
-        mapManager.addRoomTag("100", "trainer")
+        mapManager.setRoomProperty("100", "shop", "weapons")
+        mapManager.setRoomProperty("100", "trainer", "")
 
         val room = mapManager.getRoom("100")
         assertNotNull(room)
-        assertTrue(room.tags.contains("shop"))
-        assertTrue(room.tags.contains("trainer"))
+        assertEquals("weapons", room.properties["shop"])
+        assertEquals("", room.properties["trainer"])
     }
 
     @Test
-    fun `removeRoomTag removes tag from room`() {
+    fun `removeRoomProperty removes property from room`() {
         val mapManager = createTestMapManager()
-        mapManager.addRoom(Room(id = "100", name = "Room", tags = setOf("shop", "trainer")))
+        mapManager.addRoom(Room(id = "100", name = "Room", properties = mapOf("shop" to "weapons", "trainer" to "")))
 
-        mapManager.removeRoomTag("100", "shop")
+        mapManager.removeRoomProperty("100", "shop")
 
         val room = mapManager.getRoom("100")
         assertNotNull(room)
-        assertFalse(room.tags.contains("shop"))
-        assertTrue(room.tags.contains("trainer"))
+        assertFalse(room.properties.containsKey("shop"))
+        assertTrue(room.properties.containsKey("trainer"))
     }
 
     @Test
-    fun `getRoomsByTag returns rooms with specified tag`() {
+    fun `getRoomsByProperty returns rooms with specified property`() {
         val mapManager = createTestMapManager()
-        mapManager.addRoom(Room(id = "100", name = "Shop 1", tags = setOf("shop")))
-        mapManager.addRoom(Room(id = "200", name = "Shop 2", tags = setOf("shop", "trainer")))
-        mapManager.addRoom(Room(id = "300", name = "Trainer", tags = setOf("trainer")))
+        mapManager.addRoom(Room(id = "100", name = "Shop 1", properties = mapOf("shop" to "weapons")))
+        mapManager.addRoom(Room(id = "200", name = "Shop 2", properties = mapOf("shop" to "armor", "trainer" to "")))
+        mapManager.addRoom(Room(id = "300", name = "Trainer", properties = mapOf("trainer" to "")))
 
-        val shops = mapManager.getRoomsByTag("shop")
+        val shops = mapManager.getRoomsByProperty("shop")
 
         assertEquals(2, shops.size)
         assertTrue(shops.any { it.id == "100" })

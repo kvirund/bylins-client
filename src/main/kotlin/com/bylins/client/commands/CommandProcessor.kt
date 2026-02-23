@@ -539,6 +539,7 @@ class CommandProcessor(
                             else -> "\u001B[0m"
                         }
                         context.addLocalOutput("  ${stateColor}${plugin.metadata.id}\u001B[0m v${plugin.metadata.version} - ${plugin.metadata.name} [${plugin.state}]")
+                        context.addLocalOutput("    \u001B[0;90m${plugin.jarFile.absolutePath}\u001B[0m")
                         if (plugin.errorMessage != null) {
                             context.addLocalOutput("    \u001B[1;31mОшибка: ${plugin.errorMessage}\u001B[0m")
                         }
@@ -636,7 +637,7 @@ class CommandProcessor(
                 context.addLocalOutput("  Автор:       ${plugin.metadata.author.ifEmpty { "не указан" }}")
                 context.addLocalOutput("  Описание:    ${plugin.metadata.description.ifEmpty { "нет" }}")
                 context.addLocalOutput("  Состояние:   ${plugin.state}")
-                context.addLocalOutput("  JAR:         ${plugin.jarFile.name}")
+                context.addLocalOutput("  JAR:         ${plugin.jarFile.absolutePath}")
                 if (plugin.metadata.dependencies.isNotEmpty()) {
                     context.addLocalOutput("  Зависимости: ${plugin.metadata.dependencies.joinToString { it.id }}")
                 }

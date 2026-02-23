@@ -276,7 +276,12 @@ interface ScriptAPI {
     fun setRoomNote(roomId: String, note: String)
     fun setRoomColor(roomId: String, color: String?)
     fun setRoomZone(roomId: String, zone: String)
-    fun setRoomTags(roomId: String, tags: List<String>)
+    fun setRoomProperty(roomId: String, key: String, value: String)
+    fun removeRoomProperty(roomId: String, key: String)
+    fun getRoomProperties(roomId: String): Map<String, String>
+    fun setZoneProperty(zoneId: String, key: String, value: String)
+    fun removeZoneProperty(zoneId: String, key: String)
+    fun getZoneProperties(zoneId: String): Map<String, String>
 
     // Маппер - создание комнат
     fun createRoom(id: String, name: String): Boolean
@@ -598,11 +603,12 @@ class ScriptAPIImpl(
     override fun setRoomNote(roomId: String, note: String) = mapperActions.setRoomNote(roomId, note)
     override fun setRoomColor(roomId: String, color: String?) = mapperActions.setRoomColor(roomId, color)
     override fun setRoomZone(roomId: String, zone: String) = mapperActions.setRoomZone(roomId, zone)
-    override fun setRoomTags(roomId: String, tags: List<String>) {
-        // Автоматическая конвертация из скриптовых типов
-        val convertedTags: List<String> = ScriptObjectConverter.toList(tags)
-        mapperActions.setRoomTags(roomId, convertedTags)
-    }
+    override fun setRoomProperty(roomId: String, key: String, value: String) = mapperActions.setRoomProperty(roomId, key, value)
+    override fun removeRoomProperty(roomId: String, key: String) = mapperActions.removeRoomProperty(roomId, key)
+    override fun getRoomProperties(roomId: String): Map<String, String> = mapperActions.getRoomProperties(roomId)
+    override fun setZoneProperty(zoneId: String, key: String, value: String) = mapperActions.setZoneProperty(zoneId, key, value)
+    override fun removeZoneProperty(zoneId: String, key: String) = mapperActions.removeZoneProperty(zoneId, key)
+    override fun getZoneProperties(zoneId: String): Map<String, String> = mapperActions.getZoneProperties(zoneId)
 
     override fun createRoom(id: String, name: String): Boolean =
         mapperActions.createRoom(id, name)
@@ -902,7 +908,7 @@ interface MapperActions {
     // Поиск с произвольным фильтром (для JS: принимает callback)
     /**
      * Ищет комнаты с произвольным callback-фильтром.
-     * В JS: api.searchRoomsWithFilter(function(room) { return room.tags.indexOf("shop") >= 0; })
+     * В JS: api.searchRoomsWithFilter(function(room) { return room.properties["shop"] !== undefined; })
      *
      * @param filter JS-функция (room) -> Boolean
      * @param maxResults Максимальное количество результатов
@@ -923,7 +929,12 @@ interface MapperActions {
     fun setRoomNote(roomId: String, note: String)
     fun setRoomColor(roomId: String, color: String?)
     fun setRoomZone(roomId: String, zone: String)
-    fun setRoomTags(roomId: String, tags: List<String>)
+    fun setRoomProperty(roomId: String, key: String, value: String)
+    fun removeRoomProperty(roomId: String, key: String)
+    fun getRoomProperties(roomId: String): Map<String, String>
+    fun setZoneProperty(zoneId: String, key: String, value: String)
+    fun removeZoneProperty(zoneId: String, key: String)
+    fun getZoneProperties(zoneId: String): Map<String, String>
 
     // Создание
     fun createRoom(id: String, name: String): Boolean

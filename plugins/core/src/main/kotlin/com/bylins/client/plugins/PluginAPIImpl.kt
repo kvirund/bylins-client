@@ -79,10 +79,16 @@ class PluginAPIImpl(
     private val getRoomFunc: (String) -> Map<String, Any>?,
     private val searchRoomsFunc: (String) -> List<Map<String, Any>>,
     private val findPathFunc: (String) -> List<String>?,
+    private val findPathRoomIdsFunc: (String) -> List<String>?,
     private val setRoomNoteFunc: (String, String) -> Unit,
     private val setRoomColorFunc: (String, String?) -> Unit,
     private val setRoomZoneFunc: (String, String) -> Unit,
-    private val setRoomTagsFunc: (String, List<String>) -> Unit,
+    private val setRoomPropertyFunc: (String, String, String) -> Unit,
+    private val removeRoomPropertyFunc: (String, String) -> Unit,
+    private val getRoomPropertiesFunc: (String) -> Map<String, String>,
+    private val setZonePropertyFunc: (String, String, String) -> Unit,
+    private val removeZonePropertyFunc: (String, String) -> Unit,
+    private val getZonePropertiesFunc: (String) -> Map<String, String>,
     private val createRoomFunc: (String, String) -> Boolean,
     private val createRoomWithExitsFunc: (String, String, Map<String, String>) -> Boolean,
     private val linkRoomsFunc: (String, String, String) -> Unit,
@@ -111,7 +117,15 @@ class PluginAPIImpl(
     private val updateStatusFunc: (String, Map<String, Any>) -> Unit,
     private val addMiniMapFunc: (String, String?, Boolean, Int) -> Unit,
     // Маппер - MSDP
-    private val handleRoomFromMsdpFunc: (String, String, String?, String?, String?, Map<String, String>) -> Map<String, Any>?
+    private val handleRoomFromMsdpFunc: (String, String, String?, String?, String?, Map<String, String>) -> Map<String, Any>?,
+    // Контекстное меню карты
+    private val registerMapCommandFunc: (String, (Map<String, Any>) -> Unit) -> Unit,
+    private val unregisterMapCommandFunc: (String) -> Unit,
+    private val setPathHighlightFunc: (List<String>, String?) -> Unit,
+    private val clearPathHighlightFunc: () -> Unit,
+    // Контекстные команды
+    private val addContextCommandFunc: (String, String, String) -> Unit,
+    private val removeContextCommandFunc: (String) -> Unit
 ) : PluginAPI {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -413,6 +427,8 @@ class PluginAPIImpl(
 
     override fun findPath(targetRoomId: String): List<String>? = findPathFunc(targetRoomId)
 
+    override fun findPathRoomIds(targetRoomId: String): List<String>? = findPathRoomIdsFunc(targetRoomId)
+
     // ============================================
     // Маппер - модификация
     // ============================================
@@ -423,7 +439,17 @@ class PluginAPIImpl(
 
     override fun setRoomZone(roomId: String, zone: String) = setRoomZoneFunc(roomId, zone)
 
-    override fun setRoomTags(roomId: String, tags: List<String>) = setRoomTagsFunc(roomId, tags)
+    override fun setRoomProperty(roomId: String, key: String, value: String) = setRoomPropertyFunc(roomId, key, value)
+
+    override fun removeRoomProperty(roomId: String, key: String) = removeRoomPropertyFunc(roomId, key)
+
+    override fun getRoomProperties(roomId: String): Map<String, String> = getRoomPropertiesFunc(roomId)
+
+    override fun setZoneProperty(zoneId: String, key: String, value: String) = setZonePropertyFunc(zoneId, key, value)
+
+    override fun removeZoneProperty(zoneId: String, key: String) = removeZonePropertyFunc(zoneId, key)
+
+    override fun getZoneProperties(zoneId: String): Map<String, String> = getZonePropertiesFunc(zoneId)
 
     // ============================================
     // Маппер - создание
@@ -509,6 +535,38 @@ class PluginAPIImpl(
     override fun findNearestMatching(
         predicate: (Map<String, Any>) -> Boolean
     ): Pair<Map<String, Any>, List<String>>? = findNearestMatchingFunc(predicate)
+
+    // ============================================
+    // Контекстное меню карты
+    // ============================================
+
+    override fun registerMapCommand(name: String, callback: (Map<String, Any>) -> Unit) {
+        registerMapCommandFunc(name, callback)
+    }
+
+    override fun unregisterMapCommand(name: String) {
+        unregisterMapCommandFunc(name)
+    }
+
+    override fun setPathHighlight(roomIds: List<String>, targetRoomId: String?) {
+        setPathHighlightFunc(roomIds, targetRoomId)
+    }
+
+    override fun clearPathHighlight() {
+        clearPathHighlightFunc()
+    }
+
+    // ============================================
+    // Контекстные команды
+    // ============================================
+
+    override fun addContextCommand(command: String, description: String, ttl: String) {
+        addContextCommandFunc(command, description, ttl)
+    }
+
+    override fun removeContextCommand(command: String) {
+        removeContextCommandFunc(command)
+    }
 
     // ============================================
     // События
@@ -910,6 +968,7 @@ sealed class StatusElementData {
         val value: String?,
         val color: String?,
         val bold: Boolean,
+        val background: String?,
         val order: Int,
         val hint: String? = null
     ) : StatusElementData()
@@ -955,10 +1014,11 @@ private class StatusGroupBuilderImpl(private val pluginId: String) : StatusGroup
         color: String?,
         bold: Boolean,
         order: Int,
-        hint: String?
+        hint: String?,
+        background: String?
     ) {
         elements.add(StatusElementData.Text(
-            "${pluginId}_$id", label, value, color, bold, order, hint
+            "${pluginId}_$id", label, value, color, bold, background, order, hint
         ))
     }
 

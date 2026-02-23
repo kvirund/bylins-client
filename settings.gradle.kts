@@ -1,7 +1,7 @@
 rootProject.name = "bylins-client"
 
 include(":plugins:core")
-include(":plugins:bot")
+include(":plugins:assistant")
 
 pluginManagement {
     repositories {

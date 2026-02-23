@@ -261,6 +261,13 @@ interface PluginAPI {
      */
     fun findPath(targetRoomId: String): List<String>?
 
+    /**
+     * Находит путь и возвращает список ID комнат вдоль пути.
+     * Включает все комнаты КРОМЕ текущей, включая целевую.
+     * @return Список ID комнат или null если путь не найден
+     */
+    fun findPathRoomIds(targetRoomId: String): List<String>?
+
     // ============================================
     // Маппер - модификация
     // ============================================
@@ -281,9 +288,34 @@ interface PluginAPI {
     fun setRoomZone(roomId: String, zone: String)
 
     /**
-     * Устанавливает теги комнаты.
+     * Устанавливает свойство комнаты.
      */
-    fun setRoomTags(roomId: String, tags: List<String>)
+    fun setRoomProperty(roomId: String, key: String, value: String)
+
+    /**
+     * Удаляет свойство комнаты.
+     */
+    fun removeRoomProperty(roomId: String, key: String)
+
+    /**
+     * Получает все свойства комнаты.
+     */
+    fun getRoomProperties(roomId: String): Map<String, String>
+
+    /**
+     * Устанавливает свойство зоны.
+     */
+    fun setZoneProperty(zoneId: String, key: String, value: String)
+
+    /**
+     * Удаляет свойство зоны.
+     */
+    fun removeZoneProperty(zoneId: String, key: String)
+
+    /**
+     * Получает все свойства зоны.
+     */
+    fun getZoneProperties(zoneId: String): Map<String, String>
 
     // ============================================
     // Маппер - создание
@@ -444,6 +476,56 @@ interface PluginAPI {
     fun findNearestMatching(
         predicate: (Map<String, Any>) -> Boolean
     ): Pair<Map<String, Any>, List<String>>?
+
+    // ============================================
+    // Контекстное меню карты
+    // ============================================
+
+    /**
+     * Регистрирует команду контекстного меню карты.
+     *
+     * @param name Название пункта меню
+     * @param callback Обработчик (получает Map с данными комнаты)
+     */
+    fun registerMapCommand(name: String, callback: (Map<String, Any>) -> Unit)
+
+    /**
+     * Удаляет команду контекстного меню карты.
+     */
+    fun unregisterMapCommand(name: String)
+
+    /**
+     * Устанавливает подсветку пути на карте.
+     *
+     * @param roomIds Список ID комнат для подсветки
+     * @param targetRoomId ID целевой комнаты (конечная точка)
+     */
+    fun setPathHighlight(roomIds: List<String>, targetRoomId: String?)
+
+    /**
+     * Очищает подсветку пути на карте.
+     */
+    fun clearPathHighlight()
+
+    // ============================================
+    // Контекстные команды
+    // ============================================
+
+    /**
+     * Добавляет контекстную команду в очередь.
+     * Команды отображаются в панели и доступны по хоткеям Alt+1-0.
+     *
+     * @param command Команда для выполнения
+     * @param description Описание команды (для отображения)
+     * @param ttl Время жизни: "room" (до смены комнаты), "zone" (до смены зоны),
+     *            "permanent" (постоянно), "once" (одноразовая), число (минут)
+     */
+    fun addContextCommand(command: String, description: String = "", ttl: String = "room")
+
+    /**
+     * Удаляет контекстную команду из очереди по тексту команды.
+     */
+    fun removeContextCommand(command: String)
 
     // ============================================
     // События
@@ -724,6 +806,7 @@ interface StatusGroupBuilder {
 
     /**
      * Добавляет текстовый элемент в группу.
+     * @param background Цвет фона карточки (null = без фона). Примеры: "red", "green", "#FF5733"
      */
     fun text(
         id: String,
@@ -732,7 +815,8 @@ interface StatusGroupBuilder {
         color: String? = null,
         bold: Boolean = false,
         order: Int = 0,
-        hint: String? = null
+        hint: String? = null,
+        background: String? = null
     )
 
     /**

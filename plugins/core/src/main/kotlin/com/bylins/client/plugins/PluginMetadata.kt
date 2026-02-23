@@ -71,5 +71,6 @@ data class LoadedPlugin(
     val instance: Plugin,
     val state: PluginState,
     val jarFile: java.io.File,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val loadedAt: Long = System.currentTimeMillis()  // Время загрузки (epoch ms)
 )

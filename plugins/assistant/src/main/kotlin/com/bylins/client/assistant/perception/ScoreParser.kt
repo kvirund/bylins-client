@@ -1,4 +1,4 @@
-package com.bylins.client.bot.perception
+package com.bylins.client.assistant.perception
 
 import mu.KotlinLogging
 
@@ -94,7 +94,87 @@ data class CharacterScore(
     val isHungry: Boolean = false,
     val isThirsty: Boolean = false,
     val isSafe: Boolean = false
-)
+) {
+    /**
+     * Мёржит с другим CharacterScore.
+     * Новые значения (non-null) заменяют старые, но старые сохраняются если новые null.
+     */
+    fun mergeWith(new: CharacterScore): CharacterScore = CharacterScore(
+        name = new.name ?: name,
+        race = new.race ?: race,
+        tribe = new.tribe ?: tribe,
+        religion = new.religion ?: religion,
+        className = new.className ?: className,
+        level = new.level ?: level,
+        remorts = new.remorts ?: remorts,
+        age = new.age ?: age,
+
+        hp = new.hp ?: hp,
+        maxHp = new.maxHp ?: maxHp,
+        move = new.move ?: move,
+        maxMove = new.maxMove ?: maxMove,
+        mana = new.mana ?: mana,
+        maxMana = new.maxMana ?: maxMana,
+        manaRegen = new.manaRegen ?: manaRegen,
+        hpRegen = new.hpRegen ?: hpRegen,
+        hpRegenBase = new.hpRegenBase ?: hpRegenBase,
+        moveRegen = new.moveRegen ?: moveRegen,
+        moveRegenBase = new.moveRegenBase ?: moveRegenBase,
+
+        experience = new.experience ?: experience,
+        expToLevel = new.expToLevel ?: expToLevel,
+        gold = new.gold ?: gold,
+        bank = new.bank ?: bank,
+
+        str = new.str ?: str, strBase = new.strBase ?: strBase,
+        dex = new.dex ?: dex, dexBase = new.dexBase ?: dexBase,
+        con = new.con ?: con, conBase = new.conBase ?: conBase,
+        wis = new.wis ?: wis, wisBase = new.wisBase ?: wisBase,
+        int = new.int ?: int, intBase = new.intBase ?: intBase,
+        cha = new.cha ?: cha, chaBase = new.chaBase ?: chaBase,
+
+        height = new.height ?: height, heightBase = new.heightBase ?: heightBase,
+        weight = new.weight ?: weight, weightBase = new.weightBase ?: weightBase,
+        size = new.size ?: size, sizeBase = new.sizeBase ?: sizeBase,
+
+        ac = new.ac ?: ac,
+        armor = new.armor ?: armor,
+        absorb = new.absorb ?: absorb,
+        hitroll = new.hitroll ?: hitroll,
+        damroll = new.damroll ?: damroll,
+        castLevel = new.castLevel ?: castLevel,
+        memorySlots = new.memorySlots ?: memorySlots,
+        luck = new.luck ?: luck,
+        spellPower = new.spellPower ?: spellPower,
+        physDamage = new.physDamage ?: physDamage,
+        initiative = new.initiative ?: initiative,
+
+        saveWill = new.saveWill ?: saveWill,
+        saveHealth = new.saveHealth ?: saveHealth,
+        saveStability = new.saveStability ?: saveStability,
+        saveReflex = new.saveReflex ?: saveReflex,
+
+        resistDamage = new.resistDamage ?: resistDamage,
+        resistSpells = new.resistSpells ?: resistSpells,
+        resistFire = new.resistFire ?: resistFire,
+        resistWater = new.resistWater ?: resistWater,
+        resistEarth = new.resistEarth ?: resistEarth,
+        resistAir = new.resistAir ?: resistAir,
+        resistDark = new.resistDark ?: resistDark,
+        resistMind = new.resistMind ?: resistMind,
+        resistWounds = new.resistWounds ?: resistWounds,
+        resistPoison = new.resistPoison ?: resistPoison,
+
+        glory = new.glory ?: glory,
+        groupLevelDiff = new.groupLevelDiff ?: groupLevelDiff,
+        maxGroupSize = new.maxGroupSize ?: maxGroupSize,
+
+        position = new.position ?: position,
+        isHungry = new.isHungry || isHungry,
+        isThirsty = new.isThirsty || isThirsty,
+        isSafe = new.isSafe  // Безопасность берём из нового (актуальное состояние комнаты)
+    )
+}
 
 class ScoreParser {
 
@@ -132,11 +212,13 @@ class ScoreParser {
             return null
         }
 
-        lastScore = score
-        onScoreParsed?.invoke(score)
+        // Мёржим с предыдущим результатом (новые значения дополняют, а не заменяют)
+        val merged = lastScore?.mergeWith(score) ?: score
+        lastScore = merged
+        onScoreParsed?.invoke(merged)
 
-        logger.debug { "Score parsed: level=${score.level}, hp=${score.hp}/${score.maxHp}" }
-        return score
+        logger.debug { "Score parsed: level=${merged.level}, hp=${merged.hp}/${merged.maxHp}, remorts=${merged.remorts}" }
+        return merged
     }
 
     /**

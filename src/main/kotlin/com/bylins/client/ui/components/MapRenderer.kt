@@ -3,6 +3,7 @@ package com.bylins.client.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -794,8 +795,8 @@ fun RoomTooltip(
     val colorScheme = LocalAppColorScheme.current
     val hasZoneNotes = zoneNotes.isNotBlank()
 
-    // Умное позиционирование
-    val padding = 10f
+    // Умное позиционирование с увеличенным отступом от курсора
+    val padding = 20f  // Увеличенный отступ чтобы тултип не попадал под курсор
 
     // Сначала рендерим в Box чтобы получить реальный размер, затем позиционируем
     var tooltipSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
@@ -805,18 +806,21 @@ fun RoomTooltip(
     val estimatedHeight = if (tooltipSize.height > 0) tooltipSize.height else 100f
 
     // Определяем позицию - предпочитаем справа-снизу, но адаптируемся к границам
+    // ВАЖНО: никогда не позиционируем так, чтобы тултип оказался под курсором
     val tooltipX = when {
         canvasWidth <= 0 -> mouseX + padding
         mouseX + padding + estimatedWidth <= canvasWidth -> mouseX + padding  // Справа влезает
         mouseX - padding - estimatedWidth >= 0 -> mouseX - padding - estimatedWidth  // Слева влезает
-        else -> (canvasWidth - estimatedWidth - 5f).coerceAtLeast(5f)  // Центрируем
+        // Если не влезает ни справа, ни слева - размещаем справа за пределами курсора
+        else -> (mouseX + padding).coerceIn(5f, canvasWidth - 5f)
     }
 
     val tooltipY = when {
         canvasHeight <= 0 -> mouseY + padding
         mouseY + padding + estimatedHeight <= canvasHeight -> mouseY + padding  // Снизу влезает
         mouseY - padding - estimatedHeight >= 0 -> mouseY - padding - estimatedHeight  // Сверху влезает
-        else -> (canvasHeight - estimatedHeight - 5f).coerceAtLeast(5f)  // Центрируем
+        // Если не влезает ни снизу, ни сверху - размещаем сверху, но не под курсором
+        else -> (mouseY - padding - estimatedHeight).coerceAtLeast(5f)
     }
 
     Surface(
@@ -898,14 +902,76 @@ fun RoomTooltip(
                 )
             }
 
-            // Теги
-            if (room.tags.isNotEmpty()) {
+            // Свойства
+            if (room.properties.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Теги: ${room.tags.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
-                    color = Color(0xFFCC88FF)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    room.properties.forEach { (key, value) ->
+                        val isBooleanTrue = value.equals("true", ignoreCase = true)
+                        val isBooleanFalse = value.equals("false", ignoreCase = true)
+
+                        when {
+                            isBooleanTrue || isBooleanFalse -> {
+                                // Boolean badge with checkmark/X
+                                val bgColor = if (isBooleanTrue) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                val icon = if (isBooleanTrue) "✓" else "✗"
+                                Surface(
+                                    color = bgColor,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Text(
+                                            text = icon,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = key,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                            value.isEmpty() -> {
+                                // Marker property (empty value) - simple badge
+                                Surface(
+                                    color = Color(0xFF7B1FA2),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = key,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                            else -> {
+                                // Key-value property - badge with value
+                                Surface(
+                                    color = Color(0xFF5E35B1),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "$key: $value",
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Заметки зоны - в отдельном блоке с разделителем

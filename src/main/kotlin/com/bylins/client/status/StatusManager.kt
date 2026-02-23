@@ -346,6 +346,39 @@ class StatusManager(
     fun exists(id: String): Boolean = id in _elements.value
 
     /**
+     * Переключает collapsed состояние группы.
+     * @return новое состояние collapsed или null если группа не найдена
+     */
+    fun toggleGroupCollapsed(id: String): Boolean? {
+        val existing = _elements.value[id]
+        if (existing !is StatusElement.Group) return null
+
+        val newCollapsed = !existing.collapsed
+        val updated = existing.copy(collapsed = newCollapsed)
+        _elements.value = _elements.value + (id to updated)
+        updateStatusVariable(id, updated)
+
+        // Уведомляем о изменении для сохранения
+        onCollapsedStateChanged?.invoke(id, newCollapsed)
+
+        return newCollapsed
+    }
+
+    /**
+     * Получает collapsed состояние группы.
+     */
+    fun isGroupCollapsed(id: String): Boolean? {
+        val existing = _elements.value[id]
+        return if (existing is StatusElement.Group) existing.collapsed else null
+    }
+
+    /**
+     * Callback при изменении collapsed состояния группы.
+     * Вызывается с (groupId, isCollapsed).
+     */
+    var onCollapsedStateChanged: ((String, Boolean) -> Unit)? = null
+
+    /**
      * Обновляет readonly переменную для элемента статуса
      */
     private fun updateStatusVariable(id: String, element: StatusElement) {

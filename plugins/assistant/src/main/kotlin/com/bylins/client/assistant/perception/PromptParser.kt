@@ -1,6 +1,5 @@
-package com.bylins.client.bot.perception
+package com.bylins.client.assistant.perception
 
-import com.bylins.client.bot.Position
 import mu.KotlinLogging
 
 /**
@@ -11,6 +10,20 @@ import mu.KotlinLogging
  * - В бою:   "248H 104M 41096o Зауч:0 ОЗ:0 [Ходэр:Невредим] [куница:Смертельно ранена] >"
  */
 private val logger = KotlinLogging.logger("PromptParser")
+
+/**
+ * Позиция персонажа
+ */
+enum class Position {
+    STANDING,
+    SITTING,
+    RESTING,
+    SLEEPING,
+    FIGHTING,
+    STUNNED,
+    DEAD,
+    UNKNOWN
+}
 
 /**
  * Данные из промпта Былин

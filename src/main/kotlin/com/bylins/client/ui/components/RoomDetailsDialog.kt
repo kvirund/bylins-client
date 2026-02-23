@@ -24,14 +24,15 @@ fun RoomDetailsDialog(
     room: Room,
     allRooms: Map<String, Room>,
     onDismiss: () -> Unit,
-    onSave: (name: String, note: String, terrain: String?, tags: Set<String>, zone: String, exits: Map<Direction, Exit>, visited: Boolean) -> Unit
+    onSave: (name: String, note: String, terrain: String?, properties: Map<String, String>, zone: String, exits: Map<Direction, Exit>, visited: Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(room.name) }
     var note by remember { mutableStateOf(room.notes) }
     // Нормализуем terrain в uppercase для единообразия
     var selectedTerrain by remember { mutableStateOf(room.terrain?.uppercase()) }
-    var tags by remember { mutableStateOf(room.tags) }
-    var newTag by remember { mutableStateOf("") }
+    var properties by remember { mutableStateOf(room.properties) }
+    var newPropertyKey by remember { mutableStateOf("") }
+    var newPropertyValue by remember { mutableStateOf("") }
     var zone by remember { mutableStateOf(room.zone ?: "") }
     var exits by remember { mutableStateOf(room.exits.toMutableMap()) }
     var visited by remember { mutableStateOf(room.visited) }
@@ -370,46 +371,80 @@ fun RoomDetailsDialog(
                     )
                 }
 
-                // Теги
+                // Свойства (key-value)
                 Column {
                     Text(
-                        text = "Теги:",
+                        text = "Свойства:",
                         color = colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyLarge
                     )
 
-                    if (tags.isNotEmpty()) {
-                        Row(
+                    if (properties.isNotEmpty()) {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            tags.forEach { tag ->
-                                Button(
-                                    onClick = { tags = tags - tag },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = colorScheme.surfaceVariant
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            properties.forEach { (key, value) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(colorScheme.surfaceVariant, MaterialTheme.shapes.small)
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(tag, color = colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
-                                    Text(" X", color = colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        text = key,
+                                        color = colorScheme.success,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.width(100.dp)
+                                    )
+                                    Text(
+                                        text = if (value.isEmpty()) "(маркер)" else value,
+                                        color = if (value.isEmpty()) colorScheme.onSurfaceVariant else colorScheme.onSurface,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        onClick = { properties = properties - key },
+                                        contentPadding = PaddingValues(4.dp)
+                                    ) {
+                                        Text("X", color = colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                             }
                         }
                     }
 
+                    // Добавление нового свойства
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedTextField(
-                            value = newTag,
-                            onValueChange = { newTag = it },
+                            value = newPropertyKey,
+                            onValueChange = { newPropertyKey = it },
+                            modifier = Modifier.width(120.dp),
+                            placeholder = { Text("Ключ") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = colorScheme.onSurface,
+                                unfocusedTextColor = colorScheme.onSurface,
+                                focusedBorderColor = colorScheme.success,
+                                unfocusedBorderColor = colorScheme.onSurfaceVariant,
+                                focusedPlaceholderColor = colorScheme.onSurfaceVariant,
+                                unfocusedPlaceholderColor = colorScheme.onSurfaceVariant
+                            ),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = newPropertyValue,
+                            onValueChange = { newPropertyValue = it },
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text("Новый тег...") },
+                            placeholder = { Text("Значение (пусто = маркер)") },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = colorScheme.onSurface,
                                 unfocusedTextColor = colorScheme.onSurface,
@@ -422,12 +457,13 @@ fun RoomDetailsDialog(
                         )
                         Button(
                             onClick = {
-                                if (newTag.isNotBlank() && newTag !in tags) {
-                                    tags = tags + newTag.trim()
-                                    newTag = ""
+                                if (newPropertyKey.isNotBlank()) {
+                                    properties = properties + (newPropertyKey.trim() to newPropertyValue.trim())
+                                    newPropertyKey = ""
+                                    newPropertyValue = ""
                                 }
                             },
-                            enabled = newTag.isNotBlank() && newTag !in tags,
+                            enabled = newPropertyKey.isNotBlank(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = colorScheme.success
                             ),
@@ -482,7 +518,7 @@ fun RoomDetailsDialog(
 
                     Button(
                         onClick = {
-                            onSave(name, note, selectedTerrain, tags, zone, exits, visited)
+                            onSave(name, note, selectedTerrain, properties, zone, exits, visited)
                             onDismiss()
                         },
                         colors = ButtonDefaults.buttonColors(

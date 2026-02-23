@@ -1,29 +1,40 @@
-package com.bylins.client.plugins.aibot
+package com.bylins.client.plugins.assistant
 
-import com.bylins.client.bot.*
-import com.bylins.client.bot.perception.CharacterScore
+import com.bylins.client.assistant.*
+import com.bylins.client.assistant.data.AffectInfo
+import com.bylins.client.assistant.data.SkillInfo
+import com.bylins.client.assistant.perception.CharacterAffects
+import com.bylins.client.assistant.perception.CharacterScore
+import com.bylins.client.assistant.perception.CharacterSkills
+import com.bylins.client.assistant.perception.RoomContent
 import com.bylins.client.plugins.PluginBase
 import com.bylins.client.plugins.events.*
 import com.bylins.client.plugins.ui.PluginTab
 import com.bylins.client.plugins.ui.PluginUINode
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.serialization.Serializable
 
 /**
- * AI-бот плагин для Bylins MUD Client
+ * Ассистент-плагин для Bylins MUD Client
  *
  * Возможности:
  * - Определение промпта по таймауту
  * - Парсинг статов из промпта через regex
  * - Автоматическая работа с картой через MSDP
+ * - FSM: IDLE → START → DECISION → INTROSPECTION → IDLE
+ * - Режим исследования: EXPLORATION (zone/world)
  *
  * Команды:
- *   #bot status          - Статус
- *   #bot regex           - Показать текущий regex
- *   #bot regex <pattern> - Установить regex для парсинга промпта
- *   #bot help            - Справка
+ *   #assistant status          - Статус
+ *   #assistant start           - Запустить
+ *   #assistant stop            - Остановить
+ *   #assistant mode zone/world - Установить область исследования
+ *   #assistant regex           - Показать текущий regex
+ *   #assistant regex <pattern> - Установить regex для парсинга промпта
+ *   #assistant help            - Справка
  */
-class AIBotPlugin : PluginBase() {
+class AssistantPlugin : PluginBase() {
 
     companion object {
         // Дефолтный regex для Былин
@@ -40,11 +51,11 @@ class AIBotPlugin : PluginBase() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // Ядро бота
-    private lateinit var botCore: BotCore
+    // Ядро ассистента
+    private lateinit var assistantCore: AssistantCore
 
     // Конфигурация
-    private var config: AIBotConfig = AIBotConfig()
+    private var config: AssistantConfig = AssistantConfig()
 
     // UI вкладка
     private var tab: PluginTab? = null
@@ -61,25 +72,54 @@ class AIBotPlugin : PluginBase() {
     private var lastMaxHp: Int = 100
     private var lastMaxMove: Int = 100
 
+    // Для отладки скачков опыта
+    private var lastExpBarValue: Int = -1
+    private var lastExpBarMax: Int = -1
+
     override fun onLoad() {
-        logger.info("AI Bot плагин загружается...")
-        loadConfig<AIBotConfig>()?.let { config = it }
+        logger.info("Ассистент-плагин загружается...")
+        loadConfig<AssistantConfig>()?.let { config = it }
     }
 
     override fun onEnable() {
-        logger.info("AI Bot плагин включается...")
+        logger.info("Ассистент-плагин включается...")
 
-        // Инициализируем ядро бота
-        botCore = BotCore(api)
+        // Инициализируем ядро
+        assistantCore = AssistantCore(api)
 
         // Настраиваем callbacks
-        botCore.onLog = { message -> addLog(message) }
-        botCore.onPromptParsed = { _, parsed -> handlePromptParsed(parsed) }
-        botCore.scoreParser.onScoreParsed = { score -> handleScoreParsed(score) }
-        botCore.onTextBlock = { text -> tryParseLevelTable(text) }
+        assistantCore.onLog = { message -> addLog(message) }
+        assistantCore.onPromptParsed = { _, parsed -> handlePromptParsed(parsed) }
+        assistantCore.scoreParser.onScoreParsed = { score -> handleScoreParsed(score) }
+        assistantCore.onTextBlock = { text -> tryParseLevelTable(text) }
+        assistantCore.onHourPassed = { handleHourPassed() }
+        assistantCore.onMovementFailed = { direction, roomName ->
+            api.echo("[ASSISTANT] Не удалось пройти на $direction из комнаты '$roomName'. Причина неизвестна.", "red")
+            api.echo("[ASSISTANT] Чтобы пропустить этот выход: #assistant skip")
+            api.echo("[ASSISTANT] Чтобы продолжить исследование: #assistant start")
+            // Контекстные команды: once — исчезают после использования
+            api.addContextCommand("#assistant skip", "Пропустить выход $direction", "room")
+            api.addContextCommand("#assistant start", "Продолжить исследование", "room")
+        }
+        assistantCore.onCombatEntered = {
+            api.echo("[ASSISTANT] Обнаружен бой! Исследование приостановлено.", "red")
+            api.echo("[ASSISTANT] После боя: #assistant start")
+            api.addContextCommand("#assistant start", "Продолжить исследование", "room")
+        }
+        assistantCore.onExplorationComplete = { reason, scope ->
+            api.echo("[ASSISTANT] Исследование завершено: все выходы в $reason исследованы!")
+            if (scope == ExplorationScope.ZONE) {
+                api.echo("[ASSISTANT] Для исследования всего мира: #assistant mode world")
+                api.addContextCommand("#assistant mode world", "Режим: весь мир", "room")
+                api.addContextCommand("#assistant start", "Продолжить исследование", "room")
+            }
+        }
 
-        // Регистрируем команду #bot
-        registerBotCommand()
+        // Подписываемся на изменения аффектов и умений
+        subscribeToStateChanges()
+
+        // Регистрируем команду #assistant
+        registerAssistantCommand()
 
         // Подписываемся на события
         subscribeToEvents()
@@ -92,7 +132,7 @@ class AIBotPlugin : PluginBase() {
         loadPromptRegex()
 
         // Создаём UI вкладку
-        createBotTab()
+        createAssistantTab()
 
         // Запускаем цикл определения промпта
         startPromptDetectionLoop()
@@ -102,11 +142,17 @@ class AIBotPlugin : PluginBase() {
             initializeMsdp()
         }
 
-        addLog("Плагин активирован")
+        // Регистрируем команды контекстного меню карты
+        registerMapContextCommands()
+
+        addLog("Плагин активирован (сборка: ${BuildInfo.BUILD_TIME})")
     }
 
     override fun onDisable() {
-        logger.info("AI Bot плагин выключается...")
+        logger.info("Ассистент-плагин выключается...")
+
+        // Удаляем команды контекстного меню
+        unregisterMapContextCommands()
 
         tab?.close()
         tab = null
@@ -136,11 +182,14 @@ class AIBotPlugin : PluginBase() {
         api.removeStatus("saves")
         api.removeStatus("resists")
         api.removeStatus("minimap")
+        api.removeStatus("affects")
+        api.removeStatus("skills")
+        api.removeStatus("room_content")
     }
 
     override fun onUnload() {
-        logger.info("AI Bot плагин выгружается...")
-        botCore.shutdown()
+        logger.info("Ассистент-плагин выгружается...")
+        assistantCore.shutdown()
     }
 
     // ============================================
@@ -268,13 +317,35 @@ class AIBotPlugin : PluginBase() {
     private fun handleExperienceData(value: Any) {
         val exp = value.toString().toLongOrNull() ?: return
         val expInfo = getExpToLevel(exp)
-        api.updateStatusBar("exp", expInfo.current.toInt(), expInfo.max.toInt())
+        addLog("MSDP exp=$exp → level=${expInfo.level}, done=${expInfo.current}/${expInfo.max}, remain=${expInfo.remain}")
+        updateExpBar(expInfo.current.toInt(), expInfo.max.toInt(), "MSDP")
 
         // Обновляем уровень если изменился (из опыта можно вычислить уровень)
         if (expInfo.level != lastLevel && expInfo.level > 0) {
             lastLevel = expInfo.level
             updateLevelStatus(expInfo.level)
         }
+    }
+
+    /**
+     * Обновляет exp бар с логированием дельты.
+     * @param source Источник обновления (prompt, MSDP, счёт)
+     */
+    private fun updateExpBar(value: Int, max: Int, source: String) {
+        // Логируем только значимые изменения
+        if (lastExpBarValue >= 0 && lastExpBarMax == max) {
+            val delta = value - lastExpBarValue
+            if (delta != 0) {
+                val prefix = if (delta < 0) "⚠️ ОТРИЦАТЕЛЬНАЯ ДЕЛЬТА" else "Exp"
+                addLog("$prefix ($source): $lastExpBarValue → $value (${if (delta > 0) "+" else ""}$delta)")
+            }
+        } else if (lastExpBarValue >= 0 && lastExpBarMax != max) {
+            addLog("Exp ($source): max изменился $lastExpBarMax → $max (возможно, новый уровень)")
+        }
+
+        lastExpBarValue = value
+        lastExpBarMax = max
+        api.updateStatusBar("exp", value, max)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -297,39 +368,39 @@ class AIBotPlugin : PluginBase() {
 
     // Дефолтные таблицы для разных ремортов
     private val defaultLevelTables: Map<Int, Map<Int, LevelData>> = mapOf(
-        // Реморт 0
+        // Реморт 0 (актуальные данные с сервера)
         0 to mapOf(
-            1 to LevelData(1L, 149),
-            2 to LevelData(1_500L, 150),
-            3 to LevelData(3_000L, 300),
-            4 to LevelData(6_000L, 600),
-            5 to LevelData(12_000L, 1_000),
-            6 to LevelData(22_000L, 2_000),
-            7 to LevelData(42_000L, 3_500),
-            8 to LevelData(77_000L, 5_000),
-            9 to LevelData(127_000L, 7_000),
-            10 to LevelData(197_000L, 9_000),
-            11 to LevelData(287_000L, 12_000),
-            12 to LevelData(407_000L, 15_000),
-            13 to LevelData(557_000L, 21_000),
-            14 to LevelData(767_000L, 24_000),
-            15 to LevelData(1_007_000L, 27_300),
-            16 to LevelData(1_280_000L, 29_000),
-            17 to LevelData(1_570_000L, 34_000),
-            18 to LevelData(1_910_000L, 39_000),
-            19 to LevelData(2_300_000L, 49_000),
-            20 to LevelData(2_790_000L, 99_000),
-            21 to LevelData(3_780_000L, 129_000),
-            22 to LevelData(5_070_000L, 149_000),
-            23 to LevelData(6_560_000L, 169_000),
-            24 to LevelData(8_250_000L, 199_000),
-            25 to LevelData(10_240_000L, 276_000),
-            26 to LevelData(13_000_000L, 700_000),
-            27 to LevelData(20_000_000L, 1_000_000),
-            28 to LevelData(30_000_000L, 1_300_000),
-            29 to LevelData(43_000_000L, 1_600_000),
-            30 to LevelData(59_000_000L, 2_000_000),
-            31 to LevelData(80_000_000L, 0)
+            1 to LevelData(1L, 199),
+            2 to LevelData(2_000L, 200),
+            3 to LevelData(4_000L, 400),
+            4 to LevelData(8_000L, 600),
+            5 to LevelData(14_000L, 1_000),
+            6 to LevelData(24_000L, 1_500),
+            7 to LevelData(39_000L, 3_000),
+            8 to LevelData(69_000L, 5_000),
+            9 to LevelData(119_000L, 7_000),
+            10 to LevelData(189_000L, 10_000),
+            11 to LevelData(289_000L, 13_000),
+            12 to LevelData(419_000L, 16_000),
+            13 to LevelData(579_000L, 22_100),
+            14 to LevelData(800_000L, 27_000),
+            15 to LevelData(1_070_000L, 27_000),
+            16 to LevelData(1_340_000L, 32_000),
+            17 to LevelData(1_660_000L, 37_000),
+            18 to LevelData(2_030_000L, 42_000),
+            19 to LevelData(2_450_000L, 50_000),
+            20 to LevelData(2_950_000L, 100_000),
+            21 to LevelData(3_950_000L, 130_000),
+            22 to LevelData(5_250_000L, 150_000),
+            23 to LevelData(6_750_000L, 170_000),
+            24 to LevelData(8_450_000L, 190_000),
+            25 to LevelData(10_350_000L, 365_000),
+            26 to LevelData(14_000_000L, 700_000),
+            27 to LevelData(21_000_000L, 1_000_000),
+            28 to LevelData(31_000_000L, 1_300_000),
+            29 to LevelData(44_000_000L, 2_000_000),
+            30 to LevelData(64_000_000L, 1_500_000),
+            31 to LevelData(79_000_000L, 0)
         ),
         // Реморт 1
         1 to mapOf(
@@ -503,15 +574,15 @@ class AIBotPlugin : PluginBase() {
     // Commands
     // ============================================
 
-    private fun registerBotCommand() {
-        api.createAlias(Regex("^#bot\\s*(.*)$")) { _, groups ->
+    private fun registerAssistantCommand() {
+        api.createAlias(Regex("^#assistant\\s*(.*)$")) { _, groups ->
             val args = groups.getOrNull(1)?.trim() ?: ""
-            handleBotCommand(args)
+            handleAssistantCommand(args)
             true
         }
     }
 
-    private fun handleBotCommand(args: String) {
+    private fun handleAssistantCommand(args: String) {
         val parts = args.split("\\s+".toRegex(), 2)
         if (parts.isEmpty() || parts[0].isEmpty()) {
             showHelp()
@@ -520,6 +591,21 @@ class AIBotPlugin : PluginBase() {
 
         when (parts[0].lowercase()) {
             "status" -> showStatus()
+            "start" -> {
+                api.echo("[ASSISTANT] Запуск...")
+                assistantCore.start()
+            }
+            "stop" -> {
+                api.echo("[ASSISTANT] Остановка")
+                assistantCore.stop()
+            }
+            "mode" -> {
+                if (parts.size > 1) {
+                    handleModeCommand(parts[1])
+                } else {
+                    showModeHelp()
+                }
+            }
             "regex" -> {
                 if (parts.size > 1) {
                     setPromptRegex(parts[1])
@@ -528,20 +614,97 @@ class AIBotPlugin : PluginBase() {
                 }
             }
             "msdp" -> showMsdpStatus()
+            "state" -> {
+                if (parts.size > 1) {
+                    handleStateCommand(parts[1])
+                } else {
+                    showStateHelp()
+                }
+            }
+            "stayzone" -> {
+                if (parts.size > 1) {
+                    handleStayZoneCommand(parts[1])
+                } else {
+                    val status = assistantCore.getStatus()
+                    api.echo("[ASSISTANT] Оставаться в зоне: ${status["stayInZone"]}")
+                }
+            }
+            "skip" -> {
+                val direction = if (parts.size > 1) parts[1].trim() else null
+                assistantCore.skipExit(direction)
+                if (direction != null) {
+                    api.echo("[ASSISTANT] Выход '$direction' из текущей комнаты пропущен")
+                } else {
+                    api.echo("[ASSISTANT] Последний неудачный выход пропущен")
+                }
+                // Если ассистент стоит — запускаем
+                if (assistantCore.state.value == AssistantState.IDLE) {
+                    api.echo("[ASSISTANT] Продолжаю исследование...")
+                    assistantCore.start()
+                }
+            }
+            "debug" -> showDebugInfo()
+            "llm" -> {
+                if (parts.size > 1) {
+                    handleLlmCommand(parts[1])
+                } else {
+                    showLlmStatus()
+                }
+            }
             "help", "?" -> showHelp()
             else -> {
-                api.echo("[BOT] Неизвестная команда: ${parts[0]}")
+                api.echo("[ASSISTANT] Неизвестная команда: ${parts[0]}")
                 showHelp()
             }
         }
     }
 
-    private fun showStatus() {
-        val status = botCore.getStatus()
+    private fun handleLlmCommand(arg: String) {
+        val parts = arg.split("\\s+".toRegex(), 2)
+        when (parts[0].lowercase()) {
+            "connect", "init" -> {
+                val baseUrl = config.llmBaseUrl
+                val model = config.llmModel
+                api.echo("[ASSISTANT] Подключение к LLM: $model @ $baseUrl")
+                val success = assistantCore.llmService.connect(baseUrl, model)
+                if (success) {
+                    api.echo("[ASSISTANT] LLM подключена")
+                } else {
+                    api.echo("[ASSISTANT] Ошибка подключения к LLM")
+                }
+            }
+            "disconnect" -> {
+                assistantCore.llmService.disconnect()
+                api.echo("[ASSISTANT] LLM отключена")
+            }
+            "status" -> showLlmStatus()
+            else -> {
+                api.echo("[ASSISTANT] LLM команды:")
+                api.echo("  #assistant llm connect  - подключиться к Ollama")
+                api.echo("  #assistant llm disconnect - отключиться")
+                api.echo("  #assistant llm status   - статус")
+            }
+        }
+    }
 
-        api.echo("=== AI Bot Status ===")
+    private fun showLlmStatus() {
+        api.echo("=== LLM Status ===")
+        api.echo("Подключена: ${assistantCore.llmService.isConnected}")
+        api.echo("Модель: ${config.llmModel}")
+        api.echo("URL: ${config.llmBaseUrl}")
+    }
+
+    private fun showStatus() {
+        val status = assistantCore.getStatus()
+
+        api.echo("=== Ассистент - Статус ===")
+        api.echo("Сборка: ${BuildInfo.BUILD_TIME}")
+        api.echo("Состояние: ${status["state"]}")
+        api.echo("Режим исследования: ${status["explorationScope"]}")
+        api.echo("Оставаться в зоне: ${status["stayInZone"]}")
+        api.echo("Зона исследования: ${status["explorationZoneId"] ?: "не задана"}")
+        api.echo("LLM: ${if (assistantCore.llmService.isConnected) "${config.llmModel} подключена" else "не подключена"}")
         api.echo("MSDP: ${if (api.isMsdpEnabled()) "включён" else "выключен"}")
-        api.echo("MSDP инициализирован: $msdpInitialized")
 
         @Suppress("UNCHECKED_CAST")
         val promptStatus = status["promptDetector"] as? Map<String, Any>
@@ -565,6 +728,182 @@ class AIBotPlugin : PluginBase() {
         api.echo("Подписки плагина: ${msdpVariables.joinToString(", ")}")
     }
 
+    private fun handleModeCommand(arg: String) {
+        when (arg.lowercase()) {
+            "zone" -> {
+                assistantCore.setExplorationScope(ExplorationScope.ZONE)
+                api.echo("[ASSISTANT] Режим исследования: только текущая зона")
+            }
+            "world" -> {
+                assistantCore.setExplorationScope(ExplorationScope.WORLD)
+                api.echo("[ASSISTANT] Режим исследования: весь мир")
+            }
+            else -> {
+                api.echo("[ASSISTANT] Неизвестный режим: $arg")
+                showModeHelp()
+            }
+        }
+    }
+
+    private fun showModeHelp() {
+        val status = assistantCore.getStatus()
+        api.echo("=== Режим исследования ===")
+        api.echo("Текущий: ${status["explorationScope"]}")
+        api.echo("")
+        api.echo("Команды:")
+        api.echo("  #assistant mode zone   - исследовать только текущую зону")
+        api.echo("  #assistant mode world  - исследовать весь мир")
+    }
+
+    private fun handleStateCommand(arg: String) {
+        api.echo("[ASSISTANT] Переход в состояние: $arg")
+        val success = assistantCore.gotoState(arg)
+        if (success) {
+            val status = assistantCore.getStatus()
+            api.echo("[ASSISTANT] Текущее состояние: ${status["state"]}")
+        } else {
+            api.echo("[ASSISTANT] Ошибка перехода (см. лог)")
+        }
+    }
+
+    private fun showStateHelp() {
+        val status = assistantCore.getStatus()
+        api.echo("=== Состояние FSM ===")
+        api.echo("Текущее: ${status["state"]}")
+        api.echo("waitingForPrompt: ${status["waitingForPrompt"]}")
+        api.echo("commandsLeft: ${status["commandsLeft"]}")
+        api.echo("")
+        api.echo("Доступные состояния:")
+        api.echo("  IDLE          - простой (мониторинг)")
+        api.echo("  INTROSPECTION - сбор информации (счет, эк, ...)")
+        api.echo("  EXPLORATION   - исследование карты")
+        api.echo("  COMBAT        - в бою (заглушка)")
+        api.echo("")
+        api.echo("Команда: #assistant state <STATE>")
+    }
+
+    private fun handleStayZoneCommand(arg: String) {
+        when (arg.lowercase()) {
+            "on", "true", "1", "да" -> {
+                assistantCore.setStayInZone(true)
+                api.echo("[ASSISTANT] Режим 'оставаться в зоне' включён")
+            }
+            "off", "false", "0", "нет" -> {
+                assistantCore.setStayInZone(false)
+                api.echo("[ASSISTANT] Режим 'оставаться в зоне' выключен (с возвратом при смене зоны)")
+            }
+            else -> {
+                api.echo("[ASSISTANT] Использование: #assistant stayzone on/off")
+                val status = assistantCore.getStatus()
+                api.echo("[ASSISTANT] Текущее значение: ${status["stayInZone"]}")
+            }
+        }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun showDebugInfo() {
+        api.echo("=== Debug: Exploration ===")
+
+        val currentRoom = api.getCurrentRoom()
+        if (currentRoom == null) {
+            api.echo("Текущая комната: НЕИЗВЕСТНА")
+            return
+        }
+
+        val roomId = currentRoom["id"] as? String ?: "?"
+        val roomName = currentRoom["name"] as? String ?: "?"
+        val roomZone = currentRoom["zone"] as? String ?: "нет"
+        val visited = currentRoom["visited"] as? Boolean ?: false
+
+        api.echo("Текущая комната: $roomName ($roomId)")
+        api.echo("Зона: $roomZone, visited=$visited")
+
+        val exits = currentRoom["exits"] as? Map<String, String> ?: emptyMap()
+        api.echo("Выходы (${exits.size}):")
+
+        exits.forEach { (direction, targetRoomId) ->
+            if (targetRoomId.isEmpty()) {
+                api.echo("  $direction → ??? (неизвестно)")
+            } else {
+                val targetRoom = api.getRoom(targetRoomId)
+                if (targetRoom == null) {
+                    api.echo("  $direction → $targetRoomId (комната не в базе)")
+                } else {
+                    val targetName = targetRoom["name"] as? String ?: "?"
+                    val targetVisited = targetRoom["visited"] as? Boolean ?: false
+                    val status = if (targetVisited) "✓ посещена" else "✗ НЕ посещена"
+                    api.echo("  $direction → $targetName ($targetRoomId) [$status]")
+                }
+            }
+        }
+
+        // Проблемные выходы и двери
+        val status = assistantCore.getStatus()
+
+        @Suppress("UNCHECKED_CAST")
+        val autoProblematic = status["autoProblematicExits"] as? List<String> ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val userSkipped = status["userSkippedExits"] as? List<String> ?: emptyList()
+        @Suppress("UNCHECKED_CAST")
+        val doors = status["exitDoors"] as? List<String> ?: emptyList()
+
+        api.echo("")
+        api.echo("Recovery: ${status["recoveryAction"]}")
+
+        api.echo("")
+        api.echo("Проблемные выходы (авто): ${autoProblematic.size}")
+        autoProblematic.forEach { api.echo("  $it") }
+
+        api.echo("Проблемные выходы (skip): ${userSkipped.size}")
+        userSkipped.forEach { api.echo("  $it") }
+
+        api.echo("Известные двери: ${doors.size}")
+        doors.forEach { api.echo("  $it") }
+
+        // Ищем ближайшую комнату с неисследованными выходами
+        api.echo("")
+        api.echo("Поиск неисследованных выходов...")
+
+        val result = api.findNearestMatching { room ->
+            val roomZoneCheck = room["zone"] as? String
+            val roomExits = room["exits"] as? Map<String, String> ?: emptyMap()
+
+            val hasUnexploredExits = roomExits.values.any { targetId ->
+                if (targetId.isEmpty()) {
+                    true
+                } else {
+                    val target = api.getRoom(targetId)
+                    target == null || target["visited"] != true
+                }
+            }
+
+            hasUnexploredExits && (roomZoneCheck == roomZone || assistantCore.explorationScope.value == ExplorationScope.WORLD)
+        }
+
+        if (result == null) {
+            api.echo("Результат: НЕ НАЙДЕНО комнат с неисследованными выходами")
+        } else {
+            val (foundRoom, path) = result
+            val foundName = foundRoom["name"] as? String ?: "?"
+            val foundId = foundRoom["id"] as? String ?: "?"
+            api.echo("Найдена: $foundName ($foundId)")
+            api.echo("Путь (${path.size} шагов): ${path.joinToString(" ")}")
+
+            val foundExits = foundRoom["exits"] as? Map<String, String> ?: emptyMap()
+            api.echo("Выходы найденной комнаты:")
+            foundExits.forEach { (dir, targetId) ->
+                if (targetId.isEmpty()) {
+                    api.echo("  $dir → ??? (неизвестно)")
+                } else {
+                    val target = api.getRoom(targetId)
+                    val targetVisited = target?.get("visited") as? Boolean ?: false
+                    val exitStatus = if (targetVisited) "✓" else "✗"
+                    api.echo("  $dir → $targetId [$exitStatus]")
+                }
+            }
+        }
+    }
+
     private fun showPromptRegex() {
         api.echo("=== Prompt Regex ===")
         if (config.promptRegex.isBlank()) {
@@ -575,7 +914,7 @@ class AIBotPlugin : PluginBase() {
         }
         api.echo("")
         api.echo("Именованные группы: hp, move, exp, level, gold, exits")
-        api.echo("Сбросить на дефолтный: #bot regex")
+        api.echo("Сбросить на дефолтный: #assistant regex")
     }
 
     private fun setPromptRegex(pattern: String) {
@@ -587,7 +926,7 @@ class AIBotPlugin : PluginBase() {
 
         try {
             val regex = Regex(effectivePattern)
-            botCore.promptDetector.setPromptPattern(regex)
+            assistantCore.promptDetector.setPromptPattern(regex)
             if (pattern.isBlank()) {
                 addLog("Regex сброшен на дефолтный")
             } else {
@@ -597,7 +936,7 @@ class AIBotPlugin : PluginBase() {
             addLog("Ошибка в regex: ${e.message}")
             // Пробуем дефолтный
             try {
-                botCore.promptDetector.setPromptPattern(Regex(DEFAULT_PROMPT_REGEX))
+                assistantCore.promptDetector.setPromptPattern(Regex(DEFAULT_PROMPT_REGEX))
                 addLog("Используется дефолтный regex")
             } catch (e2: Exception) {
                 addLog("ERROR: ${e2.message}")
@@ -615,7 +954,7 @@ class AIBotPlugin : PluginBase() {
 
         try {
             val regex = Regex(pattern)
-            botCore.promptDetector.setPromptPattern(regex)
+            assistantCore.promptDetector.setPromptPattern(regex)
 
             // Тестируем
             val testMatch = regex.find(testPrompt)
@@ -633,7 +972,7 @@ class AIBotPlugin : PluginBase() {
             addLog("ERROR: Невалидный regex: ${e.message}")
             // Пробуем дефолтный
             try {
-                botCore.promptDetector.setPromptPattern(Regex(DEFAULT_PROMPT_REGEX))
+                assistantCore.promptDetector.setPromptPattern(Regex(DEFAULT_PROMPT_REGEX))
                 addLog("Используется дефолтный regex (пользовательский невалиден)")
             } catch (e2: Exception) {
                 addLog("ERROR: ${e2.message}")
@@ -682,8 +1021,8 @@ class AIBotPlugin : PluginBase() {
                 val expNeeded = getExpNeededForLevel(lastLevel)
                 if (expNeeded > 0) {
                     val done = (expNeeded - remaining).coerceAtLeast(0)
-                    addLog("Exp: осталось $remaining, сделано $done/$expNeeded")
-                    api.updateStatusBar("exp", done.toInt(), expNeeded.toInt())
+                    addLog("Prompt exp: remain=$remaining, level=$lastLevel, expNeeded=$expNeeded → done=$done")
+                    updateExpBar(done.toInt(), expNeeded.toInt(), "prompt")
                 }
             } else if (remaining != null) {
                 // Уровень ещё не известен - просто показываем остаток
@@ -743,16 +1082,16 @@ class AIBotPlugin : PluginBase() {
             }
         }
 
-        // Если комната безопасная - добавляем тег на текущую комнату
+        // Если комната безопасная - добавляем свойство safe на текущую комнату
         if (score.isSafe) {
             val currentRoom = api.getCurrentRoom()
             val roomId = currentRoom?.get("id")?.toString()
             if (roomId != null) {
-                // Получаем текущие теги и добавляем "safe" если его нет
+                // Получаем текущие свойства и добавляем "safe" если его нет
                 @Suppress("UNCHECKED_CAST")
-                val existingTags = (currentRoom["tags"] as? List<String>) ?: emptyList()
-                if ("safe" !in existingTags) {
-                    api.setRoomTags(roomId, existingTags + "safe")
+                val existingProps = (currentRoom["properties"] as? Map<String, String>) ?: emptyMap()
+                if ("safe" !in existingProps) {
+                    api.setRoomProperty(roomId, "safe", "true")
                     addLog("Комната $roomId помечена как безопасная")
                 }
             }
@@ -792,7 +1131,7 @@ class AIBotPlugin : PluginBase() {
                 val expNeeded = getExpNeededForLevel(lastLevel)
                 if (expNeeded > 0) {
                     val done = (expNeeded - remaining).coerceAtLeast(0)
-                    api.updateStatusBar("exp", done.toInt(), expNeeded.toInt())
+                    updateExpBar(done.toInt(), expNeeded.toInt(), "счёт")
                 }
             }
         }
@@ -1195,10 +1534,270 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
         }
     }
 
+    // ============================================
+    // Аффекты и умения
+    // ============================================
+
+    /**
+     * Порядок категорий аффектов для сортировки.
+     */
+    private val affectCategoryOrder = mapOf(
+        AffectInfo.AffectCategory.DEBUFF to 0,    // Сначала дебаффы (важно видеть)
+        AffectInfo.AffectCategory.BUFF to 1,      // Потом баффы
+        AffectInfo.AffectCategory.SHIELD to 2,    // Щиты
+        AffectInfo.AffectCategory.COMBAT to 3,    // Боевые
+        AffectInfo.AffectCategory.VISION to 4,    // Зрение
+        AffectInfo.AffectCategory.MOVEMENT to 5,  // Движение
+        AffectInfo.AffectCategory.OTHER to 6      // Прочее в конце
+    )
+
+    /**
+     * Цвета фона для категорий аффектов (более контрастные).
+     */
+    private val affectCategoryColors = mapOf(
+        AffectInfo.AffectCategory.DEBUFF to "#B33030",    // Красный
+        AffectInfo.AffectCategory.BUFF to "#30A030",      // Зелёный
+        AffectInfo.AffectCategory.SHIELD to "#3060B0",    // Синий
+        AffectInfo.AffectCategory.COMBAT to "#B06030",    // Оранжевый
+        AffectInfo.AffectCategory.VISION to "#A0A030",    // Жёлтый
+        AffectInfo.AffectCategory.MOVEMENT to "#30A0A0",  // Голубой
+        AffectInfo.AffectCategory.OTHER to "#606060"      // Серый
+    )
+
+    /**
+     * Обновляет группу аффектов на панели статуса.
+     */
+    private fun updateAffectsGroup(affects: CharacterAffects) {
+        if (affects.isEmpty()) {
+            // Если нет аффектов, показываем пустую группу с сообщением
+            api.addStatusGroup("affects", "Аффекты", collapsed = false, order = 12) {
+                text("no_affects", "Нет активных аффектов", null, null, false, 0)
+            }
+            return
+        }
+
+        // Сортируем аффекты по категориям
+        val sortedAffects = affects.affects.sortedBy { affectName ->
+            val category = AffectInfo.getCategory(affectName)
+            affectCategoryOrder[category] ?: 99
+        }
+
+        api.addStatusGroup("affects", "Аффекты", collapsed = false, order = 12) {
+            sortedAffects.forEachIndexed { index, affectName ->
+                val description = AffectInfo.getDescriptionOrDefault(affectName)
+                val isDebuff = AffectInfo.isDebuff(affectName)
+                val category = AffectInfo.getCategory(affectName)
+                val background = affectCategoryColors[category] ?: "#606060"
+
+                text(
+                    id = "aff_$index",
+                    label = affectName,
+                    value = null,
+                    hint = description,
+                    bold = isDebuff,  // Дебаффы выделяем жирным
+                    order = index,
+                    background = background
+                )
+            }
+        }
+
+        addLog("Обновлена группа Аффекты: ${affects.affects.size} элементов")
+    }
+
+    /**
+     * Обновляет группу умений на панели статуса.
+     */
+    private fun updateSkillsGroup(skills: CharacterSkills) {
+        if (skills.isEmpty()) {
+            api.addStatusGroup("skills", "Умения", collapsed = true, order = 55) {
+                text("no_skills", "Нет умений", null, null, false, 0)
+            }
+            return
+        }
+
+        api.addStatusGroup("skills", "Умения", collapsed = true, order = 55) {
+            skills.skills.forEachIndexed { index, skill ->
+                val description = SkillInfo.getDescriptionOrDefault(skill.name)
+                val fullHint = buildString {
+                    append(description)
+                    append("\n\nУровень: ${skill.levelDesc}")
+                    append("\nПрогресс: ${skill.current}/${skill.max}")
+                    if (skill.hasCooldown) {
+                        append("\nОткат: ")
+                        when (skill.cooldown) {
+                            0 -> append("готово")
+                            else -> append("${skill.cooldown} ч.")
+                        }
+                    }
+                }
+
+                // Определяем статус отката для отображения
+                val cooldownStatus = when {
+                    !skill.hasCooldown -> ""
+                    skill.cooldown == 0 -> " [OK]"
+                    else -> " [${skill.cooldown}ч]"
+                }
+
+                modifiedValue(
+                    id = "skill_$index",
+                    label = "${skill.name}$cooldownStatus",
+                    value = skill.current,
+                    base = skill.max,
+                    modifier = null,
+                    hint = fullHint,
+                    order = index
+                )
+            }
+        }
+
+        addLog("Обновлена группа Умения: ${skills.skills.size} элементов")
+    }
+
+    /**
+     * Обновляет группу содержимого комнаты на панели статуса.
+     */
+    private fun updateRoomContentGroup(content: RoomContent) {
+        addLog("updateRoomContentGroup: ${content.mobs.size} mobs, ${content.objects.size} objects")
+
+        if (content.isEmpty()) {
+            api.removeStatus("room_content")
+            return
+        }
+
+        api.addStatusGroup("room_content", "В комнате", collapsed = false, order = 11) {
+            var index = 0
+
+            // Мобы (красный фон)
+            content.mobs.forEach { mob ->
+                text(
+                    id = "mob_$index",
+                    label = mob,
+                    value = null,
+                    color = null,
+                    bold = false,
+                    order = index,
+                    hint = "Моб",
+                    background = "#B33030"  // Красный как у дебаффов
+                )
+                index++
+            }
+
+            // Объекты (жёлтый фон)
+            content.objects.forEach { obj ->
+                text(
+                    id = "obj_$index",
+                    label = obj,
+                    value = null,
+                    color = null,
+                    bold = false,
+                    order = index,
+                    hint = "Предмет",
+                    background = "#A0A030"  // Жёлтый
+                )
+                index++
+            }
+        }
+    }
+
+    // ============================================
+    // Контекстное меню карты
+    // ============================================
+
+    private fun registerMapContextCommands() {
+        // Найти путь (подсветить на карте)
+        api.registerMapCommand("Найти путь") { roomData ->
+            val roomId = roomData["id"] as? String ?: return@registerMapCommand
+            val roomName = roomData["name"] as? String ?: roomId
+            val directions = api.findPath(roomId)
+            val roomIds = api.findPathRoomIds(roomId)
+            if (directions != null && directions.isNotEmpty() && roomIds != null) {
+                api.setPathHighlight(roomIds, roomId)
+                api.echo("[Путь] К '$roomName': ${directions.size} шагов")
+                api.echo("[Путь] Направления: ${directions.joinToString(" ")}")
+            } else {
+                api.echo("[Путь] Путь к '$roomName' не найден")
+            }
+        }
+
+        // Очистить путь
+        api.registerMapCommand("Очистить путь") { _ ->
+            api.clearPathHighlight()
+            api.echo("[Путь] Путь очищен")
+        }
+
+        // Speedwalk (автоматически пройти)
+        api.registerMapCommand("Speedwalk") { roomData ->
+            val roomId = roomData["id"] as? String ?: return@registerMapCommand
+            val roomName = roomData["name"] as? String ?: roomId
+            val directions = api.findPath(roomId)
+            val roomIds = api.findPathRoomIds(roomId)
+            if (directions != null && directions.isNotEmpty()) {
+                // Подсвечиваем путь (если roomIds доступны)
+                if (roomIds != null) {
+                    api.setPathHighlight(roomIds, roomId)
+                }
+                // Отправляем все команды направления
+                val speedwalk = directions.joinToString(";")
+                api.send(speedwalk)
+                api.echo("[Speedwalk] Иду к '$roomName': $speedwalk")
+            } else {
+                api.echo("[Speedwalk] Путь к '$roomName' не найден")
+            }
+        }
+
+        addLog("Зарегистрированы команды контекстного меню карты")
+    }
+
+    private fun unregisterMapContextCommands() {
+        api.unregisterMapCommand("Найти путь")
+        api.unregisterMapCommand("Очистить путь")
+        api.unregisterMapCommand("Speedwalk")
+    }
+
+    /**
+     * Подписка на изменения StateFlow из AssistantCore.
+     */
+    private fun subscribeToStateChanges() {
+        // Подписываемся на изменения аффектов
+        scope.launch {
+            assistantCore.affects.collectLatest { affects ->
+                if (affects != null) {
+                    updateAffectsGroup(affects)
+                }
+            }
+        }
+
+        // Подписываемся на изменения умений
+        scope.launch {
+            assistantCore.skills.collectLatest { skills ->
+                if (skills != null) {
+                    updateSkillsGroup(skills)
+                }
+            }
+        }
+
+        // Подписываемся на изменения содержимого комнаты
+        scope.launch {
+            assistantCore.roomContent.collectLatest { content ->
+                if (content != null) {
+                    updateRoomContentGroup(content)
+                }
+            }
+        }
+    }
+
+    /**
+     * Обработка события "Минул час."
+     */
+    private fun handleHourPassed() {
+        addLog("Событие: Минул час.")
+        // Можно добавить дополнительную логику, например автоматическое выполнение команд
+    }
+
     private fun subscribeToEvents() {
-        // Обработка входящих строк (используем line без ANSI-кодов)
+        // Обработка входящих строк (передаём обе версии - stripped и raw)
         api.subscribe(LineReceivedEvent::class.java, EventPriority.NORMAL) { event ->
-            botCore.processLine(event.line, event.timestamp)
+            assistantCore.processLine(event.line, event.rawLine, event.timestamp)
         }
 
         // Подключение к серверу - проверяем MSDP с задержкой (после telnet-переговоров)
@@ -1232,15 +1831,27 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
 
     private fun showHelp() {
         api.echo("""
-            === AI Bot Help ===
-            #bot status           - Показать статус
-            #bot msdp             - Показать MSDP статус
-            #bot regex            - Показать текущий regex промпта
-            #bot regex <pattern>  - Установить regex для парсинга промпта
-            #bot help             - Эта справка
-
-            Пример regex: ^(?<hp>\d+)H (?<moves>\d+)M (?<gold>\d+)G (?<exits>\S+)>$
-            Именованные группы сохраняются в переменные _prompt_<name>
+            === Ассистент - Справка ===
+            #assistant status           - Показать статус
+            #assistant start            - Запустить (IDLE→INTROSPECTION→EXPLORATION)
+            #assistant stop             - Остановить
+            #assistant skip             - Пропустить последний неудачный выход и продолжить
+            #assistant skip <направл.>  - Пропустить выход в указанном направлении
+            #assistant mode             - Показать режим исследования
+            #assistant mode zone        - Исследовать только текущую зону
+            #assistant mode world       - Исследовать весь мир
+            #assistant stayzone         - Показать режим границ зоны
+            #assistant stayzone on/off  - Не выходить за границы зоны / разрешить с возвратом
+            #assistant state            - Показать состояние FSM
+            #assistant state <STATE>    - Перейти в состояние (IDLE, INTROSPECTION, EXPLORATION, COMBAT)
+            #assistant msdp             - Показать MSDP статус
+            #assistant regex            - Показать текущий regex промпта
+            #assistant regex <pattern>  - Установить regex для парсинга промпта
+            #assistant llm              - LLM статус
+            #assistant llm connect      - Подключить LLM (Ollama)
+            #assistant llm disconnect   - Отключить LLM
+            #assistant debug            - Отладочная информация
+            #assistant help             - Эта справка
         """.trimIndent())
     }
 
@@ -1256,7 +1867,7 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
         api.appendToOutputTab("logs", formatted)
     }
 
-    private fun createBotTab() {
+    private fun createAssistantTab() {
         tab = api.createTab("main", "Ассистент")
         logger.info("Plugin tab created: ${tab?.id}")
         updateTabUI()
@@ -1265,7 +1876,7 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
     private fun startPromptDetectionLoop() {
         scope.launch {
             while (isActive) {
-                botCore.checkPromptTimeout(System.currentTimeMillis())
+                assistantCore.checkPromptTimeout(System.currentTimeMillis())
                 delay(100)
             }
         }
@@ -1273,7 +1884,7 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
 
     private fun updateTabUI() {
         val currentTab = tab ?: return
-        val recentPrompts = botCore.promptDetector.getRecentPrompts(5)
+        val recentPrompts = assistantCore.promptDetector.getRecentPrompts(5)
 
         currentTab.content.value = PluginUINode.Scrollable(
             child = PluginUINode.Column(
@@ -1330,7 +1941,7 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
  * Конфигурация плагина
  */
 @Serializable
-data class AIBotConfig(
+data class AssistantConfig(
     var verboseLogging: Boolean = false,
     // Regex для парсинга промпта (используй именованные группы: (?<hp>\d+) и т.д.)
     var promptRegex: String = "",

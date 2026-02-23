@@ -18,7 +18,7 @@ data class Room(
     val notes: String = "",
     val color: String? = null,
     val visited: Boolean = false,
-    val tags: Set<String> = emptySet()  // Теги для группировки комнат (магазины, тренеры, квесты и т.д.)
+    val properties: Map<String, String> = emptyMap()  // Свойства комнаты (key-value, например: safe=true, shop=зелья)
 ) {
     /**
      * Добавляет выход в указанном направлении
@@ -107,7 +107,7 @@ data class Room(
             "notes" to notes,
             "color" to (color ?: ""),
             "visited" to visited,
-            "tags" to tags.toList()
+            "properties" to properties
         )
     }
 }
