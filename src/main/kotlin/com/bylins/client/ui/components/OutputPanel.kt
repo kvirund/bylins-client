@@ -127,16 +127,20 @@ fun OutputPanel(
 
             val splitFraction by clientState.outputSplitFraction.collectAsState()
 
-            com.bylins.client.ui.components.output.ScrollbackOutputView(
-                snapshot = snapshot,
-                holder = holder,
-                splitFraction = splitFraction,
-                onSplitFractionChange = { clientState.setOutputSplitFraction(it) },
-                fontFamily = fontFamily,
-                fontSize = fontSize,
-                emptyPlaceholder = placeholder,
-                modifier = Modifier.fillMaxSize()
-            )
+            // key по id вкладки: при переключении внутренних вкладок создаётся свежее
+            // поддерево (иначе переиспользование по тому же месту показывало старую вкладку)
+            key(activeTab.id) {
+                com.bylins.client.ui.components.output.ScrollbackOutputView(
+                    snapshot = snapshot,
+                    holder = holder,
+                    splitFraction = splitFraction,
+                    onSplitFractionChange = { clientState.setOutputSplitFraction(it) },
+                    fontFamily = fontFamily,
+                    fontSize = fontSize,
+                    emptyPlaceholder = placeholder,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 

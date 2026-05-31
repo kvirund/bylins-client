@@ -3,6 +3,7 @@ package com.bylins.client.ui.components.output
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -88,12 +89,18 @@ internal fun lastLines(text: String, maxLines: Int): String {
 @androidx.compose.runtime.Composable
 internal fun OutputCanvas(
     layout: TextLayoutResult,
-    scrollPx: Float,
-    selectionPath: Path?,
+    scrollProvider: () -> Float,
     selectionColor: Color,
+    revisionState: State<Int>,
+    selectionPathProvider: () -> Path?,
     modifier: Modifier
 ) {
     Canvas(modifier) {
+        // Скролл и ревизию выделения читаем в фазе draw — Canvas перерисуется при
+        // их изменении даже без рекомпозиции (надёжно на любой вкладке).
+        revisionState.value
+        val scrollPx = scrollProvider()
+        val selectionPath = selectionPathProvider()
         clipRect {
             translate(top = -scrollPx) {
                 if (selectionPath != null) {
@@ -117,7 +124,7 @@ internal fun OutputCanvas(
  */
 @androidx.compose.runtime.Composable
 internal fun OutputScrollbar(
-    scrollPx: Float,
+    scrollProvider: () -> Float,
     maxScroll: Float,
     viewportPx: Float,
     contentHeightPx: Float,
@@ -126,7 +133,6 @@ internal fun OutputScrollbar(
 ) {
     if (contentHeightPx <= viewportPx + 1f) return
 
-    val scrollRef = rememberUpdatedState(scrollPx)
     val maxRef = rememberUpdatedState(maxScroll)
     val viewportRef = rememberUpdatedState(viewportPx)
     val contentRef = rememberUpdatedState(contentHeightPx)
@@ -138,12 +144,14 @@ internal fun OutputScrollbar(
                 val track = size.height.toFloat()
                 val thumb = (track * viewportRef.value / contentRef.value).coerceIn(30f, track)
                 val denom = (track - thumb).coerceAtLeast(1f)
-                onScrollTo(scrollRef.value + dragAmount / denom * maxRef.value)
+                // База — живой скролл (читаем провайдер), чтобы ползунок шёл за мышью 1:1
+                onScrollTo(scrollProvider() + dragAmount / denom * maxRef.value)
             }
         }
     ) {
         val track = size.height
         val thumb = (track * viewportPx / contentHeightPx).coerceIn(30f, track)
+        val scrollPx = scrollProvider() // читаем в фазе draw — ползунок двигается без рекомпозиции
         val thumbY = if (maxScroll > 0f) (scrollPx / maxScroll) * (track - thumb) else 0f
         val width = 8f
         drawRoundRect(

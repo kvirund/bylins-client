@@ -1,5 +1,6 @@
 package com.bylins.client.ui.components.output
 
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.TextLayoutResult
 import com.bylins.client.ui.scroll.OutputScrollController
@@ -42,6 +43,8 @@ class OutputViewHolder {
     // т.к. сама OutputSelection — не snapshot-state.
     private val _selectionRevision = mutableStateOf(0)
     val selectionRevision: Int get() = _selectionRevision.value
+    // Состояние для чтения в фазе отрисовки Canvas (перерисовка без рекомпозиции)
+    val selectionRevisionState: State<Int> get() = _selectionRevision
     fun bumpSelection() { _selectionRevision.value++ }
 
     // Наблюдаемое зеркало controller.isSplit (controller — чистый, не snapshot-state).
