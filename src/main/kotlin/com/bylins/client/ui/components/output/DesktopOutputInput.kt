@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,9 +53,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.bylins.client.ui.AnsiParser
 import com.bylins.client.ui.scroll.BufferGeometry
 import com.bylins.client.ui.scroll.ContentSnapshot
@@ -118,9 +121,6 @@ fun ScrollbackOutputView(
         )
     }
     val lineHeightPx = with(density) { (fontSize + 4).sp.toPx() }
-    val dividerPx = with(density) { DIVIDER_HEIGHT.toPx() }
-
-    val split = holder.split && !isEmpty
 
     val scrollbarStrip = 12.dp
     val scrollbarStripPx = with(density) { scrollbarStrip.toPx() }
@@ -151,29 +151,33 @@ fun ScrollbackOutputView(
             holder.lastLayout = layout
             val contentHeight = layout.size.height.toFloat()
 
-            // Высоты панелей считаем из доли (разделитель фиксирован) — без лага измерения
-            val available = (fullViewportPx - dividerPx).coerceAtLeast(0f)
-            val bottomPaneHeightPx = if (split) available * splitFraction else 0f
-            val topPaneHeightPx = if (split) available - bottomPaneHeightPx else fullViewportPx
-            val activeViewportPx = if (split) topPaneHeightPx else fullViewportPx
-            val maxScrollActive = maxScrollOf(contentHeight, activeViewportPx)
+            // Всегда две стыкующиеся панели: верх (скроллбэк) + низ (живой хвост).
+            // Сумма высот = вьюпорт (разделитель — лишь линия-оверлей, места не занимает).
+            val bottomPaneHeightPx = fullViewportPx * splitFraction
+            val topPaneHeightPx = fullViewportPx - bottomPaneHeightPx
+            // Живой хвост всегда прижат к концу лога
             val bottomScrollPx = maxScrollOf(contentHeight, bottomPaneHeightPx)
+            // Максимум скролла скроллбэка = обычный (как у одного окна). На нём низ верхней
+            // панели стыкуется с верхом хвоста → виды непрерывны (выглядит как одно окно).
+            val maxScroll = maxScrollOf(contentHeight, fullViewportPx)
 
             // Применяем целевую позицию скроллбэка при изменении контента/режима/размеров.
             // Во время выделения мышью автоскролл заморожен, чтобы заякоренное
             // выделение не уезжало за экран при приходе нового текста.
-            LaunchedEffect(snapshot, layout, fullViewportPx, split, splitFraction) {
+            LaunchedEffect(snapshot, layout, fullViewportPx, splitFraction) {
                 if (holder.isSelecting) return@LaunchedEffect
-                val ms = maxScrollOf(contentHeight, activeViewportPx)
                 when (val target = controller.onContentChanged(geometry)) {
-                    ScrollTarget.Bottom -> holder.scrollbackScrollPx = ms
+                    ScrollTarget.Bottom -> holder.scrollbackScrollPx = maxScroll
                     is ScrollTarget.ToLine -> holder.scrollbackScrollPx =
-                        seqToTopPx(layout, plainText, effectiveFirstSeq, target.seq).coerceIn(0f, ms)
+                        seqToTopPx(layout, plainText, effectiveFirstSeq, target.seq).coerceIn(0f, maxScroll)
                     ScrollTarget.None -> {}
                 }
             }
 
-            val scrollbackPx = holder.scrollbackScrollPx.coerceIn(0f, maxScrollActive)
+            val scrollbackPx = holder.scrollbackScrollPx.coerceIn(0f, maxScroll)
+            // Раздвоение (видимость разделителя) выводим прямо из позиции скролла:
+            // скроллбэк не у самого низа ⇒ есть разрыв с живым хвостом.
+            val split = !isEmpty && scrollbackPx < maxScroll - lineHeightPx
 
             // Путь подсветки вычисляется в фазе draw (через провайдер), чтобы
             // перерисовываться при каждом изменении выделения без рекомпозиции.
@@ -183,27 +187,26 @@ fun ScrollbackOutputView(
                     ?.let { r -> layout.getPathForRange(r.first, r.last + 1) }
             }
             val revisionState = holder.selectionRevisionState
-            // Провайдер позиции скроллбэка — читается в фазе draw (надёжная перерисовка)
-            val scrollbackProvider: () -> Float = { holder.scrollbackScrollPx.coerceIn(0f, maxScrollActive) }
+            // Провайдер позиции скроллбэка (верхняя панель) — читается в фазе draw
+            val scrollbackProvider: () -> Float = { holder.scrollbackScrollPx.coerceIn(0f, maxScroll) }
 
             // --- Действия (пересоздаются каждую рекомпозицию, видят актуальные значения) ---
             val userScrollTo: (Float) -> Unit = { target ->
-                val clamped = target.coerceIn(0f, maxScrollActive)
-                holder.scrollbackScrollPx = clamped
-                val atBottom = clamped >= maxScrollActive - lineHeightPx
+                val clamped = target.coerceIn(0f, maxScroll)
+                // У самого низа защёлкиваем точно в конец (чтобы виды были непрерывны)
+                val atBottom = clamped >= maxScroll - lineHeightPx
+                holder.scrollbackScrollPx = if (atBottom) maxScroll else clamped
                 controller.onUserScroll(atBottom, topSeqAt(layout, plainText, effectiveFirstSeq, clamped))
-                holder.syncSplit()
             }
             val collapse: () -> Unit = {
                 controller.jumpToBottom()
-                holder.syncSplit()
-                holder.scrollbackScrollPx = maxScrollOf(contentHeight, fullViewportPx)
+                holder.scrollbackScrollPx = maxScroll
             }
             // Указатель -> точка выделения (с учётом того, в какой панели курсор)
             val pointToSel: (Offset) -> com.bylins.client.ui.scroll.SelPoint = { pos ->
-                val inBottom = split && pos.y >= topPaneHeightPx + dividerPx
+                val inBottom = split && pos.y >= topPaneHeightPx
                 val contentY = if (inBottom) {
-                    (pos.y - topPaneHeightPx - dividerPx) + bottomScrollPx
+                    (pos.y - topPaneHeightPx) + bottomScrollPx
                 } else {
                     pos.y + scrollbackPx
                 }
@@ -222,12 +225,12 @@ fun ScrollbackOutputView(
                         selection.selectAll(effectiveFirstSeq, geometry.lineCount); holder.bumpSelection(); true
                     }
                     event.isCtrlPressed && (event.key == Key.C || event.key == Key.Insert) -> { copySelection(); true }
-                    event.key == Key.PageDown -> { userScrollTo(scrollbackPx + activeViewportPx); true }
-                    event.key == Key.PageUp -> { userScrollTo(scrollbackPx - activeViewportPx); true }
+                    event.key == Key.PageDown -> { userScrollTo(scrollbackPx + topPaneHeightPx); true }
+                    event.key == Key.PageUp -> { userScrollTo(scrollbackPx - topPaneHeightPx); true }
                     event.key == Key.DirectionDown -> { userScrollTo(scrollbackPx + lineHeightPx); true }
                     event.key == Key.DirectionUp -> { userScrollTo(scrollbackPx - lineHeightPx); true }
                     event.key == Key.MoveHome -> { userScrollTo(0f); true }
-                    event.key == Key.MoveEnd -> { userScrollTo(maxScrollActive); true }
+                    event.key == Key.MoveEnd -> { userScrollTo(maxScroll); true }
                     else -> false
                 }
             }
@@ -236,12 +239,12 @@ fun ScrollbackOutputView(
             val pointToSelRef by rememberUpdatedState(pointToSel)
             val userScrollToRef by rememberUpdatedState(userScrollTo)
             val scrollbackRef by rememberUpdatedState(scrollbackPx)
-            val activeViewportRef by rememberUpdatedState(activeViewportPx)
+            val topPaneHeightRef by rememberUpdatedState(topPaneHeightPx)
             val isEmptyRef by rememberUpdatedState(isEmpty)
             // Актуальные значения для долгоживущего drag разделителя (иначе захватится
             // устаревшая доля и разделитель «дёргается», а не двигается)
             val splitFractionRef by rememberUpdatedState(splitFraction)
-            val dividerAvailRef by rememberUpdatedState(available.coerceAtLeast(1f))
+            val fullViewportRef by rememberUpdatedState(fullViewportPx.coerceAtLeast(1f))
 
             // Область контента + ввод (колесо/клавиши/drag), сужена под полосу скроллбара.
             // Скроллбар — отдельный сосед справа (вне этой области), чтобы его перетаскивание
@@ -286,7 +289,7 @@ fun ScrollbackOutputView(
                                         val pos = change.position
                                         val edge = lineHeightPx
                                         if (pos.y < edge) userScrollToRef(scrollbackRef - lineHeightPx)
-                                        else if (pos.y < activeViewportRef && pos.y > activeViewportRef - edge)
+                                        else if (pos.y < topPaneHeightRef && pos.y > topPaneHeightRef - edge)
                                             userScrollToRef(scrollbackRef + lineHeightPx)
                                         selection.extendTo(pointToSelRef(pos))
                                         holder.bumpSelection()
@@ -298,6 +301,7 @@ fun ScrollbackOutputView(
                     }
             ) {
                 if (split) {
+                    // Две стыкующиеся панели: верх (скроллбэк) + низ (живой хвост у конца).
                     Column(Modifier.fillMaxSize()) {
                         OutputCanvas(
                             layout = layout,
@@ -305,20 +309,7 @@ fun ScrollbackOutputView(
                             selectionColor = SELECTION_COLOR,
                             revisionState = revisionState,
                             selectionPathProvider = selectionPathProvider,
-                            modifier = Modifier.fillMaxWidth().height(with(density) { topPaneHeightPx.toDp() })
-                        )
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(DIVIDER_HEIGHT)
-                                .background(DIVIDER_COLOR)
-                                .pointerHoverIcon(PointerIcon.Default)
-                                .pointerInput(Unit) {
-                                    detectVerticalDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        onSplitFractionChange(splitFractionRef - dragAmount / dividerAvailRef)
-                                    }
-                                }
+                            modifier = Modifier.fillMaxWidth().weight(1f - splitFraction)
                         )
                         OutputCanvas(
                             layout = layout,
@@ -326,10 +317,27 @@ fun ScrollbackOutputView(
                             selectionColor = SELECTION_COLOR,
                             revisionState = revisionState,
                             selectionPathProvider = selectionPathProvider,
-                            modifier = Modifier.fillMaxWidth().height(with(density) { bottomPaneHeightPx.toDp() })
+                            modifier = Modifier.fillMaxWidth().weight(splitFraction)
                         )
                     }
+                    // Разделитель — линия-оверлей на границе панелей (с ручкой перетаскивания)
+                    val dividerHalf = with(density) { DIVIDER_HEIGHT.toPx() } / 2f
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(DIVIDER_HEIGHT)
+                            .offset { IntOffset(0, (topPaneHeightPx - dividerHalf).roundToInt()) }
+                            .background(DIVIDER_COLOR)
+                            .pointerHoverIcon(PointerIcon.Default)
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    onSplitFractionChange(splitFractionRef - dragAmount / fullViewportRef)
+                                }
+                            }
+                    )
                 } else {
+                    // Одно окно: скроллбэк внизу непрерывен с хвостом — показываем как единый вид.
                     OutputCanvas(
                         layout = layout,
                         scrollProvider = scrollbackProvider,
@@ -344,7 +352,7 @@ fun ScrollbackOutputView(
             // Единый интерактивный скроллбар (сосед области контента — не перехватывает выделение)
             OutputScrollbar(
                 scrollProvider = scrollbackProvider,
-                maxScroll = maxScrollActive,
+                maxScroll = maxScroll,
                 viewportPx = fullViewportPx,
                 contentHeightPx = contentHeight,
                 onScrollTo = userScrollTo,

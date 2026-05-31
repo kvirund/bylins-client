@@ -1,7 +1,8 @@
 package com.bylins.client.ui.components.output
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberUpdatedState
@@ -139,13 +140,25 @@ internal fun OutputScrollbar(
 
     Canvas(
         modifier.pointerInput(Unit) {
-            detectVerticalDragGestures { change, dragAmount ->
-                change.consume()
+            // Тащим ползунок по АБСОЛЮТНОЙ позиции указателя (с учётом точки захвата) —
+            // ползунок точно следует за мышью, без накопления дельт и скачков.
+            awaitEachGesture {
+                val down = awaitFirstDown()
                 val track = size.height.toFloat()
                 val thumb = (track * viewportRef.value / contentRef.value).coerceIn(30f, track)
                 val denom = (track - thumb).coerceAtLeast(1f)
-                // База — живой скролл (читаем провайдер), чтобы ползунок шёл за мышью 1:1
-                onScrollTo(scrollProvider() + dragAmount / denom * maxRef.value)
+                val curThumbY = if (maxRef.value > 0f) (scrollProvider() / maxRef.value) * denom else 0f
+                // Смещение точки захвата внутри ползунка (если кликнули мимо — по центру)
+                val grab = (down.position.y - curThumbY).let { if (it in 0f..thumb) it else thumb / 2f }
+                down.consume()
+                while (true) {
+                    val ev = awaitPointerEvent()
+                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!ch.pressed) break
+                    val targetThumbY = (ch.position.y - grab).coerceIn(0f, denom)
+                    onScrollTo(targetThumbY / denom * maxRef.value)
+                    ch.consume()
+                }
             }
         }
     ) {
