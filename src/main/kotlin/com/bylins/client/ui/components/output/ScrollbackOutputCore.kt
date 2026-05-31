@@ -2,7 +2,9 @@ package com.bylins.client.ui.components.output
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -85,7 +87,9 @@ internal fun OutputCanvas(
     scrollPx: Float,
     selectionPath: Path?,
     selectionColor: Color,
-    modifier: Modifier
+    modifier: Modifier,
+    showScrollbar: Boolean = false,
+    scrollbarColor: Color = Color(0x88888888)
 ) {
     Canvas(modifier) {
         clipRect {
@@ -94,6 +98,24 @@ internal fun OutputCanvas(
                     drawPath(selectionPath, color = selectionColor)
                 }
                 drawText(layout)
+            }
+        }
+
+        if (showScrollbar) {
+            val viewport = size.height
+            val content = layout.size.height.toFloat()
+            if (content > viewport + 1f) {
+                val maxScroll = content - viewport
+                val width = 8f
+                val minThumb = 30f
+                val thumb = (viewport * viewport / content).coerceIn(minThumb, viewport)
+                val thumbY = if (maxScroll > 0f) (scrollPx / maxScroll) * (viewport - thumb) else 0f
+                drawRoundRect(
+                    color = scrollbarColor,
+                    topLeft = Offset(size.width - width - 2f, thumbY.coerceIn(0f, viewport - thumb)),
+                    size = Size(width, thumb),
+                    cornerRadius = CornerRadius(width / 2f, width / 2f)
+                )
             }
         }
     }

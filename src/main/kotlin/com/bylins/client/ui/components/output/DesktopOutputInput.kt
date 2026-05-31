@@ -12,11 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -207,6 +211,10 @@ fun ScrollbackOutputView(
             val scrollbackRef by rememberUpdatedState(scrollbackPx)
             val activeViewportRef by rememberUpdatedState(activeViewportPx)
             val isEmptyRef by rememberUpdatedState(isEmpty)
+            // Актуальные значения для долгоживущего drag разделителя (иначе захватится
+            // устаревшая доля и разделитель «дёргается», а не двигается)
+            val splitFractionRef by rememberUpdatedState(splitFraction)
+            val dividerAvailRef by rememberUpdatedState(available.coerceAtLeast(1f))
 
             // --- Корневой контейнер: ввод (колесо/клавиши/drag) на нём, панели — дети ---
             Box(
@@ -218,6 +226,16 @@ fun ScrollbackOutputView(
                     .onPointerEvent(PointerEventType.Scroll) { event ->
                         val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
                         if (dy != 0f) userScrollTo(scrollbackPx + dy * lineHeightPx * 3f)
+                    }
+                    .pointerInput(Unit) {
+                        // Одиночный клик без перетаскивания сбрасывает выделение
+                        detectTapGestures(onTap = {
+                            focusRequester.requestFocus()
+                            if (!selection.isEmpty) {
+                                selection.clear()
+                                holder.bumpSelection()
+                            }
+                        })
                     }
                     .pointerInput(Unit) {
                         detectDragGestures(
@@ -247,7 +265,8 @@ fun ScrollbackOutputView(
                             scrollPx = scrollbackPx,
                             selectionPath = selectionPath,
                             selectionColor = SELECTION_COLOR,
-                            modifier = Modifier.fillMaxWidth().height(with(density) { topPaneHeightPx.toDp() })
+                            modifier = Modifier.fillMaxWidth().height(with(density) { topPaneHeightPx.toDp() }),
+                            showScrollbar = true
                         )
                         Box(
                             Modifier
@@ -256,13 +275,10 @@ fun ScrollbackOutputView(
                                 .background(DIVIDER_COLOR)
                                 .pointerHoverIcon(PointerIcon.Default)
                                 .pointerInput(Unit) {
-                                    detectVerticalDragGestures { _, dragAmount ->
-                                        val avail = (fullViewportPx - dividerPx).coerceAtLeast(1f)
-                                        onSplitFractionChange(splitFraction - dragAmount / avail)
+                                    detectVerticalDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        onSplitFractionChange(splitFractionRef - dragAmount / dividerAvailRef)
                                     }
-                                }
-                                .pointerInput(Unit) {
-                                    detectTapGestures(onDoubleTap = { collapse() })
                                 }
                         )
                         OutputCanvas(
@@ -273,13 +289,31 @@ fun ScrollbackOutputView(
                             modifier = Modifier.fillMaxWidth().height(with(density) { bottomPaneHeightPx.toDp() })
                         )
                     }
+
+                    // Кнопка возврата в одно-панельный режим одним кликом
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp)
+                            .size(30.dp)
+                            .background(Color(0xCC2E2E2E), CircleShape)
+                            .pointerHoverIcon(PointerIcon.Hand)
+                            .pointerInput(Unit) { detectTapGestures(onTap = { collapse() }) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText(
+                            text = "▼",
+                            style = TextStyle(color = Color.White, fontSize = 14.sp)
+                        )
+                    }
                 } else {
                     OutputCanvas(
                         layout = layout,
                         scrollPx = scrollbackPx,
                         selectionPath = selectionPath,
                         selectionColor = SELECTION_COLOR,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        showScrollbar = true
                     )
                 }
             }
