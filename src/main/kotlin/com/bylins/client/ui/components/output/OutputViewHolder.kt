@@ -34,6 +34,9 @@ class OutputViewHolder {
     // Обычный var — используется императивно, не должен триггерить рекомпозицию.
     var lastLayout: TextLayoutResult? = null
 
-    // Отличает программный скролл от пользовательского при детекте onUserScroll
-    var programmaticGuard = false
+    // Ревизия выделения: инкремент заставляет панель перерисовать подсветку,
+    // т.к. сама OutputSelection — не snapshot-state.
+    private val _selectionRevision = mutableStateOf(0)
+    val selectionRevision: Int get() = _selectionRevision.value
+    fun bumpSelection() { _selectionRevision.value++ }
 }

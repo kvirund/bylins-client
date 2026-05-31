@@ -283,6 +283,8 @@ class ClientState {
 
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
     val receivedData: StateFlow<String> = telnetClient.receivedData
+    // Снимок главной вкладки с абсолютной нумерацией строк (для панели вывода)
+    val mainOutputSnapshot = telnetClient.snapshot
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage
