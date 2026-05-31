@@ -2,6 +2,7 @@ package com.bylins.client.network
 
 import mu.KotlinLogging
 import com.bylins.client.ClientState
+import com.bylins.client.ui.scroll.ContentSnapshot
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,18 @@ class TelnetClient(
 
     private val _receivedData = MutableStateFlow("")
     val receivedData: StateFlow<String> = _receivedData
+
+    // Снимок с абсолютной нумерацией строк (для логики автоскролла/выделения).
+    // firstSeq = seq первой строки текущего буфера; растёт при обрезке сверху.
+    private val _snapshot = MutableStateFlow(ContentSnapshot.EMPTY)
+    val snapshot: StateFlow<ContentSnapshot> = _snapshot
+    private var firstSeq: Long = 0L
+
+    /** Согласованно публикует текст буфера и его снимок. */
+    private fun setReceived(text: String) {
+        _receivedData.value = text
+        _snapshot.value = ContentSnapshot(text, firstSeq, ContentSnapshot.countLines(text))
+    }
 
     private val telnetParser = TelnetParser(encoding)
     private val msdpParser = MsdpParser()
@@ -135,7 +148,7 @@ class TelnetClient(
         if (incompleteLine.isNotEmpty()) {
             // Вставляем перед незавершённой строкой
             val bufferComplete = if (lastNewlineIndex == -1) "" else currentValue.substring(0, lastNewlineIndex + 1)
-            _receivedData.value = bufferComplete + text + "\n" + incompleteLine
+            setReceived(bufferComplete + text + "\n" + incompleteLine)
         } else {
             appendToBuffer(text + "\n")
         }
@@ -169,7 +182,7 @@ class TelnetClient(
             }
 
             // Добавляем наш текст + промпт
-            _receivedData.value = bufferWithoutPrompt + text + "\n" + possiblePrompt
+            setReceived(bufferWithoutPrompt + text + "\n" + possiblePrompt)
         } else {
             // Нет промпта, просто добавляем текст
             appendToBuffer(text + "\n")
@@ -192,15 +205,18 @@ class TelnetClient(
             // Ищем ближайший перенос строки после позиции обрезки
             val nextNewline = currentValue.indexOf('\n', cutPosition.coerceAtLeast(0))
 
-            val truncatedValue = if (nextNewline != -1) {
-                currentValue.substring(nextNewline + 1)
-            } else {
-                currentValue.substring(cutPosition.coerceAtLeast(0))
-            }
+            val removedEnd = if (nextNewline != -1) nextNewline + 1 else cutPosition.coerceAtLeast(0)
+            val truncatedValue = currentValue.substring(removedEnd)
 
-            _receivedData.value = "\u001B[1;33m[Buffer cleared]\u001B[0m\n" + truncatedValue + text
+            // Сколько логических строк удалено сверху. Строка-сентинел [Buffer cleared]
+            // добавляется обратно как одна строка, поэтому seq сдвигается на (removed - 1),
+            // чтобы сохранившиеся строки сохранили свой абсолютный seq.
+            val removedLines = currentValue.substring(0, removedEnd).count { it == '\n' }
+            firstSeq += (removedLines - 1).coerceAtLeast(0)
+
+            setReceived("\u001B[1;33m[Buffer cleared]\u001B[0m\n" + truncatedValue + text)
         } else {
-            _receivedData.value = currentValue + text
+            setReceived(currentValue + text)
         }
     }
 
