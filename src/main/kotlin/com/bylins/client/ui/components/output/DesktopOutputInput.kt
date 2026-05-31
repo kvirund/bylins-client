@@ -8,11 +8,13 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -117,7 +119,9 @@ fun ScrollbackOutputView(
 
     Box(modifier.background(Color.Black).padding(8.dp)) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
+            val scrollbarStrip = 12.dp
+            val scrollbarStripPx = with(density) { scrollbarStrip.toPx() }
+            val widthPx = (with(density) { maxWidth.toPx() } - scrollbarStripPx).toInt().coerceAtLeast(1)
             val fullViewportPx = with(density) { maxHeight.toPx() }
 
             val layout = remember(annotated, widthPx, style) {
@@ -258,43 +262,65 @@ fun ScrollbackOutputView(
                         )
                     }
             ) {
-                if (split) {
-                    Column(Modifier.fillMaxSize()) {
+                // Контент панелей, сужен под полосу скроллбара справа
+                Box(Modifier.fillMaxSize().padding(end = scrollbarStrip)) {
+                    if (split) {
+                        Column(Modifier.fillMaxSize()) {
+                            OutputCanvas(
+                                layout = layout,
+                                scrollPx = scrollbackPx,
+                                selectionPath = selectionPath,
+                                selectionColor = SELECTION_COLOR,
+                                modifier = Modifier.fillMaxWidth().height(with(density) { topPaneHeightPx.toDp() })
+                            )
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(DIVIDER_HEIGHT)
+                                    .background(DIVIDER_COLOR)
+                                    .pointerHoverIcon(PointerIcon.Default)
+                                    .pointerInput(Unit) {
+                                        detectVerticalDragGestures { change, dragAmount ->
+                                            change.consume()
+                                            onSplitFractionChange(splitFractionRef - dragAmount / dividerAvailRef)
+                                        }
+                                    }
+                            )
+                            OutputCanvas(
+                                layout = layout,
+                                scrollPx = bottomScrollPx,
+                                selectionPath = selectionPath,
+                                selectionColor = SELECTION_COLOR,
+                                modifier = Modifier.fillMaxWidth().height(with(density) { bottomPaneHeightPx.toDp() })
+                            )
+                        }
+                    } else {
                         OutputCanvas(
                             layout = layout,
                             scrollPx = scrollbackPx,
                             selectionPath = selectionPath,
                             selectionColor = SELECTION_COLOR,
-                            modifier = Modifier.fillMaxWidth().height(with(density) { topPaneHeightPx.toDp() }),
-                            showScrollbar = true
-                        )
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(DIVIDER_HEIGHT)
-                                .background(DIVIDER_COLOR)
-                                .pointerHoverIcon(PointerIcon.Default)
-                                .pointerInput(Unit) {
-                                    detectVerticalDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        onSplitFractionChange(splitFractionRef - dragAmount / dividerAvailRef)
-                                    }
-                                }
-                        )
-                        OutputCanvas(
-                            layout = layout,
-                            scrollPx = bottomScrollPx,
-                            selectionPath = selectionPath,
-                            selectionColor = SELECTION_COLOR,
-                            modifier = Modifier.fillMaxWidth().height(with(density) { bottomPaneHeightPx.toDp() })
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
+                }
 
-                    // Кнопка возврата в одно-панельный режим одним кликом
+                // Единый интерактивный скроллбар на всю высоту (общий для обеих панелей)
+                OutputScrollbar(
+                    scrollPx = scrollbackPx,
+                    maxScroll = maxScrollActive,
+                    viewportPx = activeViewportPx,
+                    contentHeightPx = contentHeight,
+                    onScrollTo = userScrollTo,
+                    modifier = Modifier.align(Alignment.CenterEnd).width(scrollbarStrip).fillMaxHeight()
+                )
+
+                // Кнопка возврата в одно-панельный режим одним кликом (левее скроллбара)
+                if (split) {
                     Box(
                         Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(12.dp)
+                            .padding(end = scrollbarStrip + 4.dp, bottom = 12.dp)
                             .size(30.dp)
                             .background(Color(0xCC2E2E2E), CircleShape)
                             .pointerHoverIcon(PointerIcon.Hand)
@@ -306,15 +332,6 @@ fun ScrollbackOutputView(
                             style = TextStyle(color = Color.White, fontSize = 14.sp)
                         )
                     }
-                } else {
-                    OutputCanvas(
-                        layout = layout,
-                        scrollPx = scrollbackPx,
-                        selectionPath = selectionPath,
-                        selectionColor = SELECTION_COLOR,
-                        modifier = Modifier.fillMaxSize(),
-                        showScrollbar = true
-                    )
                 }
             }
         }

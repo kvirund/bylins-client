@@ -1,6 +1,9 @@
 package com.bylins.client.ui.components.output
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -9,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 import com.bylins.client.ui.scroll.BufferOffsets
@@ -87,9 +91,7 @@ internal fun OutputCanvas(
     scrollPx: Float,
     selectionPath: Path?,
     selectionColor: Color,
-    modifier: Modifier,
-    showScrollbar: Boolean = false,
-    scrollbarColor: Color = Color(0x88888888)
+    modifier: Modifier
 ) {
     Canvas(modifier) {
         clipRect {
@@ -100,23 +102,55 @@ internal fun OutputCanvas(
                 drawText(layout)
             }
         }
+    }
+}
 
-        if (showScrollbar) {
-            val viewport = size.height
-            val content = layout.size.height.toFloat()
-            if (content > viewport + 1f) {
-                val maxScroll = content - viewport
-                val width = 8f
-                val minThumb = 30f
-                val thumb = (viewport * viewport / content).coerceIn(minThumb, viewport)
-                val thumbY = if (maxScroll > 0f) (scrollPx / maxScroll) * (viewport - thumb) else 0f
-                drawRoundRect(
-                    color = scrollbarColor,
-                    topLeft = Offset(size.width - width - 2f, thumbY.coerceIn(0f, viewport - thumb)),
-                    size = Size(width, thumb),
-                    cornerRadius = CornerRadius(width / 2f, width / 2f)
-                )
+/**
+ * Единый интерактивный скроллбар на всю высоту компонента, управляющий
+ * позицией скроллбэка (общий и в одно-, и в двухпанельном режиме).
+ *
+ * @param scrollPx текущий сдвиг скроллбэка
+ * @param maxScroll максимальный сдвиг скроллбэка (для активного вьюпорта)
+ * @param viewportPx высота окна скроллбэка (для размера ползунка)
+ * @param contentHeightPx полная высота контента
+ * @param onScrollTo установить сдвиг (как пользовательский скролл)
+ */
+@androidx.compose.runtime.Composable
+internal fun OutputScrollbar(
+    scrollPx: Float,
+    maxScroll: Float,
+    viewportPx: Float,
+    contentHeightPx: Float,
+    onScrollTo: (Float) -> Unit,
+    modifier: Modifier
+) {
+    if (contentHeightPx <= viewportPx + 1f) return
+
+    val scrollRef = rememberUpdatedState(scrollPx)
+    val maxRef = rememberUpdatedState(maxScroll)
+    val viewportRef = rememberUpdatedState(viewportPx)
+    val contentRef = rememberUpdatedState(contentHeightPx)
+
+    Canvas(
+        modifier.pointerInput(Unit) {
+            detectVerticalDragGestures { change, dragAmount ->
+                change.consume()
+                val track = size.height.toFloat()
+                val thumb = (track * viewportRef.value / contentRef.value).coerceIn(30f, track)
+                val denom = (track - thumb).coerceAtLeast(1f)
+                onScrollTo(scrollRef.value + dragAmount / denom * maxRef.value)
             }
         }
+    ) {
+        val track = size.height
+        val thumb = (track * viewportPx / contentHeightPx).coerceIn(30f, track)
+        val thumbY = if (maxScroll > 0f) (scrollPx / maxScroll) * (track - thumb) else 0f
+        val width = 8f
+        drawRoundRect(
+            color = Color(0x55FFFFFF),
+            topLeft = Offset(size.width - width - 2f, thumbY.coerceIn(0f, track - thumb)),
+            size = Size(width, thumb),
+            cornerRadius = CornerRadius(width / 2f, width / 2f)
+        )
     }
 }
