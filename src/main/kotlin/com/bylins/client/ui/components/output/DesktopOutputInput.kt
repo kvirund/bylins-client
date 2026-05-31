@@ -3,16 +3,25 @@ package com.bylins.client.ui.components.output
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -22,7 +31,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -39,20 +50,25 @@ import com.bylins.client.ui.scroll.ContentSnapshot
 import com.bylins.client.ui.scroll.ScrollTarget
 
 private val SELECTION_COLOR = Color(0x553A6EA5)
+private val DIVIDER_COLOR = Color(0xFF555555)
+private val DIVIDER_HEIGHT = 6.dp
 
 /**
  * Панель вывода со split-scrollback и собственным выделением (desktop-слой ввода).
  *
- * В этом коммите реализован одно-панельный режим: корректный follow/anchor
- * (нет дёрганья к низу при скролле вверх; при вытеснении строки позиция ползёт
- * к началу), выделение мышью по всему буферу, копирование Ctrl+C/Ctrl+Insert,
- * Ctrl+A. Раздвоение (живой хвост) добавляется отдельно.
+ * Внизу — одно окно с автоскроллом. При скролле вверх делится: верхняя панель —
+ * скроллбэк (заякорена), нижняя — живой хвост (всегда автоскролл), между ними
+ * перетаскиваемый разделитель. Докрутка скроллбэка до низа схлопывает обратно.
+ * Выделение (по всему буферу) и drag живут на корне и не рвутся при раздвоении/
+ * схлопывании и приходе нового текста. Копирование Ctrl+C/Ctrl+Insert, Ctrl+A.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun ScrollbackOutputView(
     snapshot: ContentSnapshot,
     holder: OutputViewHolder,
+    splitFraction: Float,
+    onSplitFractionChange: (Float) -> Unit,
     fontFamily: FontFamily,
     fontSize: Int,
     emptyPlaceholder: AnnotatedString,
@@ -66,7 +82,6 @@ fun ScrollbackOutputView(
     val selection = holder.selection
     val ansiParser = remember { AnsiParser() }
 
-    // Ограничиваем парсинг последними строками для больших буферов
     val limitedRaw = remember(snapshot.text) {
         if (snapshot.text.length > 100_000) lastLines(snapshot.text, 1000) else snapshot.text
     }
@@ -92,13 +107,14 @@ fun ScrollbackOutputView(
         )
     }
     val lineHeightPx = with(density) { (fontSize + 4).sp.toPx() }
+    val dividerPx = with(density) { DIVIDER_HEIGHT.toPx() }
 
-    androidx.compose.foundation.layout.Box(
-        modifier = modifier.background(Color.Black).padding(8.dp)
-    ) {
+    val split = holder.split && !isEmpty
+
+    Box(modifier.background(Color.Black).padding(8.dp)) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val widthPx = with(density) { maxWidth.toPx() }.toInt().coerceAtLeast(1)
-            val viewportPx = with(density) { maxHeight.toPx() }
+            val fullViewportPx = with(density) { maxHeight.toPx() }
 
             val layout = remember(annotated, widthPx, style) {
                 measurer.measure(
@@ -109,11 +125,19 @@ fun ScrollbackOutputView(
                 )
             }
             holder.lastLayout = layout
-            val maxScroll = maxScrollOf(layout.size.height.toFloat(), viewportPx)
+            val contentHeight = layout.size.height.toFloat()
 
-            // Применяем целевую позицию при изменении контента/размеров
-            LaunchedEffect(snapshot, layout, viewportPx) {
-                val ms = maxScrollOf(layout.size.height.toFloat(), viewportPx)
+            // Высоты панелей считаем из доли (разделитель фиксирован) — без лага измерения
+            val available = (fullViewportPx - dividerPx).coerceAtLeast(0f)
+            val bottomPaneHeightPx = if (split) available * splitFraction else 0f
+            val topPaneHeightPx = if (split) available - bottomPaneHeightPx else fullViewportPx
+            val activeViewportPx = if (split) topPaneHeightPx else fullViewportPx
+            val maxScrollActive = maxScrollOf(contentHeight, activeViewportPx)
+            val bottomScrollPx = maxScrollOf(contentHeight, bottomPaneHeightPx)
+
+            // Применяем целевую позицию скроллбэка при изменении контента/режима/размеров
+            LaunchedEffect(snapshot, layout, fullViewportPx, split, splitFraction) {
+                val ms = maxScrollOf(contentHeight, activeViewportPx)
                 when (val target = controller.onContentChanged(geometry)) {
                     ScrollTarget.Bottom -> holder.scrollbackScrollPx = ms
                     is ScrollTarget.ToLine -> holder.scrollbackScrollPx =
@@ -122,9 +146,8 @@ fun ScrollbackOutputView(
                 }
             }
 
-            val scrollPx = holder.scrollbackScrollPx.coerceIn(0f, maxScroll)
+            val scrollbackPx = holder.scrollbackScrollPx.coerceIn(0f, maxScrollActive)
 
-            // Подсветка выделения (зависит от ревизии выделения для перерисовки)
             val selRevision = holder.selectionRevision
             val selectionPath = remember(selRevision, layout, effectiveFirstSeq, plainText) {
                 if (isEmpty) null
@@ -132,78 +155,134 @@ fun ScrollbackOutputView(
                     ?.let { r -> layout.getPathForRange(r.first, r.last + 1) }
             }
 
-            fun userScrollTo(target: Float) {
-                val clamped = target.coerceIn(0f, maxScroll)
+            // --- Действия (пересоздаются каждую рекомпозицию, видят актуальные значения) ---
+            val userScrollTo: (Float) -> Unit = { target ->
+                val clamped = target.coerceIn(0f, maxScrollActive)
                 holder.scrollbackScrollPx = clamped
-                val atBottom = clamped >= maxScroll - lineHeightPx
-                val topSeq = topSeqAt(layout, plainText, effectiveFirstSeq, clamped)
-                controller.onUserScroll(atBottom, topSeq)
+                val atBottom = clamped >= maxScrollActive - lineHeightPx
+                controller.onUserScroll(atBottom, topSeqAt(layout, plainText, effectiveFirstSeq, clamped))
+                holder.syncSplit()
             }
-
-            fun copySelection() {
-                if (isEmpty) return
-                val text = selection.copyText(effectiveFirstSeq, plainText)
-                if (text.isNotEmpty()) clipboard.setText(AnnotatedString(text))
+            val collapse: () -> Unit = {
+                controller.jumpToBottom()
+                holder.syncSplit()
+                holder.scrollbackScrollPx = maxScrollOf(contentHeight, fullViewportPx)
             }
-
-            fun handleKey(event: KeyEvent): Boolean {
-                if (event.type != KeyEventType.KeyDown) return false
-                return when {
+            // Указатель -> точка выделения (с учётом того, в какой панели курсор)
+            val pointToSel: (Offset) -> com.bylins.client.ui.scroll.SelPoint = { pos ->
+                val inBottom = split && pos.y >= topPaneHeightPx + dividerPx
+                val contentY = if (inBottom) {
+                    (pos.y - topPaneHeightPx - dividerPx) + bottomScrollPx
+                } else {
+                    pos.y + scrollbackPx
+                }
+                pointToSelPoint(layout, plainText, effectiveFirstSeq, pos.x, contentY)
+            }
+            val copySelection: () -> Unit = {
+                if (!isEmpty) {
+                    val text = selection.copyText(effectiveFirstSeq, plainText)
+                    if (text.isNotEmpty()) clipboard.setText(AnnotatedString(text))
+                }
+            }
+            val handleKey: (KeyEvent) -> Boolean = handleKey@{ event ->
+                if (event.type != KeyEventType.KeyDown) return@handleKey false
+                when {
                     event.isCtrlPressed && event.key == Key.A -> {
-                        selection.selectAll(effectiveFirstSeq, geometry.lineCount)
-                        holder.bumpSelection(); true
+                        selection.selectAll(effectiveFirstSeq, geometry.lineCount); holder.bumpSelection(); true
                     }
-                    event.isCtrlPressed && (event.key == Key.C || event.key == Key.Insert) -> {
-                        copySelection(); true
-                    }
-                    event.key == Key.PageDown -> { userScrollTo(scrollPx + viewportPx); true }
-                    event.key == Key.PageUp -> { userScrollTo(scrollPx - viewportPx); true }
-                    event.key == Key.DirectionDown -> { userScrollTo(scrollPx + lineHeightPx); true }
-                    event.key == Key.DirectionUp -> { userScrollTo(scrollPx - lineHeightPx); true }
+                    event.isCtrlPressed && (event.key == Key.C || event.key == Key.Insert) -> { copySelection(); true }
+                    event.key == Key.PageDown -> { userScrollTo(scrollbackPx + activeViewportPx); true }
+                    event.key == Key.PageUp -> { userScrollTo(scrollbackPx - activeViewportPx); true }
+                    event.key == Key.DirectionDown -> { userScrollTo(scrollbackPx + lineHeightPx); true }
+                    event.key == Key.DirectionUp -> { userScrollTo(scrollbackPx - lineHeightPx); true }
                     event.key == Key.MoveHome -> { userScrollTo(0f); true }
-                    event.key == Key.MoveEnd -> { userScrollTo(maxScroll); true }
+                    event.key == Key.MoveEnd -> { userScrollTo(maxScrollActive); true }
                     else -> false
                 }
             }
 
-            OutputCanvas(
-                layout = layout,
-                scrollPx = scrollPx,
-                selectionPath = selectionPath,
-                selectionColor = SELECTION_COLOR,
-                modifier = Modifier
+            // Ссылки на актуальные значения для долгоживущего drag-жеста выделения
+            val pointToSelRef by rememberUpdatedState(pointToSel)
+            val userScrollToRef by rememberUpdatedState(userScrollTo)
+            val scrollbackRef by rememberUpdatedState(scrollbackPx)
+            val activeViewportRef by rememberUpdatedState(activeViewportPx)
+            val isEmptyRef by rememberUpdatedState(isEmpty)
+
+            // --- Корневой контейнер: ввод (колесо/клавиши/drag) на нём, панели — дети ---
+            Box(
+                Modifier
                     .fillMaxSize()
                     .focusRequester(focusRequester)
                     .focusable()
-                    .onPreviewKeyEvent(::handleKey)
+                    .onPreviewKeyEvent(handleKey)
                     .onPointerEvent(PointerEventType.Scroll) { event ->
                         val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
-                        if (dy != 0f) userScrollTo(scrollPx + dy * lineHeightPx * 3f)
+                        if (dy != 0f) userScrollTo(scrollbackPx + dy * lineHeightPx * 3f)
                     }
-                    .pointerInput(layout, effectiveFirstSeq, plainText, maxScroll, isEmpty) {
-                        if (isEmpty) return@pointerInput
+                    .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { pos ->
+                                if (isEmptyRef) return@detectDragGestures
                                 focusRequester.requestFocus()
-                                selection.start(
-                                    pointToSelPoint(layout, plainText, effectiveFirstSeq, pos.x, pos.y + holder.scrollbackScrollPx)
-                                )
+                                selection.start(pointToSelRef(pos))
                                 holder.bumpSelection()
                             },
                             onDrag = { change, _ ->
+                                if (isEmptyRef) return@detectDragGestures
                                 val pos = change.position
-                                // Авто-скролл при выходе указателя за границы вьюпорта
                                 val edge = lineHeightPx
-                                if (pos.y < edge) userScrollTo(holder.scrollbackScrollPx - lineHeightPx)
-                                else if (pos.y > viewportPx - edge) userScrollTo(holder.scrollbackScrollPx + lineHeightPx)
-                                selection.extendTo(
-                                    pointToSelPoint(layout, plainText, effectiveFirstSeq, pos.x, pos.y + holder.scrollbackScrollPx)
-                                )
+                                if (pos.y < edge) userScrollToRef(scrollbackRef - lineHeightPx)
+                                else if (pos.y < activeViewportRef && pos.y > activeViewportRef - edge)
+                                    userScrollToRef(scrollbackRef + lineHeightPx)
+                                selection.extendTo(pointToSelRef(pos))
                                 holder.bumpSelection()
                             }
                         )
                     }
-            )
+            ) {
+                if (split) {
+                    Column(Modifier.fillMaxSize()) {
+                        OutputCanvas(
+                            layout = layout,
+                            scrollPx = scrollbackPx,
+                            selectionPath = selectionPath,
+                            selectionColor = SELECTION_COLOR,
+                            modifier = Modifier.fillMaxWidth().height(with(density) { topPaneHeightPx.toDp() })
+                        )
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(DIVIDER_HEIGHT)
+                                .background(DIVIDER_COLOR)
+                                .pointerHoverIcon(PointerIcon.Default)
+                                .pointerInput(Unit) {
+                                    detectVerticalDragGestures { _, dragAmount ->
+                                        val avail = (fullViewportPx - dividerPx).coerceAtLeast(1f)
+                                        onSplitFractionChange(splitFraction - dragAmount / avail)
+                                    }
+                                }
+                                .pointerInput(Unit) {
+                                    detectTapGestures(onDoubleTap = { collapse() })
+                                }
+                        )
+                        OutputCanvas(
+                            layout = layout,
+                            scrollPx = bottomScrollPx,
+                            selectionPath = selectionPath,
+                            selectionColor = SELECTION_COLOR,
+                            modifier = Modifier.fillMaxWidth().height(with(density) { bottomPaneHeightPx.toDp() })
+                        )
+                    }
+                } else {
+                    OutputCanvas(
+                        layout = layout,
+                        scrollPx = scrollbackPx,
+                        selectionPath = selectionPath,
+                        selectionColor = SELECTION_COLOR,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
         }
     }
 }

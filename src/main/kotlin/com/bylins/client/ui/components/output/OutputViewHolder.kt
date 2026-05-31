@@ -39,4 +39,14 @@ class OutputViewHolder {
     private val _selectionRevision = mutableStateOf(0)
     val selectionRevision: Int get() = _selectionRevision.value
     fun bumpSelection() { _selectionRevision.value++ }
+
+    // Наблюдаемое зеркало controller.isSplit (controller — чистый, не snapshot-state).
+    // Синхронизируется после изменения режима, чтобы перестроить раздвоение панелей.
+    private val _split = mutableStateOf(false)
+    var split: Boolean
+        get() = _split.value
+        set(value) { _split.value = value }
+
+    /** Синхронизирует наблюдаемый split с состоянием контроллера. */
+    fun syncSplit() { _split.value = controller.isSplit }
 }

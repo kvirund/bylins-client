@@ -125,9 +125,13 @@ fun OutputPanel(
                 }
             }
 
+            val splitFraction by clientState.outputSplitFraction.collectAsState()
+
             com.bylins.client.ui.components.output.ScrollbackOutputView(
                 snapshot = snapshot,
                 holder = holder,
+                splitFraction = splitFraction,
+                onSplitFractionChange = { clientState.setOutputSplitFraction(it) },
                 fontFamily = fontFamily,
                 fontSize = fontSize,
                 emptyPlaceholder = placeholder,
