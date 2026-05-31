@@ -34,6 +34,10 @@ class OutputViewHolder {
     // Обычный var — используется императивно, не должен триггерить рекомпозицию.
     var lastLayout: TextLayoutResult? = null
 
+    // Идёт ли сейчас выделение мышью. Пока true — автоскролл (follow) к низу
+    // заморожен, чтобы заякоренное выделение не уезжало за экран при новом тексте.
+    var isSelecting = false
+
     // Ревизия выделения: инкремент заставляет панель перерисовать подсветку,
     // т.к. сама OutputSelection — не snapshot-state.
     private val _selectionRevision = mutableStateOf(0)

@@ -2,7 +2,8 @@ package com.bylins.client.ui.components.output
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -38,6 +39,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
@@ -143,8 +145,11 @@ fun ScrollbackOutputView(
             val maxScrollActive = maxScrollOf(contentHeight, activeViewportPx)
             val bottomScrollPx = maxScrollOf(contentHeight, bottomPaneHeightPx)
 
-            // Применяем целевую позицию скроллбэка при изменении контента/режима/размеров
+            // Применяем целевую позицию скроллбэка при изменении контента/режима/размеров.
+            // Во время выделения мышью автоскролл заморожен, чтобы заякоренное
+            // выделение не уезжало за экран при приходе нового текста.
             LaunchedEffect(snapshot, layout, fullViewportPx, split, splitFraction) {
+                if (holder.isSelecting) return@LaunchedEffect
                 val ms = maxScrollOf(contentHeight, activeViewportPx)
                 when (val target = controller.onContentChanged(geometry)) {
                     ScrollTarget.Bottom -> holder.scrollbackScrollPx = ms
@@ -232,34 +237,46 @@ fun ScrollbackOutputView(
                         if (dy != 0f) userScrollTo(scrollbackPx + dy * lineHeightPx * 3f)
                     }
                     .pointerInput(Unit) {
-                        // Одиночный клик без перетаскивания сбрасывает выделение
-                        detectTapGestures(onTap = {
+                        // Единый жест: tap (без движения) — сброс выделения; drag — выделение.
+                        // Объединено в один awaitEachGesture, чтобы tap-детектор не сбрасывал
+                        // только что сделанное выделение после короткого drag.
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
                             focusRequester.requestFocus()
-                            if (!selection.isEmpty) {
-                                selection.clear()
-                                holder.bumpSelection()
+                            val slop = viewConfiguration.touchSlop
+                            var moved = false
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) {
+                                    // Отпускание: чистый клик — сбросить выделение
+                                    if (!moved && !selection.isEmpty) {
+                                        selection.clear()
+                                        holder.bumpSelection()
+                                    }
+                                    holder.isSelecting = false
+                                    break
+                                }
+                                if (!isEmptyRef && change.positionChanged()) {
+                                    if (!moved && (change.position - down.position).getDistance() >= slop) {
+                                        moved = true
+                                        holder.isSelecting = true
+                                        selection.start(pointToSelRef(down.position))
+                                        holder.bumpSelection()
+                                    }
+                                    if (moved) {
+                                        val pos = change.position
+                                        val edge = lineHeightPx
+                                        if (pos.y < edge) userScrollToRef(scrollbackRef - lineHeightPx)
+                                        else if (pos.y < activeViewportRef && pos.y > activeViewportRef - edge)
+                                            userScrollToRef(scrollbackRef + lineHeightPx)
+                                        selection.extendTo(pointToSelRef(pos))
+                                        holder.bumpSelection()
+                                        change.consume()
+                                    }
+                                }
                             }
-                        })
-                    }
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { pos ->
-                                if (isEmptyRef) return@detectDragGestures
-                                focusRequester.requestFocus()
-                                selection.start(pointToSelRef(pos))
-                                holder.bumpSelection()
-                            },
-                            onDrag = { change, _ ->
-                                if (isEmptyRef) return@detectDragGestures
-                                val pos = change.position
-                                val edge = lineHeightPx
-                                if (pos.y < edge) userScrollToRef(scrollbackRef - lineHeightPx)
-                                else if (pos.y < activeViewportRef && pos.y > activeViewportRef - edge)
-                                    userScrollToRef(scrollbackRef + lineHeightPx)
-                                selection.extendTo(pointToSelRef(pos))
-                                holder.bumpSelection()
-                            }
-                        )
+                        }
                     }
             ) {
                 // Контент панелей, сужен под полосу скроллбара справа
@@ -305,11 +322,14 @@ fun ScrollbackOutputView(
                     }
                 }
 
-                // Единый интерактивный скроллбар на всю высоту (общий для обеих панелей)
+                // Единый интерактивный скроллбар на всю высоту (общий для обеих панелей).
+                // Размер ползунка считаем от полной высоты окна (зависит только от объёма
+                // буфера и не меняется при раздвоении); позиция — по диапазону скроллбэка,
+                // нижняя точка совпадает с моментом схлопывания.
                 OutputScrollbar(
                     scrollPx = scrollbackPx,
                     maxScroll = maxScrollActive,
-                    viewportPx = activeViewportPx,
+                    viewportPx = fullViewportPx,
                     contentHeightPx = contentHeight,
                     onScrollTo = userScrollTo,
                     modifier = Modifier.align(Alignment.CenterEnd).width(scrollbarStrip).fillMaxHeight()
