@@ -516,11 +516,13 @@ class ClientState {
         _connectionProfiles.value = configData.connectionProfiles
         _currentProfileId.value = configData.currentProfileId
 
-        // Переключаемся на карту из текущего профиля
+        // Переключаемся на карту из текущего профиля и грузим доли разделителя сервера
         configData.currentProfileId?.let { profileId ->
             val profile = _connectionProfiles.value.find { it.id == profileId }
             profile?.let {
                 switchMapDatabase(it.mapFile)
+                // Доли разделителя из профиля; если пусто — миграция из глобального конфига
+                loadOutputSplitFractions(it.outputSplitFractions.ifEmpty { configData.outputSplitFractions })
             }
         }
 
@@ -1583,6 +1585,8 @@ class ClientState {
                 switchMapDatabase(it.mapFile)
                 // Переключаем стек профилей персонажей
                 switchProfileStack(it.activeProfileStack)
+                // Доли разделителя — свои на этот сервер
+                loadOutputSplitFractions(it.outputSplitFractions)
             }
         } ?: run {
             // Если профиль не выбран - очищаем стек
@@ -1602,7 +1606,10 @@ class ClientState {
 
         _connectionProfiles.value = _connectionProfiles.value.map { connProfile ->
             if (connProfile.id == currentConnProfileId) {
-                connProfile.copy(activeProfileStack = currentStack)
+                connProfile.copy(
+                    activeProfileStack = currentStack,
+                    outputSplitFractions = getOutputSplitFractions()
+                )
             } else {
                 connProfile
             }
