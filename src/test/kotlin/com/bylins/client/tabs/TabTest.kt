@@ -147,6 +147,65 @@ class TabTest {
     }
 }
 
+class TabSnapshotTest {
+
+    @Test
+    fun `snapshot is empty before any append`() {
+        val tab = Tab(id = "test", name = "Test")
+        val snap = tab.snapshot.value
+        assertEquals("", snap.text)
+        assertEquals(0L, snap.firstSeq)
+        assertEquals(0, snap.lineCount)
+    }
+
+    @Test
+    fun `snapshot reflects text firstSeq and lineCount after append`() {
+        val tab = Tab(id = "test", name = "Test")
+        tab.appendText("a\nb\nc")
+        tab.flush()
+
+        val snap = tab.snapshot.value
+        assertEquals(tab.content.value, snap.text)
+        assertEquals(0L, snap.firstSeq)
+        assertEquals(3, snap.lineCount)
+    }
+
+    @Test
+    fun `firstSeq is zero while buffer is under maxLines`() {
+        val tab = Tab(id = "test", name = "Test", maxLines = 100)
+        for (i in 1..10) tab.appendText("Line $i")
+        tab.flush()
+
+        assertEquals(0L, tab.snapshot.value.firstSeq)
+        assertEquals(10, tab.snapshot.value.lineCount)
+    }
+
+    @Test
+    fun `firstSeq increments by number of evicted lines`() {
+        val tab = Tab(id = "test", name = "Test", maxLines = 5)
+        for (i in 1..10) tab.appendText("Line $i")
+        tab.flush()
+
+        val snap = tab.snapshot.value
+        assertEquals(5, snap.lineCount)
+        assertEquals(5L, snap.firstSeq) // 10 строк добавлено, 5 вытеснено
+        assertEquals(9L, snap.geometry.lastSeq)
+    }
+
+    @Test
+    fun `clear keeps seq monotonic`() {
+        val tab = Tab(id = "test", name = "Test")
+        tab.appendText("a\nb\nc")
+        tab.flush()
+        tab.clear()
+
+        val snap = tab.snapshot.value
+        assertEquals("", snap.text)
+        assertEquals(0, snap.lineCount)
+        assertEquals(3L, snap.firstSeq) // 3 строки «вытеснены» очисткой
+    }
+}
+
 class TabDtoTest {
 
     @Test

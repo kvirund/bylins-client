@@ -1,0 +1,216 @@
+package com.bylins.client.ui.components.output
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
+import com.bylins.client.ui.scroll.BufferOffsets
+import com.bylins.client.ui.scroll.SelPoint
+
+/**
+ * Портируемое ядро панели вывода: маппинг между абсолютным seq строки и
+ * пиксельной позицией скролла (через TextLayoutResult) и отрисовка.
+ * Использует только multiplatform-API Compose (без desktop-специфики).
+ */
+
+/** Максимальный сдвиг скролла для заданной высоты контента и вьюпорта. */
+internal fun maxScrollOf(contentHeightPx: Float, viewportPx: Float): Float =
+    (contentHeightPx - viewportPx).coerceAtLeast(0f)
+
+/** Пиксельная позиция верха логической строки [seq] (для якоря/перехода). */
+internal fun seqToTopPx(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    seq: Long
+): Float {
+    val lineIndex = (seq - firstSeq).toInt().coerceAtLeast(0)
+    val offset = BufferOffsets.lineStartOffset(plainText, lineIndex)
+        .coerceIn(0, layout.layoutInput.text.length)
+    val visualLine = layout.getLineForOffset(offset)
+    return layout.getLineTop(visualLine)
+}
+
+/** Якорь (seq, col) символа в левом-верхнем углу вьюпорта при сдвиге [scrollPx]. */
+internal fun pxToAnchor(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    scrollPx: Float
+): Pair<Long, Int> {
+    val off = layout.getOffsetForPosition(Offset(0f, scrollPx)).coerceIn(0, plainText.length)
+    val (line, col) = BufferOffsets.lineColOfOffset(plainText, off)
+    return (firstSeq + line) to col
+}
+
+/** Точный пиксель верха визуальной строки, содержащей символ (seq, col). Без «защёлкивания»
+ *  к началу логической строки — поэтому нет дрожи на переносах. */
+internal fun anchorToPx(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    seq: Long,
+    col: Int
+): Float {
+    val lineIdx = (seq - firstSeq).toInt()
+    val li = if (lineIdx < 0) 0 else lineIdx
+    val c = if (lineIdx < 0) 0 else col
+    val off = BufferOffsets.offsetOfLineCol(plainText, li, c).coerceIn(0, layout.layoutInput.text.length)
+    val visualLine = layout.getLineForOffset(off)
+    return layout.getLineTop(visualLine)
+}
+
+/** seq верхней видимой строки при заданном сдвиге скролла. */
+internal fun topSeqAt(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    scrollPx: Float
+): Long {
+    val visualLine = layout.getLineForVerticalPosition(scrollPx)
+    val offset = layout.getLineStart(visualLine)
+    return firstSeq + BufferOffsets.lineIndexOfOffset(plainText, offset)
+}
+
+/** Точка выделения (seq, col) для позиции указателя в координатах контента. */
+internal fun pointToSelPoint(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    contentX: Float,
+    contentY: Float
+): SelPoint {
+    val offset = layout.getOffsetForPosition(Offset(contentX, contentY))
+        .coerceIn(0, plainText.length)
+    val (line, col) = BufferOffsets.lineColOfOffset(plainText, offset)
+    return SelPoint(firstSeq + line, col)
+}
+
+/** Последние [maxLines] строк текста (оптимизация парсинга больших буферов). */
+internal fun lastLines(text: String, maxLines: Int): String {
+    if (text.isEmpty()) return text
+    var lineCount = 0
+    var position = text.length - 1
+    while (position >= 0 && lineCount < maxLines) {
+        if (text[position] == '\n') lineCount++
+        position--
+    }
+    if (position < 0) return text
+    return text.substring(position + 1)
+}
+
+/**
+ * Рисует одну панель-вьюпорт над общим layout: подсветку выделения и текст,
+ * сдвинутые на [scrollPx] и обрезанные границами панели.
+ */
+@androidx.compose.runtime.Composable
+internal fun OutputCanvas(
+    layout: TextLayoutResult,
+    scrollProvider: () -> Float,
+    selectionColor: Color,
+    revisionState: State<Int>,
+    selectionPathProvider: () -> Path?,
+    modifier: Modifier
+) {
+    Canvas(modifier) {
+        // Скролл и ревизию выделения читаем в фазе draw — Canvas перерисуется при
+        // их изменении даже без рекомпозиции (надёжно на любой вкладке).
+        revisionState.value
+        val scrollPx = scrollProvider()
+        val selectionPath = selectionPathProvider()
+        clipRect {
+            translate(top = -scrollPx) {
+                if (selectionPath != null) {
+                    drawPath(selectionPath, color = selectionColor)
+                }
+                drawText(layout)
+            }
+        }
+    }
+}
+
+/**
+ * Единый интерактивный скроллбар на всю высоту компонента, управляющий
+ * позицией скроллбэка (общий и в одно-, и в двухпанельном режиме).
+ *
+ * @param scrollPx текущий сдвиг скроллбэка
+ * @param maxScroll максимальный сдвиг скроллбэка (для активного вьюпорта)
+ * @param viewportPx высота окна скроллбэка (для размера ползунка)
+ * @param contentHeightPx полная высота контента
+ * @param onScrollTo установить сдвиг (как пользовательский скролл)
+ */
+@androidx.compose.runtime.Composable
+internal fun OutputScrollbar(
+    scrollProvider: () -> Float,
+    maxScroll: Float,
+    viewportPx: Float,
+    contentHeightPx: Float,
+    onScrollTo: (Float) -> Unit,
+    onActive: (Boolean) -> Unit,
+    modifier: Modifier
+) {
+    if (contentHeightPx <= viewportPx + 1f) return
+
+    val maxRef = rememberUpdatedState(maxScroll)
+    val viewportRef = rememberUpdatedState(viewportPx)
+    val contentRef = rememberUpdatedState(contentHeightPx)
+    // ВАЖНО: колбэк тоже через rememberUpdatedState — иначе долгоживущий жест
+    // pointerInput(Unit) захватит устаревший onScrollTo (со старым maxScroll) → скачки.
+    val onScrollToRef = rememberUpdatedState(onScrollTo)
+    val scrollProviderRef = rememberUpdatedState(scrollProvider)
+
+    Canvas(
+        modifier.pointerInput(Unit) {
+            // Тащим ползунок по АБСОЛЮТНОЙ позиции указателя (с учётом точки захвата) —
+            // ползунок точно следует за мышью, без накопления дельт и скачков.
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                val track = size.height.toFloat()
+                val thumb = (track * viewportRef.value / contentRef.value).coerceIn(30f, track)
+                val denom = (track - thumb).coerceAtLeast(1f)
+                val curThumbY = if (maxRef.value > 0f) (scrollProviderRef.value() / maxRef.value) * denom else 0f
+                // Смещение точки захвата внутри ползунка (если кликнули мимо — по центру)
+                val grab = (down.position.y - curThumbY).let { if (it in 0f..thumb) it else thumb / 2f }
+                down.consume()
+                onActive(true)
+                try {
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!ch.pressed) break
+                        val targetThumbY = (ch.position.y - grab).coerceIn(0f, denom)
+                        onScrollToRef.value(targetThumbY / denom * maxRef.value)
+                        ch.consume()
+                    }
+                } finally {
+                    onActive(false)
+                }
+            }
+        }
+    ) {
+        val track = size.height
+        val thumb = (track * viewportPx / contentHeightPx).coerceIn(30f, track)
+        val scrollPx = scrollProvider() // читаем в фазе draw — ползунок двигается без рекомпозиции
+        val thumbY = if (maxScroll > 0f) (scrollPx / maxScroll) * (track - thumb) else 0f
+        val width = 8f
+        drawRoundRect(
+            color = Color(0x55FFFFFF),
+            topLeft = Offset(size.width - width - 2f, thumbY.coerceIn(0f, track - thumb)),
+            size = Size(width, thumb),
+            cornerRadius = CornerRadius(width / 2f, width / 2f)
+        )
+    }
+}

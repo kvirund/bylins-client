@@ -283,6 +283,8 @@ class ClientState {
 
     val isConnected: StateFlow<Boolean> = telnetClient.isConnected
     val receivedData: StateFlow<String> = telnetClient.receivedData
+    // Снимок главной вкладки с абсолютной нумерацией строк (для панели вывода)
+    val mainOutputSnapshot = telnetClient.snapshot
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage
@@ -363,6 +365,23 @@ class ClientState {
     // Доступ к вкладкам
     val tabs = tabManager.tabs
     val activeTabId = tabManager.activeTabId
+
+    // Долгоживущее состояние прокрутки/выделения панелей вывода (по id вкладки).
+    // Живёт в ClientState, чтобы переживать уход OutputPanel из композиции при
+    // переключении верхнеуровневых вкладок (позиция/режим/выделение не сбрасываются).
+    private val outputViewHolders =
+        mutableMapOf<String, com.bylins.client.ui.components.output.OutputViewHolder>()
+
+    fun outputViewHolder(tabId: String): com.bylins.client.ui.components.output.OutputViewHolder =
+        outputViewHolders.getOrPut(tabId) { com.bylins.client.ui.components.output.OutputViewHolder() }
+
+    // Доля высоты под «живой хвост» при раздвоении панели вывода (0..1)
+    private val _outputSplitFraction = MutableStateFlow(0.3f)
+    val outputSplitFraction: StateFlow<Float> = _outputSplitFraction
+
+    fun setOutputSplitFraction(fraction: Float) {
+        _outputSplitFraction.value = fraction.coerceIn(0.1f, 0.9f)
+    }
 
     // Выбранная подвкладка в панели плагинов (сохраняется между переключениями)
     var selectedPluginSubTab: String = "config"

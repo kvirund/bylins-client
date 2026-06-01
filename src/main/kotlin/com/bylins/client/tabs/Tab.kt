@@ -1,5 +1,6 @@
 package com.bylins.client.tabs
 
+import com.bylins.client.ui.scroll.ContentSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
@@ -18,11 +19,19 @@ data class Tab(
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content
 
+    // Снимок с абсолютной нумерацией строк (для логики автоскролла/выделения)
+    private val _snapshot = MutableStateFlow(ContentSnapshot.EMPTY)
+    val snapshot: StateFlow<ContentSnapshot> = _snapshot
+
     // Индикатор непрочитанных сообщений (для неактивных вкладок)
     private val _hasUnreadMessages = MutableStateFlow(false)
     val hasUnreadMessages: StateFlow<Boolean> = _hasUnreadMessages
 
     private val lines = mutableListOf<String>()
+
+    // Сколько строк уже вытеснено из начала буфера (скользящее окно).
+    // Даёт абсолютный seq первой строки буфера; монотонно растёт.
+    private var evictedLines: Long = 0L
 
     // Счётчик для оптимизации обновлений
     private var updateCounter = 0
@@ -44,9 +53,10 @@ data class Tab(
             lines.add(line)
         }
 
-        // Ограничиваем количество строк
+        // Ограничиваем количество строк (вытесняем из начала, считаем вытесненные)
         while (lines.size > maxLines) {
             lines.removeAt(0)
+            evictedLines++
         }
 
         // Помечаем непрочитанные сообщения
@@ -59,7 +69,7 @@ data class Tab(
         updateCounter++
         if (updateCounter >= 50 || lines.size > maxLines * 0.95) {
             updateCounter = 0
-            _content.value = lines.joinToString("\n")
+            publish()
         }
     }
 
@@ -69,7 +79,7 @@ data class Tab(
     fun flush() {
         if (updateCounter > 0) {
             updateCounter = 0
-            _content.value = lines.joinToString("\n")
+            publish()
         }
     }
 
@@ -77,9 +87,21 @@ data class Tab(
      * Очищает содержимое вкладки
      */
     fun clear() {
+        // Сохраняем монотонность seq: считаем очищенные строки вытесненными
+        evictedLines += lines.size
         lines.clear()
         _content.value = ""
+        _snapshot.value = ContentSnapshot("", evictedLines, 0)
         updateCounter = 0
+    }
+
+    /**
+     * Публикует текущее содержимое в content и snapshot согласованно
+     */
+    private fun publish() {
+        val text = lines.joinToString("\n")
+        _content.value = text
+        _snapshot.value = ContentSnapshot(text, evictedLines, lines.size)
     }
 
     /**

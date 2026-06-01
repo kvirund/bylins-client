@@ -3,8 +3,6 @@ package com.bylins.client.ui.components
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,8 +13,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
-import com.bylins.client.ui.AnsiParser
-import kotlinx.coroutines.launch
 
 private val outputPanelLogger = mu.KotlinLogging.logger("OutputPanel")
 
@@ -40,12 +36,6 @@ fun OutputPanel(
 
     var showTabDialog by remember { mutableStateOf(false) }
     var editingTab by remember { mutableStateOf<com.bylins.client.tabs.Tab?>(null) }
-
-    // Храним scroll state для каждой вкладки, чтобы сохранять позицию при переключении
-    val scrollStates = remember { mutableStateMapOf<String, ScrollState>() }
-
-    // Храним предыдущую длину текста для каждой вкладки (для определения нового текста)
-    val previousTextLengths = remember { mutableStateMapOf<String, Int>() }
 
     Column(modifier = modifier) {
         // Вкладки с управлением
@@ -119,32 +109,39 @@ fun OutputPanel(
 
         // Рендерим только активную вкладку
         val activeTab = tabs.find { it.id == activeTabId }
-        val receivedData by clientState.receivedData.collectAsState()
         if (activeTab != null) {
-            // Флаг переключения вкладки: создаётся заново при смене activeTab.id
-            // Начальное значение = true, TabContent установит false после обработки
-            val tabSwitchState = remember(activeTab.id) { mutableStateOf(true) }
+            // Снимок буфера: для главной вкладки — из TelnetClient, для прочих — из Tab
+            val mainSnapshot by clientState.mainOutputSnapshot.collectAsState()
+            val tabSnapshot by activeTab.snapshot.collectAsState()
+            val snapshot = if (activeTab.id == "main") mainSnapshot else tabSnapshot
 
-            // Получаем или создаём scroll state для этой вкладки
-            val scrollState = scrollStates.getOrPut(activeTab.id) { ScrollState(0) }
+            val holder = remember(activeTab.id) { clientState.outputViewHolder(activeTab.id) }
 
-            // Получаем контент вкладки ЗДЕСЬ, а не внутри TabContent
-            // Это унифицирует поведение с главной вкладкой и избегает проблем
-            // с пересозданием подписки при переключении вкладок
-            val tabContent by activeTab.content.collectAsState()
-            val displayText = if (activeTab.id == "main") receivedData else tabContent
+            val placeholder = remember(activeTab.id, activeTab.name) {
+                if (activeTab.id == "main") {
+                    AnnotatedString("Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n")
+                } else {
+                    AnnotatedString("${activeTab.name}: пусто\n")
+                }
+            }
 
-            TabContent(
-                tab = activeTab,
-                displayText = displayText,
-                fontFamily = fontFamily,
-                fontSize = fontSize,
-                scrollState = scrollState,
-                previousTextLengths = previousTextLengths,
-                isTabSwitch = tabSwitchState.value,
-                onTabSwitchHandled = { tabSwitchState.value = false },
-                modifier = Modifier.fillMaxSize()
-            )
+            // Доля разделителя — своя на каждую вкладку (хранится в holder)
+            val splitFraction = holder.splitFraction
+
+            // key по id вкладки: при переключении внутренних вкладок создаётся свежее
+            // поддерево (иначе переиспользование по тому же месту показывало старую вкладку)
+            key(activeTab.id) {
+                com.bylins.client.ui.components.output.ScrollbackOutputView(
+                    snapshot = snapshot,
+                    holder = holder,
+                    splitFraction = splitFraction,
+                    onSplitFractionChange = { holder.splitFraction = it },
+                    fontFamily = fontFamily,
+                    fontSize = fontSize,
+                    emptyPlaceholder = placeholder,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 
@@ -179,136 +176,5 @@ private fun getFontFamily(familyName: String): FontFamily {
         "SANS_SERIF" -> FontFamily.SansSerif
         "CURSIVE" -> FontFamily.Cursive
         else -> FontFamily.Monospace
-    }
-}
-
-/**
- * Получает последние N строк из текста для оптимизации рендеринга
- */
-private fun getLastLines(text: String, maxLines: Int): String {
-    if (text.isEmpty()) return text
-
-    var lineCount = 0
-    var position = text.length - 1
-
-    // Считаем с конца
-    while (position >= 0 && lineCount < maxLines) {
-        if (text[position] == '\n') {
-            lineCount++
-        }
-        position--
-    }
-
-    // Если достигли начала текста
-    if (position < 0) return text
-
-    // Возвращаем текст с позиции после найденной строки
-    return text.substring(position + 1)
-}
-
-@Composable
-fun TabContent(
-    tab: com.bylins.client.tabs.Tab,
-    displayText: String,
-    modifier: Modifier = Modifier,
-    fontFamily: FontFamily = FontFamily.Monospace,
-    fontSize: Int = 14,
-    scrollState: ScrollState,
-    previousTextLengths: MutableMap<String, Int>,
-    isTabSwitch: Boolean = false,
-    onTabSwitchHandled: () -> Unit = {}
-) {
-    val ansiParser = remember(tab.id) { AnsiParser() }
-
-    // КРИТИЧНО: Ограничиваем отображаемый текст последними 1000 строками
-    // для избежания O(n²) сложности при парсинге ANSI кодов
-    val limitedText = remember(displayText) {
-        if (displayText.length > 100_000) { // Только если текст большой
-            getLastLines(displayText, 1000)
-        } else {
-            displayText
-        }
-    }
-
-    val outputText: AnnotatedString = remember(limitedText) {
-        if (limitedText.isEmpty()) {
-            if (tab.id == "main") {
-                AnnotatedString("Добро пожаловать в Bylins MUD Client!\nПодключитесь к серверу для начала игры.\n\n")
-            } else {
-                AnnotatedString("${tab.name}: пусто\n")
-            }
-        } else {
-            ansiParser.parse(limitedText)
-        }
-    }
-
-    // Автопрокрутка вниз ТОЛЬКО при добавлении нового текста
-    // НЕ скроллим при переключении вкладок - только когда реально добавляется текст
-    val tabId = tab.id
-    val textLength = outputText.length
-    LaunchedEffect(textLength, isTabSwitch) {
-        // При переключении вкладок - только обновляем длину, НЕ скроллим
-        if (isTabSwitch) {
-            previousTextLengths[tabId] = textLength
-            onTabSwitchHandled() // Сбрасываем флаг после обработки
-            return@LaunchedEffect
-        }
-
-        val previousLength = previousTextLengths[tabId]
-
-        // Если это первый рендер вкладки - просто запоминаем длину, не скроллим
-        if (previousLength == null) {
-            previousTextLengths[tabId] = textLength
-            return@LaunchedEffect
-        }
-
-        // Скроллим только если текст реально увеличился
-        if (textLength > previousLength) {
-            previousTextLengths[tabId] = textLength
-            scrollState.scrollTo(scrollState.maxValue)
-        } else if (textLength != previousLength) {
-            // Текст изменился, но не увеличился - просто обновляем длину
-            previousTextLengths[tabId] = textLength
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .background(Color.Black)
-            .padding(8.dp)
-    ) {
-        // SelectionContainer позволяет выделять текст без проблем с курсором и фокусом
-        SelectionContainer(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(end = 14.dp) // Место для scrollbar
-                .verticalScroll(scrollState)
-        ) {
-            Text(
-                text = outputText,
-                style = androidx.compose.ui.text.TextStyle(
-                    color = Color(0xFFBBBBBB),
-                    fontFamily = fontFamily,
-                    fontSize = fontSize.sp,
-                    lineHeight = (fontSize + 4).sp
-                )
-            )
-        }
-
-        // Встроенный VerticalScrollbar - корректно обрабатывает drag и density
-        VerticalScrollbar(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight(),
-            adapter = rememberScrollbarAdapter(scrollState),
-            style = ScrollbarStyle(
-                minimalHeight = 30.dp,
-                thickness = 10.dp,
-                shape = RoundedCornerShape(5.dp),
-                hoverDurationMillis = 300,
-                unhoverColor = Color(0xFF888888),
-                hoverColor = Color(0xFFAAAAAA)
-            )
-        )
     }
 }
