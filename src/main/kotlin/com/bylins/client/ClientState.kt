@@ -372,15 +372,33 @@ class ClientState {
     private val outputViewHolders =
         mutableMapOf<String, com.bylins.client.ui.components.output.OutputViewHolder>()
 
+    // Доля разделителя панели вывода по id вкладки (персистится в конфиг)
+    private val outputSplitFractions = mutableMapOf<String, Float>()
+
     fun outputViewHolder(tabId: String): com.bylins.client.ui.components.output.OutputViewHolder =
-        outputViewHolders.getOrPut(tabId) { com.bylins.client.ui.components.output.OutputViewHolder() }
+        outputViewHolders.getOrPut(tabId) {
+            com.bylins.client.ui.components.output.OutputViewHolder().also { h ->
+                outputSplitFractions[tabId]?.let { h.splitFraction = it }
+            }
+        }
 
-    // Доля высоты под «живой хвост» при раздвоении панели вывода (0..1)
-    private val _outputSplitFraction = MutableStateFlow(0.3f)
-    val outputSplitFraction: StateFlow<Float> = _outputSplitFraction
+    /** Снимок сохранённых долей разделителя (для записи в конфиг). */
+    fun getOutputSplitFractions(): Map<String, Float> = outputSplitFractions.toMap()
 
-    fun setOutputSplitFraction(fraction: Float) {
-        _outputSplitFraction.value = fraction.coerceIn(0.1f, 0.9f)
+    /** Восстанавливает доли разделителя из конфига (на загрузке). */
+    fun loadOutputSplitFractions(map: Map<String, Float>) {
+        outputSplitFractions.clear()
+        outputSplitFractions.putAll(map)
+        // Применяем к уже созданным holder'ам (если есть)
+        map.forEach { (id, f) -> outputViewHolders[id]?.splitFraction = f }
+    }
+
+    /** Меняет долю разделителя вкладки и персистит. */
+    fun setOutputSplitFraction(tabId: String, fraction: Float) {
+        val clamped = fraction.coerceIn(0.1f, 0.9f)
+        outputSplitFractions[tabId] = clamped
+        outputViewHolders[tabId]?.splitFraction = clamped
+        saveConfig()
     }
 
     // Выбранная подвкладка в панели плагинов (сохраняется между переключениями)
@@ -485,6 +503,7 @@ class ClientState {
         _ignoreNumLock.value = configData.ignoreNumLock
         _hiddenTabs.value = configData.hiddenTabs
         _statusGroupCollapsed.value = configData.statusGroupCollapsed
+        loadOutputSplitFractions(configData.outputSplitFractions)
         logManager.setLogWithColors(configData.logWithColors)
 
         // Устанавливаем callback для сохранения состояния свёрнутости групп
@@ -1435,7 +1454,8 @@ class ClientState {
             hiddenTabs = _hiddenTabs.value,
             lastMapRoomId = lastMapRoomId,
             logWithColors = logManager.logWithColors.value,
-            statusGroupCollapsed = _statusGroupCollapsed.value
+            statusGroupCollapsed = _statusGroupCollapsed.value,
+            outputSplitFractions = getOutputSplitFractions()
         )
     }
 

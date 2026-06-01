@@ -322,5 +322,6 @@ data class ClientConfig(
     val hiddenTabs: Set<String> = emptySet(),  // Скрытые вкладки (по ID)
     val lastMapRoomId: String? = null,  // Последняя текущая комната на карте
     val logWithColors: Boolean = false,  // Сохранять ANSI-цвета в логах
-    val statusGroupCollapsed: Map<String, Boolean> = emptyMap()  // Состояние свёрнутости групп статус-панели
+    val statusGroupCollapsed: Map<String, Boolean> = emptyMap(),  // Состояние свёрнутости групп статус-панели
+    val outputSplitFractions: Map<String, Float> = emptyMap()  // Доля разделителя панели вывода по id вкладки
 )

@@ -116,26 +116,35 @@ internal fun lastLines(text: String, maxLines: Int): String {
  * Рисует одну панель-вьюпорт над общим layout: подсветку выделения и текст,
  * сдвинутые на [scrollPx] и обрезанные границами панели.
  */
+internal val SEARCH_ALL_COLOR = Color(0x66E6B800)     // все совпадения — приглушённый жёлтый
+internal val SEARCH_CURRENT_COLOR = Color(0xCCFF8C00)  // текущее — яркий оранжевый
+
 @androidx.compose.runtime.Composable
 internal fun OutputCanvas(
     layout: TextLayoutResult,
     scrollProvider: () -> Float,
     selectionColor: Color,
     revisionState: State<Int>,
+    searchRevisionState: State<Int>,
     selectionPathProvider: () -> Path?,
+    searchAllProvider: () -> Path?,
+    searchCurrentProvider: () -> Path?,
     modifier: Modifier
 ) {
     Canvas(modifier) {
-        // Скролл и ревизию выделения читаем в фазе draw — Canvas перерисуется при
-        // их изменении даже без рекомпозиции (надёжно на любой вкладке).
+        // Скролл, ревизии выделения и поиска читаем в фазе draw — Canvas перерисуется
+        // при их изменении даже без рекомпозиции (надёжно на любой вкладке).
         revisionState.value
+        searchRevisionState.value
         val scrollPx = scrollProvider()
         val selectionPath = selectionPathProvider()
+        val searchAll = searchAllProvider()
+        val searchCurrent = searchCurrentProvider()
         clipRect {
             translate(top = -scrollPx) {
-                if (selectionPath != null) {
-                    drawPath(selectionPath, color = selectionColor)
-                }
+                if (searchAll != null) drawPath(searchAll, color = SEARCH_ALL_COLOR)
+                if (searchCurrent != null) drawPath(searchCurrent, color = SEARCH_CURRENT_COLOR)
+                if (selectionPath != null) drawPath(selectionPath, color = selectionColor)
                 drawText(layout)
             }
         }

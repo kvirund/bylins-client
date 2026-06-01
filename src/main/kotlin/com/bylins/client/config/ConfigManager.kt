@@ -55,7 +55,8 @@ class ConfigManager {
         hiddenTabs: Set<String> = emptySet(),
         lastMapRoomId: String? = null,
         logWithColors: Boolean = false,
-        statusGroupCollapsed: Map<String, Boolean> = emptyMap()
+        statusGroupCollapsed: Map<String, Boolean> = emptyMap(),
+        outputSplitFractions: Map<String, Float> = emptyMap()
     ) {
         try {
             val config = ClientConfig(
@@ -80,7 +81,8 @@ class ConfigManager {
                 hiddenTabs = hiddenTabs,
                 lastMapRoomId = lastMapRoomId,
                 logWithColors = logWithColors,
-                statusGroupCollapsed = statusGroupCollapsed
+                statusGroupCollapsed = statusGroupCollapsed,
+                outputSplitFractions = outputSplitFractions
             )
 
             val jsonString = json.encodeToString(config)
@@ -135,6 +137,7 @@ class ConfigManager {
             val lastMapRoomId = config.lastMapRoomId
             val logWithColors = config.logWithColors
             val statusGroupCollapsed = config.statusGroupCollapsed
+            val outputSplitFractions = config.outputSplitFractions
 
             val contextCommandRules = config.contextCommandRules
             val contextCommandMaxQueueSize = config.contextCommandMaxQueueSize
@@ -162,7 +165,8 @@ class ConfigManager {
                 hiddenTabs = hiddenTabs,
                 lastMapRoomId = lastMapRoomId,
                 logWithColors = logWithColors,
-                statusGroupCollapsed = statusGroupCollapsed
+                statusGroupCollapsed = statusGroupCollapsed,
+                outputSplitFractions = outputSplitFractions
             )
         } catch (e: Exception) {
             logger.error { "Failed to load config: ${e.message}" }
@@ -287,5 +291,6 @@ data class ConfigData(
     val hiddenTabs: Set<String> = emptySet(),
     val lastMapRoomId: String? = null,
     val logWithColors: Boolean = false,
-    val statusGroupCollapsed: Map<String, Boolean> = emptyMap()
+    val statusGroupCollapsed: Map<String, Boolean> = emptyMap(),
+    val outputSplitFractions: Map<String, Float> = emptyMap()
 )

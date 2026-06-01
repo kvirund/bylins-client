@@ -4,6 +4,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.TextLayoutResult
 import com.bylins.client.ui.scroll.OutputScrollController
+import com.bylins.client.ui.scroll.OutputSearch
 import com.bylins.client.ui.scroll.OutputSelection
 
 /**
@@ -19,6 +20,18 @@ import com.bylins.client.ui.scroll.OutputSelection
 class OutputViewHolder {
     val controller = OutputScrollController()
     val selection = OutputSelection()
+    val search = OutputSearch()
+
+    // Открыта ли строка поиска (своя на вкладку)
+    private val _searchActive = mutableStateOf(false)
+    var searchActive: Boolean
+        get() = _searchActive.value
+        set(value) { _searchActive.value = value }
+
+    // Ревизия поиска: инкремент перерисовывает подсветку совпадений в фазе draw
+    private val _searchRevision = mutableStateOf(0)
+    val searchRevisionState: State<Int> get() = _searchRevision
+    fun bumpSearch() { _searchRevision.value++ }
 
     // Позиции скролла в пикселях (snapshot-state — изменение перерисовывает Canvas)
     private val _liveScrollPx = mutableStateOf(0f)

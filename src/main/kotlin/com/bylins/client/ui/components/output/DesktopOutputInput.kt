@@ -36,6 +36,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -86,12 +87,19 @@ fun ScrollbackOutputView(
     fontFamily: FontFamily,
     fontSize: Int,
     emptyPlaceholder: AnnotatedString,
+    onSearchFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val clipboard = LocalClipboardManager.current
     val focusRequester = remember { FocusRequester() }
+    val searchFocus = remember { FocusRequester() }
+    var searchQuery by remember { mutableStateOf(holder.search.query) }
+    // Фокус в поле поиска при открытии
+    LaunchedEffect(holder.searchActive) {
+        if (holder.searchActive) runCatching { searchFocus.requestFocus() }
+    }
     val controller = holder.controller
     val selection = holder.selection
     val ansiParser = remember { AnsiParser() }
@@ -191,6 +199,19 @@ fun ScrollbackOutputView(
             // Провайдер позиции скроллбэка (верхняя панель) — читается в фазе draw
             val scrollbackProvider: () -> Float = { holder.scrollbackScrollPx.coerceIn(0f, maxScroll) }
 
+            // --- Поиск: подсветка совпадений (в фазе draw) ---
+            val searchRevisionState = holder.searchRevisionState
+            fun matchPath(m: com.bylins.client.ui.scroll.SearchMatch): androidx.compose.ui.graphics.Path =
+                layout.getPathForRange(m.start.coerceIn(0, plainText.length), m.end.coerceIn(0, plainText.length))
+            val searchAllProvider: () -> androidx.compose.ui.graphics.Path? = {
+                val ms = holder.search.matches
+                if (isEmpty || !holder.searchActive || ms.isEmpty()) null
+                else androidx.compose.ui.graphics.Path().apply { ms.forEach { addPath(matchPath(it)) } }
+            }
+            val searchCurrentProvider: () -> androidx.compose.ui.graphics.Path? = {
+                if (isEmpty || !holder.searchActive) null else holder.search.current?.let { matchPath(it) }
+            }
+
             // --- Действия (пересоздаются каждую рекомпозицию, видят актуальные значения) ---
             val userScrollTo: (Float) -> Unit = { target ->
                 val clamped = target.coerceIn(0f, maxScroll)
@@ -206,6 +227,37 @@ fun ScrollbackOutputView(
             val collapse: () -> Unit = {
                 controller.jumpToBottom()
                 holder.scrollbackScrollPx = maxScroll
+            }
+            // Прокрутить к текущему совпадению (через якорь, с парой строк контекста сверху)
+            val jumpToMatch: () -> Unit = {
+                holder.search.current?.let { m ->
+                    val lineIdx = com.bylins.client.ui.scroll.BufferOffsets.lineIndexOfOffset(plainText, m.start)
+                    val targetSeq = (effectiveFirstSeq + lineIdx - 2).coerceAtLeast(effectiveFirstSeq)
+                    holder.anchorSeq = targetSeq
+                    holder.anchorCol = 0
+                    holder.anchorOffsetPx = 0f
+                    controller.jumpToLine(targetSeq)
+                    holder.scrollbackScrollPx =
+                        anchorToPx(layout, plainText, effectiveFirstSeq, targetSeq, 0).coerceIn(0f, maxScroll)
+                }
+            }
+            val onSearchQueryChange: (String) -> Unit = { q ->
+                searchQuery = q
+                holder.search.update(q, plainText)
+                holder.bumpSearch()
+                jumpToMatch()
+            }
+            val nextMatch: () -> Unit = { holder.search.next(); holder.bumpSearch(); jumpToMatch() }
+            val prevMatch: () -> Unit = { holder.search.prev(); holder.bumpSearch(); jumpToMatch() }
+            val closeSearch: () -> Unit = {
+                holder.searchActive = false
+                holder.bumpSearch() // перерисовать без подсветки
+                onSearchFocusChanged(false)
+                runCatching { focusRequester.requestFocus() }
+            }
+            // Перепоиск при изменении контента/опций (без перехода — только обновить подсветку/счётчик)
+            LaunchedEffect(plainText, searchQuery, holder.search.caseSensitive, holder.search.useRegex) {
+                if (searchQuery.isNotEmpty()) { holder.search.update(searchQuery, plainText); holder.bumpSearch() }
             }
             // Указатель -> точка выделения (с учётом того, в какой панели курсор)
             val pointToSel: (Offset) -> com.bylins.client.ui.scroll.SelPoint = { pos ->
@@ -226,6 +278,12 @@ fun ScrollbackOutputView(
             val handleKey: (KeyEvent) -> Boolean = handleKey@{ event ->
                 if (event.type != KeyEventType.KeyDown) return@handleKey false
                 when {
+                    event.isCtrlPressed && event.key == Key.F -> {
+                        holder.searchActive = true; runCatching { searchFocus.requestFocus() }; true
+                    }
+                    event.key == Key.F3 && event.isShiftPressed -> { prevMatch(); true }
+                    event.key == Key.F3 -> { nextMatch(); true }
+                    event.key == Key.Escape && holder.searchActive -> { closeSearch(); true }
                     event.isCtrlPressed && event.key == Key.A -> {
                         selection.selectAll(effectiveFirstSeq, geometry.lineCount); holder.bumpSelection(); true
                     }
@@ -313,7 +371,10 @@ fun ScrollbackOutputView(
                             scrollProvider = scrollbackProvider,
                             selectionColor = SELECTION_COLOR,
                             revisionState = revisionState,
+                            searchRevisionState = searchRevisionState,
                             selectionPathProvider = selectionPathProvider,
+                            searchAllProvider = searchAllProvider,
+                            searchCurrentProvider = searchCurrentProvider,
                             modifier = Modifier.fillMaxWidth().weight(1f - splitFraction)
                         )
                         OutputCanvas(
@@ -321,7 +382,10 @@ fun ScrollbackOutputView(
                             scrollProvider = { bottomScrollPx },
                             selectionColor = SELECTION_COLOR,
                             revisionState = revisionState,
+                            searchRevisionState = searchRevisionState,
                             selectionPathProvider = selectionPathProvider,
+                            searchAllProvider = searchAllProvider,
+                            searchCurrentProvider = searchCurrentProvider,
                             modifier = Modifier.fillMaxWidth().weight(splitFraction)
                         )
                     }
@@ -332,7 +396,10 @@ fun ScrollbackOutputView(
                         scrollProvider = scrollbackProvider,
                         selectionColor = SELECTION_COLOR,
                         revisionState = revisionState,
+                        searchRevisionState = searchRevisionState,
                         selectionPathProvider = selectionPathProvider,
+                        searchAllProvider = searchAllProvider,
+                        searchCurrentProvider = searchCurrentProvider,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -395,6 +462,34 @@ fun ScrollbackOutputView(
                         style = TextStyle(color = Color.White, fontSize = 14.sp)
                     )
                 }
+            }
+
+            // Строка поиска (Ctrl+F) — оверлей сверху справа
+            if (holder.searchActive) {
+                holder.searchRevisionState.value // подписка: обновлять счётчик/индекс
+                OutputSearchBar(
+                    query = searchQuery,
+                    onQueryChange = onSearchQueryChange,
+                    count = holder.search.count,
+                    currentIndex = holder.search.currentIndex,
+                    regexError = holder.search.regexError,
+                    caseSensitive = holder.search.caseSensitive,
+                    onToggleCase = {
+                        holder.search.caseSensitive = !holder.search.caseSensitive
+                        holder.search.update(searchQuery, plainText); holder.bumpSearch()
+                    },
+                    useRegex = holder.search.useRegex,
+                    onToggleRegex = {
+                        holder.search.useRegex = !holder.search.useRegex
+                        holder.search.update(searchQuery, plainText); holder.bumpSearch()
+                    },
+                    onNext = nextMatch,
+                    onPrev = prevMatch,
+                    onClose = closeSearch,
+                    focusRequester = searchFocus,
+                    onFocusChanged = onSearchFocusChanged,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(end = scrollbarStrip + 2.dp, top = 2.dp)
+                )
             }
         }
     }
