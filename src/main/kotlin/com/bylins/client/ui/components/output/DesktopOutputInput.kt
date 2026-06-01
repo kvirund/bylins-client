@@ -87,6 +87,7 @@ fun ScrollbackOutputView(
     fontFamily: FontFamily,
     fontSize: Int,
     emptyPlaceholder: AnnotatedString,
+    onSearchFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -204,11 +205,11 @@ fun ScrollbackOutputView(
                 layout.getPathForRange(m.start.coerceIn(0, plainText.length), m.end.coerceIn(0, plainText.length))
             val searchAllProvider: () -> androidx.compose.ui.graphics.Path? = {
                 val ms = holder.search.matches
-                if (isEmpty || ms.isEmpty()) null
+                if (isEmpty || !holder.searchActive || ms.isEmpty()) null
                 else androidx.compose.ui.graphics.Path().apply { ms.forEach { addPath(matchPath(it)) } }
             }
             val searchCurrentProvider: () -> androidx.compose.ui.graphics.Path? = {
-                if (isEmpty) null else holder.search.current?.let { matchPath(it) }
+                if (isEmpty || !holder.searchActive) null else holder.search.current?.let { matchPath(it) }
             }
 
             // --- Действия (пересоздаются каждую рекомпозицию, видят актуальные значения) ---
@@ -248,7 +249,12 @@ fun ScrollbackOutputView(
             }
             val nextMatch: () -> Unit = { holder.search.next(); holder.bumpSearch(); jumpToMatch() }
             val prevMatch: () -> Unit = { holder.search.prev(); holder.bumpSearch(); jumpToMatch() }
-            val closeSearch: () -> Unit = { holder.searchActive = false; runCatching { focusRequester.requestFocus() } }
+            val closeSearch: () -> Unit = {
+                holder.searchActive = false
+                holder.bumpSearch() // перерисовать без подсветки
+                onSearchFocusChanged(false)
+                runCatching { focusRequester.requestFocus() }
+            }
             // Перепоиск при изменении контента/опций (без перехода — только обновить подсветку/счётчик)
             LaunchedEffect(plainText, searchQuery, holder.search.caseSensitive, holder.search.useRegex) {
                 if (searchQuery.isNotEmpty()) { holder.search.update(searchQuery, plainText); holder.bumpSearch() }
@@ -481,6 +487,7 @@ fun ScrollbackOutputView(
                     onPrev = prevMatch,
                     onClose = closeSearch,
                     focusRequester = searchFocus,
+                    onFocusChanged = onSearchFocusChanged,
                     modifier = Modifier.align(Alignment.TopEnd).padding(end = scrollbarStrip + 2.dp, top = 2.dp)
                 )
             }

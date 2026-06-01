@@ -135,10 +135,11 @@ fun OutputPanel(
                     snapshot = snapshot,
                     holder = holder,
                     splitFraction = splitFraction,
-                    onSplitFractionChange = { holder.splitFraction = it },
+                    onSplitFractionChange = { clientState.setOutputSplitFraction(activeTab.id, it) },
                     fontFamily = fontFamily,
                     fontSize = fontSize,
                     emptyPlaceholder = placeholder,
+                    onSearchFocusChanged = { clientState.setSecondaryTextFieldFocused(it) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
