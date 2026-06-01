@@ -88,6 +88,7 @@ fun ScrollbackOutputView(
     fontSize: Int,
     emptyPlaceholder: AnnotatedString,
     onSearchFocusChanged: (Boolean) -> Unit = {},
+    searchRequest: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -96,9 +97,13 @@ fun ScrollbackOutputView(
     val focusRequester = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
     var searchQuery by remember { mutableStateOf(holder.search.query) }
-    // Фокус в поле поиска при открытии
-    LaunchedEffect(holder.searchActive) {
-        if (holder.searchActive) runCatching { searchFocus.requestFocus() }
+    // Внешний запрос (Ctrl+F из ввода команд/любого места): открыть поиск и
+    // активировать поле (фокус + выделить текст) даже если оно уже было открыто.
+    LaunchedEffect(searchRequest) {
+        if (searchRequest > 0) {
+            holder.searchActive = true
+            holder.bumpSearchOpen()
+        }
     }
     val controller = holder.controller
     val selection = holder.selection
@@ -279,7 +284,7 @@ fun ScrollbackOutputView(
                 if (event.type != KeyEventType.KeyDown) return@handleKey false
                 when {
                     event.isCtrlPressed && event.key == Key.F -> {
-                        holder.searchActive = true; runCatching { searchFocus.requestFocus() }; true
+                        holder.searchActive = true; holder.bumpSearchOpen(); true
                     }
                     event.key == Key.F3 && event.isShiftPressed -> { prevMatch(); true }
                     event.key == Key.F3 -> { nextMatch(); true }
@@ -417,6 +422,12 @@ fun ScrollbackOutputView(
                         .offset { IntOffset(0, (topPaneHeightPx - dividerHalf).roundToInt()) }
                         .background(DIVIDER_COLOR)
                         .pointerHoverIcon(PointerIcon.Default)
+                        // Колесо над разделителем прокручивает так же, как над контентом
+                        // (иначе разделитель перехватывает событие и скролл «не работает»).
+                        .onPointerEvent(PointerEventType.Scroll) { event ->
+                            val dy = event.changes.firstOrNull()?.scrollDelta?.y ?: 0f
+                            if (dy != 0f) userScrollTo(scrollbackPx + dy * lineHeightPx * 3f)
+                        }
                         .pointerInput(Unit) {
                             // Локальный аккумулятор от старта перетаскивания — чтобы не терять
                             // движение из-за лага рекомпозиции (иначе двигался «на фракцию»).
@@ -488,6 +499,7 @@ fun ScrollbackOutputView(
                     onClose = closeSearch,
                     focusRequester = searchFocus,
                     onFocusChanged = onSearchFocusChanged,
+                    activationCounter = holder.searchOpenSignal,
                     modifier = Modifier.align(Alignment.TopEnd).padding(end = scrollbarStrip + 2.dp, top = 2.dp)
                 )
             }

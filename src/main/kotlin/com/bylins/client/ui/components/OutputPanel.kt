@@ -23,6 +23,7 @@ fun OutputPanel(
 ) {
     val tabs by clientState.tabs.collectAsState()
     val activeTabId by clientState.activeTabId.collectAsState()
+    val outputSearchRequest by clientState.outputSearchRequest.collectAsState()
 
     // Логируем вкладки при изменении
     LaunchedEffect(tabs) {
@@ -140,6 +141,7 @@ fun OutputPanel(
                     fontSize = fontSize,
                     emptyPlaceholder = placeholder,
                     onSearchFocusChanged = { clientState.setSecondaryTextFieldFocused(it) },
+                    searchRequest = outputSearchRequest,
                     modifier = Modifier.fillMaxSize()
                 )
             }

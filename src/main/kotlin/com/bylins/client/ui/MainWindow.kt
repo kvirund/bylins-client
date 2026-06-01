@@ -54,7 +54,7 @@ fun MainWindow() {
     val hiddenTabs by clientState.hiddenTabs.collectAsState()
 
     // Фильтруем видимые вкладки
-    val visibleTabs = ALL_TABS.filter { it.id !in hiddenTabs }
+    val visibleTabs = ALL_TABS.filter { it.id in com.bylins.client.PERMANENT_TAB_IDS || it.id !in hiddenTabs }
     val selectedTabIndex = visibleTabs.indexOfFirst { it.id == selectedTabId }.coerceAtLeast(0)
 
     // Отслеживаем последний обработанный KeyDown для поглощения KeyUp
@@ -94,6 +94,14 @@ fun MainWindow() {
                 .onPreviewKeyEvent { event ->
                     when (event.type) {
                         KeyEventType.KeyDown -> {
+                            // Ctrl+F из любого места (включая поле ввода команд) открывает
+                            // и фокусирует поиск по выводу на вкладке «Вывод».
+                            if (event.isCtrlPressed && event.key == Key.F) {
+                                selectedTabId = "main"
+                                clientState.requestOutputSearch()
+                                lastHandledKey = event.key
+                                return@onPreviewKeyEvent true
+                            }
                             // Обрабатываем горячие клавиши
                             val handled = clientState.processHotkey(
                                 key = event.key,

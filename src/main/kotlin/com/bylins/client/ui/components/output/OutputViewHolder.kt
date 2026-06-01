@@ -28,6 +28,12 @@ class OutputViewHolder {
         get() = _searchActive.value
         set(value) { _searchActive.value = value }
 
+    // Сигнал «активировать поле поиска» (Ctrl+F): инкремент перезапрашивает фокус
+    // и выделяет весь текст в поле, даже если поиск уже был открыт.
+    private val _searchOpenSignal = mutableStateOf(0)
+    val searchOpenSignal: Int get() = _searchOpenSignal.value
+    fun bumpSearchOpen() { _searchOpenSignal.value++ }
+
     // Ревизия поиска: инкремент перерисовывает подсветку совпадений в фазе draw
     private val _searchRevision = mutableStateOf(0)
     val searchRevisionState: State<Int> get() = _searchRevision

@@ -9,8 +9,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -49,8 +57,20 @@ internal fun OutputSearchBar(
     onClose: () -> Unit,
     focusRequester: FocusRequester,
     onFocusChanged: (Boolean) -> Unit,
+    activationCounter: Int,
     modifier: Modifier = Modifier
 ) {
+    // Локальное TextFieldValue, чтобы управлять выделением/курсором.
+    var tfv by remember { mutableStateOf(TextFieldValue(query, TextRange(query.length))) }
+    // Внешнее изменение query (не из набора в поле) — синхронизируем, курсор в конец.
+    LaunchedEffect(query) {
+        if (query != tfv.text) tfv = TextFieldValue(query, TextRange(query.length))
+    }
+    // Активация по Ctrl+F: фокус + выделить весь текст (новый ввод затрёт старый запрос).
+    LaunchedEffect(activationCounter) {
+        runCatching { focusRequester.requestFocus() }
+        tfv = tfv.copy(selection = TextRange(0, tfv.text.length))
+    }
     val counter = when {
         query.isEmpty() -> ""
         regexError -> "ошибка regex"
@@ -74,12 +94,16 @@ internal fun OutputSearchBar(
                 .padding(horizontal = 6.dp, vertical = 4.dp)
         ) {
             BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
+                value = tfv,
+                onValueChange = { nv ->
+                    tfv = nv
+                    if (nv.text != query) onQueryChange(nv.text)
+                },
                 singleLine = true,
                 textStyle = TextStyle(color = Color(0xFFE6E6E6), fontSize = 13.sp),
                 cursorBrush = SolidColor(Color(0xFFE6E6E6)),
                 modifier = Modifier
+                    .fillMaxWidth()
                     .focusRequester(focusRequester)
                     .onFocusChanged { onFocusChanged(it.isFocused) }
                     .onPreviewKeyEvent { e ->
