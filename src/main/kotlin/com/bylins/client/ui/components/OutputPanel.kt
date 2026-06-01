@@ -129,6 +129,16 @@ fun OutputPanel(
             // Доля разделителя — своя на каждую вкладку (хранится в holder)
             val splitFraction = holder.splitFraction
 
+            // Ctrl+F из любого места: открыть/активировать поиск ТОЛЬКО на активной вкладке.
+            // Ключ — только счётчик: смена вкладки эффект не перезапускает, поэтому
+            // переключение между вкладками не открывает на них поиск.
+            LaunchedEffect(outputSearchRequest) {
+                if (outputSearchRequest > 0) {
+                    holder.searchActive = true
+                    holder.bumpSearchOpen()
+                }
+            }
+
             // key по id вкладки: при переключении внутренних вкладок создаётся свежее
             // поддерево (иначе переиспользование по тому же месту показывало старую вкладку)
             key(activeTab.id) {
@@ -141,7 +151,6 @@ fun OutputPanel(
                     fontSize = fontSize,
                     emptyPlaceholder = placeholder,
                     onSearchFocusChanged = { clientState.setSecondaryTextFieldFocused(it) },
-                    searchRequest = outputSearchRequest,
                     modifier = Modifier.fillMaxSize()
                 )
             }

@@ -88,7 +88,6 @@ fun ScrollbackOutputView(
     fontSize: Int,
     emptyPlaceholder: AnnotatedString,
     onSearchFocusChanged: (Boolean) -> Unit = {},
-    searchRequest: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -97,14 +96,6 @@ fun ScrollbackOutputView(
     val focusRequester = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
     var searchQuery by remember { mutableStateOf(holder.search.query) }
-    // Внешний запрос (Ctrl+F из ввода команд/любого места): открыть поиск и
-    // активировать поле (фокус + выделить текст) даже если оно уже было открыто.
-    LaunchedEffect(searchRequest) {
-        if (searchRequest > 0) {
-            holder.searchActive = true
-            holder.bumpSearchOpen()
-        }
-    }
     val controller = holder.controller
     val selection = holder.selection
     val ansiParser = remember { AnsiParser() }
