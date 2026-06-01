@@ -44,6 +44,35 @@ internal fun seqToTopPx(
     return layout.getLineTop(visualLine)
 }
 
+/** Якорь (seq, col) символа в левом-верхнем углу вьюпорта при сдвиге [scrollPx]. */
+internal fun pxToAnchor(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    scrollPx: Float
+): Pair<Long, Int> {
+    val off = layout.getOffsetForPosition(Offset(0f, scrollPx)).coerceIn(0, plainText.length)
+    val (line, col) = BufferOffsets.lineColOfOffset(plainText, off)
+    return (firstSeq + line) to col
+}
+
+/** Точный пиксель верха визуальной строки, содержащей символ (seq, col). Без «защёлкивания»
+ *  к началу логической строки — поэтому нет дрожи на переносах. */
+internal fun anchorToPx(
+    layout: TextLayoutResult,
+    plainText: String,
+    firstSeq: Long,
+    seq: Long,
+    col: Int
+): Float {
+    val lineIdx = (seq - firstSeq).toInt()
+    val li = if (lineIdx < 0) 0 else lineIdx
+    val c = if (lineIdx < 0) 0 else col
+    val off = BufferOffsets.offsetOfLineCol(plainText, li, c).coerceIn(0, layout.layoutInput.text.length)
+    val visualLine = layout.getLineForOffset(off)
+    return layout.getLineTop(visualLine)
+}
+
 /** seq верхней видимой строки при заданном сдвиге скролла. */
 internal fun topSeqAt(
     layout: TextLayoutResult,
@@ -130,6 +159,7 @@ internal fun OutputScrollbar(
     viewportPx: Float,
     contentHeightPx: Float,
     onScrollTo: (Float) -> Unit,
+    onActive: (Boolean) -> Unit,
     modifier: Modifier
 ) {
     if (contentHeightPx <= viewportPx + 1f) return
@@ -137,6 +167,10 @@ internal fun OutputScrollbar(
     val maxRef = rememberUpdatedState(maxScroll)
     val viewportRef = rememberUpdatedState(viewportPx)
     val contentRef = rememberUpdatedState(contentHeightPx)
+    // ВАЖНО: колбэк тоже через rememberUpdatedState — иначе долгоживущий жест
+    // pointerInput(Unit) захватит устаревший onScrollTo (со старым maxScroll) → скачки.
+    val onScrollToRef = rememberUpdatedState(onScrollTo)
+    val scrollProviderRef = rememberUpdatedState(scrollProvider)
 
     Canvas(
         modifier.pointerInput(Unit) {
@@ -147,17 +181,22 @@ internal fun OutputScrollbar(
                 val track = size.height.toFloat()
                 val thumb = (track * viewportRef.value / contentRef.value).coerceIn(30f, track)
                 val denom = (track - thumb).coerceAtLeast(1f)
-                val curThumbY = if (maxRef.value > 0f) (scrollProvider() / maxRef.value) * denom else 0f
+                val curThumbY = if (maxRef.value > 0f) (scrollProviderRef.value() / maxRef.value) * denom else 0f
                 // Смещение точки захвата внутри ползунка (если кликнули мимо — по центру)
                 val grab = (down.position.y - curThumbY).let { if (it in 0f..thumb) it else thumb / 2f }
                 down.consume()
-                while (true) {
-                    val ev = awaitPointerEvent()
-                    val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!ch.pressed) break
-                    val targetThumbY = (ch.position.y - grab).coerceIn(0f, denom)
-                    onScrollTo(targetThumbY / denom * maxRef.value)
-                    ch.consume()
+                onActive(true)
+                try {
+                    while (true) {
+                        val ev = awaitPointerEvent()
+                        val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!ch.pressed) break
+                        val targetThumbY = (ch.position.y - grab).coerceIn(0f, denom)
+                        onScrollToRef.value(targetThumbY / denom * maxRef.value)
+                        ch.consume()
+                    }
+                } finally {
+                    onActive(false)
                 }
             }
         }
