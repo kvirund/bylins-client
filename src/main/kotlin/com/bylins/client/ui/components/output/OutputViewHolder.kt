@@ -47,6 +47,15 @@ class OutputViewHolder {
     // высоты вьюпорта/контента (точно, по символу — без «защёлкивания» к началу строки).
     var anchorSeq: Long = 0L
     var anchorCol: Int = 0
+    // Суб-строчный сдвиг: пиксель скролла минус верх визуальной строки якоря.
+    // Сохраняет точную позицию при пере-привязке (без «защёлкивания» к строке).
+    var anchorOffsetPx: Float = 0f
+
+    // Доля высоты под живой хвост — СВОЯ на каждую вкладку (раздельные разделители).
+    private val _splitFraction = mutableStateOf(0.3f)
+    var splitFraction: Float
+        get() = _splitFraction.value
+        set(value) { _splitFraction.value = value.coerceIn(0.1f, 0.9f) }
 
     // Ревизия выделения: инкремент заставляет панель перерисовать подсветку,
     // т.к. сама OutputSelection — не snapshot-state.

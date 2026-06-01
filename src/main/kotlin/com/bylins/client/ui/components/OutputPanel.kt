@@ -125,7 +125,8 @@ fun OutputPanel(
                 }
             }
 
-            val splitFraction by clientState.outputSplitFraction.collectAsState()
+            // Доля разделителя — своя на каждую вкладку (хранится в holder)
+            val splitFraction = holder.splitFraction
 
             // key по id вкладки: при переключении внутренних вкладок создаётся свежее
             // поддерево (иначе переиспользование по тому же месту показывало старую вкладку)
@@ -134,7 +135,7 @@ fun OutputPanel(
                     snapshot = snapshot,
                     holder = holder,
                     splitFraction = splitFraction,
-                    onSplitFractionChange = { clientState.setOutputSplitFraction(it) },
+                    onSplitFractionChange = { holder.splitFraction = it },
                     fontFamily = fontFamily,
                     fontSize = fontSize,
                     emptyPlaceholder = placeholder,

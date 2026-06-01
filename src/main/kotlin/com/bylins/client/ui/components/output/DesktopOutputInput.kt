@@ -170,8 +170,8 @@ fun ScrollbackOutputView(
                     holder.scrollbackScrollPx = maxScroll
                 } else {
                     holder.scrollbackScrollPx =
-                        anchorToPx(layout, plainText, effectiveFirstSeq, holder.anchorSeq, holder.anchorCol)
-                            .coerceIn(0f, maxScroll)
+                        (anchorToPx(layout, plainText, effectiveFirstSeq, holder.anchorSeq, holder.anchorCol)
+                            + holder.anchorOffsetPx).coerceIn(0f, maxScroll)
                 }
             }
 
@@ -200,6 +200,7 @@ fun ScrollbackOutputView(
                 val (aseq, acol) = pxToAnchor(layout, plainText, effectiveFirstSeq, clamped)
                 holder.anchorSeq = aseq
                 holder.anchorCol = acol
+                holder.anchorOffsetPx = clamped - anchorToPx(layout, plainText, effectiveFirstSeq, aseq, acol)
                 controller.onUserScroll(atBottom, aseq)
             }
             val collapse: () -> Unit = {
