@@ -70,7 +70,14 @@ class TabManager {
     /**
      * Обновляет вкладку
      */
-    fun updateTab(id: String, name: String, filters: List<TabFilter>, captureMode: CaptureMode) {
+    fun updateTab(
+        id: String,
+        name: String,
+        filters: List<TabFilter>,
+        captureMode: CaptureMode,
+        perProfile: Boolean = false,
+        persistContent: Boolean = false
+    ) {
         if (id == "main") {
             logger.info { "Cannot update main tab" }
             return
@@ -83,7 +90,9 @@ class TabManager {
                     name = name,
                     filters = filters,
                     captureMode = captureMode,
-                    maxLines = tab.maxLines
+                    maxLines = tab.maxLines,
+                    perProfile = perProfile,
+                    persistContent = persistContent
                 )
                 // Копируем старое содержимое
                 val oldContent = tab.content.value
@@ -275,5 +284,42 @@ class TabManager {
      */
     fun getTabsForSave(): List<Tab> {
         return _tabs.value.filter { !it.isPluginTab }
+    }
+
+    /**
+     * Глобальные вкладки для сохранения в общий конфиг
+     * (системные main/logs + непрофильные пользовательские).
+     */
+    fun getGlobalTabsForSave(): List<Tab> {
+        return _tabs.value.filter { !it.isPluginTab && !it.perProfile }
+    }
+
+    /**
+     * Профильные вкладки текущего загруженного сервера для сохранения в его профиль.
+     */
+    fun getProfileTabsForSave(): List<Tab> {
+        return _tabs.value.filter { !it.isPluginTab && it.perProfile }
+    }
+
+    /**
+     * Заменяет набор профильных вкладок (perProfile) на вкладки нового сервера.
+     * Системные, глобальные и плагинные вкладки сохраняются.
+     */
+    fun setProfileTabs(profileTabs: List<Tab>) {
+        val kept = _tabs.value.filter { it.perProfile.not() || it.isPluginTab }
+        // Профильные вкладки вставляем перед системной вкладкой "Логи"
+        val logsIndex = kept.indexOfFirst { it.id == "logs" }
+        val merged = if (logsIndex >= 0) {
+            kept.subList(0, logsIndex) + profileTabs + kept.subList(logsIndex, kept.size)
+        } else {
+            kept + profileTabs
+        }
+        _tabs.value = merged
+
+        // Если активная вкладка исчезла — переключаемся на главную
+        if (_tabs.value.none { it.id == _activeTabId.value }) {
+            _activeTabId.value = "main"
+        }
+        logger.info { "Profile tabs set: ${profileTabs.map { it.id }}, total: ${_tabs.value.map { it.id }}" }
     }
 }

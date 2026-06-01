@@ -26,6 +26,13 @@ import kotlin.coroutines.coroutineContext
 import java.io.File
 
 private val logger = KotlinLogging.logger("ClientState")
+
+/**
+ * Вкладки верхнего уровня, которые нельзя скрыть (иначе их не вернуть без правки конфига).
+ * "settings" обязана быть всегда доступна.
+ */
+val PERMANENT_TAB_IDS = setOf("settings")
+
 class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val configManager = ConfigManager()
@@ -306,6 +313,13 @@ class ClientState {
         _requestInputFocus.value++
     }
 
+    // Запрос на открытие/фокус поиска по выводу (Ctrl+F из любого места)
+    private val _outputSearchRequest = MutableStateFlow(0)
+    val outputSearchRequest: StateFlow<Int> = _outputSearchRequest
+    fun requestOutputSearch() {
+        _outputSearchRequest.value++
+    }
+
     // MSDP статус (включён ли протокол)
     private val _msdpEnabled = MutableStateFlow(false)
     val msdpEnabled: StateFlow<Boolean> = _msdpEnabled
@@ -501,7 +515,8 @@ class ClientState {
         _fontFamily.value = configData.fontFamily
         _fontSize.value = configData.fontSize
         _ignoreNumLock.value = configData.ignoreNumLock
-        _hiddenTabs.value = configData.hiddenTabs
+        // Постоянные вкладки не могут быть скрыты даже через конфиг
+        _hiddenTabs.value = configData.hiddenTabs - PERMANENT_TAB_IDS
         _statusGroupCollapsed.value = configData.statusGroupCollapsed
         loadOutputSplitFractions(configData.outputSplitFractions)
         logManager.setLogWithColors(configData.logWithColors)
@@ -516,11 +531,13 @@ class ClientState {
         _connectionProfiles.value = configData.connectionProfiles
         _currentProfileId.value = configData.currentProfileId
 
-        // Переключаемся на карту из текущего профиля
+        // Переключаемся на карту из текущего профиля и грузим доли разделителя сервера
         configData.currentProfileId?.let { profileId ->
             val profile = _connectionProfiles.value.find { it.id == profileId }
             profile?.let {
                 switchMapDatabase(it.mapFile)
+                // Доли разделителя из профиля; если пусто — миграция из глобального конфига
+                loadOutputSplitFractions(it.outputSplitFractions.ifEmpty { configData.outputSplitFractions })
             }
         }
 
@@ -551,6 +568,13 @@ class ClientState {
             configData.hotkeys.forEach { addHotkey(it) }
             variableManager.loadVariables(configData.variables)
             tabManager.loadTabs(configData.tabs)
+        }
+
+        // Подгружаем профильные вкладки текущего сервера поверх глобальных
+        configData.currentProfileId?.let { profileId ->
+            _connectionProfiles.value.find { it.id == profileId }?.let { profile ->
+                tabManager.setProfileTabs(profile.tabs.map { it.toTab() })
+            }
         }
 
         // Загружаем правила контекстных команд
@@ -1366,18 +1390,33 @@ class ClientState {
         saveConfig()
     }
 
-    fun createTab(name: String, filters: List<com.bylins.client.tabs.TabFilter>, captureMode: com.bylins.client.tabs.CaptureMode) {
+    fun createTab(
+        name: String,
+        filters: List<com.bylins.client.tabs.TabFilter>,
+        captureMode: com.bylins.client.tabs.CaptureMode,
+        perProfile: Boolean = false,
+        persistContent: Boolean = false
+    ) {
         val tab = com.bylins.client.tabs.Tab(
             id = java.util.UUID.randomUUID().toString(),
             name = name,
             filters = filters,
-            captureMode = captureMode
+            captureMode = captureMode,
+            perProfile = perProfile,
+            persistContent = persistContent
         )
         addTab(tab)
     }
 
-    fun updateTab(id: String, name: String, filters: List<com.bylins.client.tabs.TabFilter>, captureMode: com.bylins.client.tabs.CaptureMode) {
-        tabManager.updateTab(id, name, filters, captureMode)
+    fun updateTab(
+        id: String,
+        name: String,
+        filters: List<com.bylins.client.tabs.TabFilter>,
+        captureMode: com.bylins.client.tabs.CaptureMode,
+        perProfile: Boolean = false,
+        persistContent: Boolean = false
+    ) {
+        tabManager.updateTab(id, name, filters, captureMode, perProfile, persistContent)
         saveConfig()
     }
 
@@ -1437,7 +1476,7 @@ class ClientState {
             aliases = aliases.value,
             hotkeys = hotkeys.value,
             variables = variableManager.getAllVariables(),
-            tabs = tabManager.getTabsForSave(),
+            tabs = tabManager.getGlobalTabsForSave(),
             contextCommandRules = contextCommandManager.rules.value,
             contextCommandMaxQueueSize = contextCommandManager.maxQueueSize.value,
             encoding = _encoding,
@@ -1531,6 +1570,11 @@ class ClientState {
 
     // Управление видимостью вкладок
     fun setTabVisible(tabId: String, visible: Boolean) {
+        // Постоянные вкладки нельзя скрывать
+        if (!visible && tabId in PERMANENT_TAB_IDS) {
+            logger.info { "Tab '$tabId' is permanent and cannot be hidden" }
+            return
+        }
         _hiddenTabs.value = if (visible) {
             _hiddenTabs.value - tabId
         } else {
@@ -1541,6 +1585,7 @@ class ClientState {
     }
 
     fun isTabVisible(tabId: String): Boolean {
+        if (tabId in PERMANENT_TAB_IDS) return true
         return tabId !in _hiddenTabs.value
     }
 
@@ -1583,10 +1628,15 @@ class ClientState {
                 switchMapDatabase(it.mapFile)
                 // Переключаем стек профилей персонажей
                 switchProfileStack(it.activeProfileStack)
+                // Доли разделителя — свои на этот сервер
+                loadOutputSplitFractions(it.outputSplitFractions)
+                // Профильные вкладки — свои на этот сервер
+                tabManager.setProfileTabs(it.tabs.map { dto -> dto.toTab() })
             }
         } ?: run {
-            // Если профиль не выбран - очищаем стек
+            // Если профиль не выбран - очищаем стек и профильные вкладки
             profileManager.clearStack()
+            tabManager.setProfileTabs(emptyList())
         }
 
         saveConfig()
@@ -1602,7 +1652,11 @@ class ClientState {
 
         _connectionProfiles.value = _connectionProfiles.value.map { connProfile ->
             if (connProfile.id == currentConnProfileId) {
-                connProfile.copy(activeProfileStack = currentStack)
+                connProfile.copy(
+                    activeProfileStack = currentStack,
+                    outputSplitFractions = getOutputSplitFractions(),
+                    tabs = tabManager.getProfileTabsForSave().map { com.bylins.client.tabs.TabDto.fromTab(it) }
+                )
             } else {
                 connProfile
             }

@@ -23,6 +23,7 @@ fun OutputPanel(
 ) {
     val tabs by clientState.tabs.collectAsState()
     val activeTabId by clientState.activeTabId.collectAsState()
+    val outputSearchRequest by clientState.outputSearchRequest.collectAsState()
 
     // Логируем вкладки при изменении
     LaunchedEffect(tabs) {
@@ -140,6 +141,7 @@ fun OutputPanel(
                     fontSize = fontSize,
                     emptyPlaceholder = placeholder,
                     onSearchFocusChanged = { clientState.setSecondaryTextFieldFocused(it) },
+                    searchRequest = outputSearchRequest,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -154,11 +156,11 @@ fun OutputPanel(
                 showTabDialog = false
                 editingTab = null
             },
-            onSave = { name, filters, captureMode ->
+            onSave = { name, filters, captureMode, perProfile, persistContent ->
                 if (editingTab != null) {
-                    clientState.updateTab(editingTab!!.id, name, filters, captureMode)
+                    clientState.updateTab(editingTab!!.id, name, filters, captureMode, perProfile, persistContent)
                 } else {
-                    clientState.createTab(name, filters, captureMode)
+                    clientState.createTab(name, filters, captureMode, perProfile, persistContent)
                 }
                 showTabDialog = false
                 editingTab = null

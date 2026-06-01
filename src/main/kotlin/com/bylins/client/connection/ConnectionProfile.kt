@@ -21,7 +21,11 @@ data class ConnectionProfile(
     val port: Int,
     val encoding: String = "UTF-8",
     val mapFile: String = "maps.db",
-    val activeProfileStack: List<String> = emptyList()
+    val activeProfileStack: List<String> = emptyList(),
+    // Доли разделителя панели вывода по id вкладки — СВОИ на каждый сервер
+    val outputSplitFractions: Map<String, Float> = emptyMap(),
+    // Профильные вкладки (perProfile == true) — определения и лог хранятся в профиле сервера
+    val tabs: List<com.bylins.client.tabs.TabDto> = emptyList()
 ) {
     companion object {
         /**

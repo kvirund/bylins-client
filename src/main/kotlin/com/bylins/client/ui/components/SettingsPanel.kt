@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.PERMANENT_TAB_IDS
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import com.bylins.client.ui.ALL_TABS
 import java.awt.Desktop
@@ -620,7 +621,8 @@ fun SettingsPanel(
                         ALL_TABS.take(7).forEach { tab ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
-                                    checked = tab.id !in hiddenTabs,
+                                    checked = tab.id in PERMANENT_TAB_IDS || tab.id !in hiddenTabs,
+                                    enabled = tab.id !in PERMANENT_TAB_IDS,
                                     onCheckedChange = { checked ->
                                         clientState.setTabVisible(tab.id, checked)
                                     },
@@ -648,7 +650,8 @@ fun SettingsPanel(
                         ALL_TABS.drop(7).forEach { tab ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(
-                                    checked = tab.id !in hiddenTabs,
+                                    checked = tab.id in PERMANENT_TAB_IDS || tab.id !in hiddenTabs,
+                                    enabled = tab.id !in PERMANENT_TAB_IDS,
                                     onCheckedChange = { checked ->
                                         clientState.setTabVisible(tab.id, checked)
                                     },
