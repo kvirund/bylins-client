@@ -1368,18 +1368,33 @@ class ClientState {
         saveConfig()
     }
 
-    fun createTab(name: String, filters: List<com.bylins.client.tabs.TabFilter>, captureMode: com.bylins.client.tabs.CaptureMode) {
+    fun createTab(
+        name: String,
+        filters: List<com.bylins.client.tabs.TabFilter>,
+        captureMode: com.bylins.client.tabs.CaptureMode,
+        perProfile: Boolean = false,
+        persistContent: Boolean = false
+    ) {
         val tab = com.bylins.client.tabs.Tab(
             id = java.util.UUID.randomUUID().toString(),
             name = name,
             filters = filters,
-            captureMode = captureMode
+            captureMode = captureMode,
+            perProfile = perProfile,
+            persistContent = persistContent
         )
         addTab(tab)
     }
 
-    fun updateTab(id: String, name: String, filters: List<com.bylins.client.tabs.TabFilter>, captureMode: com.bylins.client.tabs.CaptureMode) {
-        tabManager.updateTab(id, name, filters, captureMode)
+    fun updateTab(
+        id: String,
+        name: String,
+        filters: List<com.bylins.client.tabs.TabFilter>,
+        captureMode: com.bylins.client.tabs.CaptureMode,
+        perProfile: Boolean = false,
+        persistContent: Boolean = false
+    ) {
+        tabManager.updateTab(id, name, filters, captureMode, perProfile, persistContent)
         saveConfig()
     }
 

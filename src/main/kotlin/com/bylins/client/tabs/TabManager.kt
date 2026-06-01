@@ -70,7 +70,14 @@ class TabManager {
     /**
      * Обновляет вкладку
      */
-    fun updateTab(id: String, name: String, filters: List<TabFilter>, captureMode: CaptureMode) {
+    fun updateTab(
+        id: String,
+        name: String,
+        filters: List<TabFilter>,
+        captureMode: CaptureMode,
+        perProfile: Boolean = false,
+        persistContent: Boolean = false
+    ) {
         if (id == "main") {
             logger.info { "Cannot update main tab" }
             return
@@ -83,7 +90,9 @@ class TabManager {
                     name = name,
                     filters = filters,
                     captureMode = captureMode,
-                    maxLines = tab.maxLines
+                    maxLines = tab.maxLines,
+                    perProfile = perProfile,
+                    persistContent = persistContent
                 )
                 // Копируем старое содержимое
                 val oldContent = tab.content.value

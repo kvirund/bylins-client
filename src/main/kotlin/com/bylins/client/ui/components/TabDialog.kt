@@ -1,6 +1,7 @@
 package com.bylins.client.ui.components
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,11 +33,13 @@ private data class PatternEntry(
 fun TabDialog(
     tab: com.bylins.client.tabs.Tab? = null,
     onDismiss: () -> Unit,
-    onSave: (String, List<TabFilter>, CaptureMode) -> Unit
+    onSave: (String, List<TabFilter>, CaptureMode, Boolean, Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(tab?.name ?: "") }
     var nameError by remember { mutableStateOf<String?>(null) }
     var captureMode by remember { mutableStateOf(tab?.captureMode ?: CaptureMode.COPY) }
+    var perProfile by remember { mutableStateOf(tab?.perProfile ?: false) }
+    var persistContent by remember { mutableStateOf(tab?.persistContent ?: false) }
 
     val patterns = remember {
         mutableStateListOf<PatternEntry>().apply {
@@ -137,6 +140,38 @@ fun TabDialog(
                                     }
                                 )
                             }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Профильная: настройки/лог вкладки привязаны к серверу (профилю)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { perProfile = !perProfile },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = perProfile, onCheckedChange = { perProfile = it })
+                        Column {
+                            Text("Профильная (привязать к серверу)")
+                            Text(
+                                "Настройки и лог этой вкладки — свои на каждый сервер",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { persistContent = !persistContent },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = persistContent, onCheckedChange = { persistContent = it })
+                        Column {
+                            Text("Сохранять лог между запусками")
+                            Text(
+                                if (perProfile) "Лог сохраняется в профиль сервера" else "Лог сохраняется глобально",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
 
@@ -307,7 +342,7 @@ fun TabDialog(
                                         matchWithColors = entry.matchWithColors
                                     )
                                 }
-                                onSave(name.trim(), filters, captureMode)
+                                onSave(name.trim(), filters, captureMode, perProfile, persistContent)
                             }
                         }
                     ) {

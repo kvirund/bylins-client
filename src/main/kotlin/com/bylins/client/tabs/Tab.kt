@@ -14,7 +14,9 @@ data class Tab(
     val filters: List<TabFilter> = emptyList(),
     val captureMode: CaptureMode = CaptureMode.COPY,
     val maxLines: Int = 2000,  // Уменьшено с 10000 до 2000 для экономии памяти
-    val isPluginTab: Boolean = false  // Вкладка создана плагином (не редактируется пользователем)
+    val isPluginTab: Boolean = false,  // Вкладка создана плагином (не редактируется пользователем)
+    val perProfile: Boolean = false,   // Привязана к серверу (хранится в профиле), иначе глобальная
+    val persistContent: Boolean = false // Сохранять лог вкладки между запусками (по умолчанию нет)
 ) {
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content
@@ -188,7 +190,9 @@ data class TabDto(
     val filters: List<TabFilterDto> = emptyList(),
     val captureMode: String = "COPY",
     val maxLines: Int = 10000,
-    val content: String? = null  // Сохранённое содержимое вкладки
+    val content: String? = null,  // Сохранённое содержимое вкладки (только если persistContent)
+    val perProfile: Boolean = false,
+    val persistContent: Boolean = false
 ) {
     fun toTab(): Tab {
         // ONLY был удалён, старые конфиги с ONLY будут использовать COPY
@@ -202,7 +206,9 @@ data class TabDto(
             name = name,
             filters = filters.map { it.toTabFilter() },
             captureMode = mode,
-            maxLines = maxLines
+            maxLines = maxLines,
+            perProfile = perProfile,
+            persistContent = persistContent
         )
         // Восстанавливаем содержимое
         if (!content.isNullOrEmpty()) {
@@ -220,7 +226,10 @@ data class TabDto(
                 filters = tab.filters.map { TabFilterDto.fromTabFilter(it) },
                 captureMode = tab.captureMode.name,
                 maxLines = tab.maxLines,
-                content = tab.content.value.takeIf { it.isNotEmpty() }
+                // Лог сохраняем только если вкладка это разрешает (по умолчанию — нет)
+                content = if (tab.persistContent) tab.content.value.takeIf { it.isNotEmpty() } else null,
+                perProfile = tab.perProfile,
+                persistContent = tab.persistContent
             )
         }
     }
