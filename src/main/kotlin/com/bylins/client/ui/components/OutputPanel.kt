@@ -1,13 +1,20 @@
 package com.bylins.client.ui.components
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -44,6 +51,16 @@ fun OutputPanel(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Состояние drag-and-drop перестановки вкладок.
+            // draggingTabId/dragOffsetX читаются прямо в graphicsLayer (фаза слоя),
+            // поэтому перетаскиваемая вкладка визуально следует за курсором даже без
+            // рекомпозиции ленивого ScrollableTabRow. Центры вкладок копим для выбора
+            // целевой позиции в конце жеста.
+            var draggingTabId by remember { mutableStateOf<String?>(null) }
+            var dragOffsetX by remember { mutableStateOf(0f) }
+            var dragOriginCenter by remember { mutableStateOf(0f) }
+            val tabCenters = remember { mutableStateMapOf<String, Float>() }
+
             // Вкладки
             ScrollableTabRow(
                 selectedTabIndex = tabs.indexOfFirst { it.id == activeTabId }.takeIf { it >= 0 } ?: 0,
@@ -56,9 +73,86 @@ fun OutputPanel(
                     // Подписываемся на индикатор непрочитанных сообщений
                     val hasUnread by tab.hasUnreadMessages.collectAsState()
 
+                    // Системные вкладки не двигаем (main — первая, logs — последняя)
+                    val movable = tab.id != "main" && tab.id != "logs"
+
+                    // key по id: при перестановке композабл вкладки сохраняется (стабильная
+                    // идентичность), drag-жест не обрывается.
+                    key(tab.id) {
                     Tab(
                         selected = tab.id == activeTabId,
                         onClick = { clientState.setActiveTab(tab.id) },
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                // Центр вкладки в координатах строки (layout, без учёта
+                                // визуального сдвига перетаскивания — он draw-only).
+                                tabCenters[tab.id] = coords.localToWindow(Offset.Zero).x + coords.size.width / 2f
+                            }
+                            .graphicsLayer {
+                                if (tab.id == draggingTabId) {
+                                    translationX = dragOffsetX
+                                    alpha = 0.85f
+                                }
+                            }
+                            // Индикатор позиции вставки: на целевой вкладке рисуем
+                            // вертикальную линию с той стороны, куда приземлится перенос.
+                            // Читается в фазе рисования — обновляется без рекомпозиции.
+                            .drawBehind {
+                                val dragId = draggingTabId
+                                if (dragId != null && dragId != tab.id) {
+                                    val targetCenter = dragOriginCenter + dragOffsetX
+                                    val nearest = tabs
+                                        .filter { it.id != "main" && it.id != "logs" }
+                                        .minByOrNull {
+                                            kotlin.math.abs((tabCenters[it.id] ?: Float.MAX_VALUE) - targetCenter)
+                                        }
+                                    if (nearest?.id == tab.id) {
+                                        val myCenter = tabCenters[tab.id] ?: 0f
+                                        val barW = 3.dp.toPx()
+                                        val x = if (targetCenter < myCenter) 0f else size.width - barW
+                                        drawRect(
+                                            color = Color(0xFF4DA3FF),
+                                            topLeft = Offset(x, 0f),
+                                            size = Size(barW, size.height)
+                                        )
+                                    }
+                                }
+                            }
+                            .then(
+                                if (movable) Modifier.pointerInput(tab.id) {
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            draggingTabId = tab.id
+                                            dragOffsetX = 0f
+                                            dragOriginCenter = tabCenters[tab.id] ?: 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragOffsetX += dragAmount.x
+                                        },
+                                        onDragCancel = {
+                                            draggingTabId = null
+                                            dragOffsetX = 0f
+                                        },
+                                        onDragEnd = {
+                                            val targetCenter = dragOriginCenter + dragOffsetX
+                                            // Ближайшая по центру подвижная вкладка — туда и встаём.
+                                            val nearest = tabs
+                                                .filter { it.id != "main" && it.id != "logs" }
+                                                .minByOrNull {
+                                                    kotlin.math.abs((tabCenters[it.id] ?: Float.MAX_VALUE) - targetCenter)
+                                                }
+                                            if (nearest != null && nearest.id != tab.id) {
+                                                // Сторона вставки — как у индикатора
+                                                val placeAfter = targetCenter >= (tabCenters[nearest.id] ?: 0f)
+                                                clientState.moveTabTo(tab.id, nearest.id, placeAfter)
+                                            }
+                                            draggingTabId = null
+                                            dragOffsetX = 0f
+                                        }
+                                    )
+                                } else Modifier
+                            ),
                         text = {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -94,6 +188,7 @@ fun OutputPanel(
                             }
                         }
                     )
+                    } // конец key(tab.id)
                 }
             }
 

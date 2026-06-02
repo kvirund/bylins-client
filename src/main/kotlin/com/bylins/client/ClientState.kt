@@ -44,6 +44,11 @@ class ClientState {
     private var saveConfigJob: kotlinx.coroutines.Job? = null
     private val saveConfigDebounceMs = 500L
 
+    // Авто-переподключение: ручной разрыв не должен запускать reconnect
+    private var userInitiatedDisconnect = false
+    private var reconnectJob: kotlinx.coroutines.Job? = null
+    private val reconnectDelayMs = 5000L
+
     // Время последнего срабатывания хоткея (для блокировки дублирования ввода)
     @Volatile
     private var lastHotkeyTimestamp = 0L
@@ -625,6 +630,11 @@ class ClientState {
                     firePluginEvent(com.bylins.client.plugins.events.DisconnectEvent(
                         reason = com.bylins.client.plugins.events.DisconnectReason.SERVER_CLOSED
                     ))
+
+                    // Авто-переподключение, если разрыв неожиданный и опция включена
+                    if (!userInitiatedDisconnect && getCurrentProfile()?.autoReconnect == true) {
+                        scheduleReconnect()
+                    }
                 }
                 wasConnected = connected
             }
@@ -632,6 +642,8 @@ class ClientState {
     }
 
     fun connect(host: String, port: Int) {
+        // Любое подключение снимает признак «ручного отключения»
+        userInitiatedDisconnect = false
         scope.launch {
             try {
                 _errorMessage.value = null
@@ -674,6 +686,11 @@ class ClientState {
     }
 
     fun disconnect() {
+        // Ручной разрыв: не запускать авто-переподключение и отменить текущее
+        userInitiatedDisconnect = true
+        reconnectJob?.cancel()
+        reconnectJob = null
+
         // Карта сохраняется автоматически в SQLite при каждом изменении
         telnetClient.disconnect()
 
@@ -705,20 +722,49 @@ class ClientState {
     }
 
     /**
+     * Запускает цикл авто-переподключения к текущему профилю.
+     * Останавливается при успешном подключении, ручном отключении,
+     * выключенной опции или смене/отсутствии профиля.
+     */
+    private fun scheduleReconnect() {
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            var attempt = 0
+            while (isActive) {
+                val profile = getCurrentProfile()
+                if (profile == null || !profile.autoReconnect) break
+                if (userInitiatedDisconnect || isConnected.value) break
+
+                attempt++
+                telnetClient.addLocalOutput(
+                    "\n[Соединение потеряно. Переподключение через ${reconnectDelayMs / 1000} с (попытка $attempt)...]\n"
+                )
+                delay(reconnectDelayMs)
+                if (userInitiatedDisconnect || isConnected.value) break
+                if (getCurrentProfile()?.autoReconnect != true) break
+
+                connect(profile.host, profile.port)
+                // Ждём, пока соединение установится или провалится
+                delay(2000)
+            }
+        }
+    }
+
+    /**
      * Вызывается при закрытии приложения
      */
     fun shutdown() {
         logger.info { "Shutting down..." }
+        // Сохраняем конфигурацию ПЕРВЫМ делом, пока всё живо. Раньше сначала шёл
+        // disconnect(), и его исключение (события плагинам/скриптам при тире-дауне)
+        // могло сорвать сохранение — добавленные в сессии вкладки терялись.
+        try { saveConfigNow() } catch (e: Exception) { logger.error { "Save on shutdown failed: ${e.message}" } }
         // Отключаемся если подключены
-        if (isConnected.value) {
-            disconnect()
-        }
-        // Сохраняем конфигурацию немедленно (без дебаунса)
-        saveConfigNow()
+        try { if (isConnected.value) disconnect() } catch (e: Exception) { logger.error { "Disconnect on shutdown failed: ${e.message}" } }
         // Завершаем работу маппера (сохраняет снапшот)
-        mapManager.shutdown()
+        try { mapManager.shutdown() } catch (e: Exception) { logger.error { "Map shutdown failed: ${e.message}" } }
         // Выгружаем плагины
-        pluginManager.shutdown()
+        try { pluginManager.shutdown() } catch (e: Exception) { logger.error { "Plugin shutdown failed: ${e.message}" } }
         logger.info { "Shutdown complete" }
     }
 
@@ -1129,7 +1175,14 @@ class ClientState {
             // Увеличиваем счетчик на количество сработавших триггеров
             if (allMatches.isNotEmpty()) {
                 sessionStats.incrementTriggersActivated()
+            }
 
+            // Gag: строка скрывается из основного лога, если её прячет сработавший
+            // триггер (галка «Gag») или её забирает вкладка в режиме «Перемещать».
+            // Команды/скрипты триггеров уже выполнены выше — side-effects сохраняются.
+            val gaggedByTrigger = allMatches.any { it.trigger.gag }
+            val gaggedByTab = tabManager.shouldGagFromMain(cleanLine, line)
+            if (!gaggedByTrigger && !gaggedByTab) {
                 // Применяем colorize от первого сработавшего триггера с colorize
                 val triggerWithColor = allMatches.firstOrNull { it.trigger.colorize != null }
                 if (triggerWithColor != null) {
@@ -1139,8 +1192,6 @@ class ClientState {
                 } else {
                     modifiedLines.add(line)
                 }
-            } else {
-                modifiedLines.add(line)
             }
 
             // Обрабатываем контекстные команды по паттернам
@@ -1387,7 +1438,9 @@ class ClientState {
     // Управление вкладками
     fun addTab(tab: com.bylins.client.tabs.Tab) {
         tabManager.addTab(tab)
-        saveConfig()
+        // Структурные изменения вкладок сохраняем сразу (без дебаунса), чтобы не
+        // потерять их при закрытии/сбое.
+        saveConfigNow()
     }
 
     fun createTab(
@@ -1417,12 +1470,17 @@ class ClientState {
         persistContent: Boolean = false
     ) {
         tabManager.updateTab(id, name, filters, captureMode, perProfile, persistContent)
-        saveConfig()
+        saveConfigNow()
     }
 
     fun removeTab(id: String) {
         tabManager.removeTab(id)
-        saveConfig()
+        saveConfigNow()
+    }
+
+    fun moveTabTo(id: String, targetId: String, placeAfter: Boolean = false) {
+        tabManager.moveTabTo(id, targetId, placeAfter)
+        saveConfigNow()
     }
 
     fun setActiveTab(id: String) {
@@ -1615,6 +1673,10 @@ class ClientState {
     }
 
     fun setCurrentProfile(profileId: String?) {
+        // Смена сервера — прекращаем переподключение к прежнему
+        reconnectJob?.cancel()
+        reconnectJob = null
+
         // Сохраняем текущий стек профилей в старый профиль подключения
         saveActiveProfileStackToCurrentConnectionProfile()
 

@@ -107,6 +107,45 @@ class TabManager {
     }
 
     /**
+     * Должна ли строка быть скрыта из основного лога: её забирает вкладка
+     * в режиме «Перемещать» (MOVE) — то есть строка переносится во вкладку,
+     * а не дублируется. Системные вкладки игнорируются.
+     */
+    fun shouldGagFromMain(cleanLine: String, rawLine: String): Boolean {
+        for (tab in _tabs.value) {
+            if (tab.id == "main" || tab.id == "logs") continue
+            if (tab.captureMode == CaptureMode.MOVE && tab.captureAndTransform(cleanLine, rawLine) != null) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Перемещает вкладку [id] на место вкладки [targetId] (drag-and-drop).
+     * Системные вкладки не двигаются: "main" всегда первая, "logs" — последняя,
+     * поэтому перестановка возможна только между ними.
+     */
+    fun moveTabTo(id: String, targetId: String, placeAfter: Boolean = false) {
+        if (id == "main" || id == "logs" || id == targetId) return
+        val list = _tabs.value.toMutableList()
+        val from = list.indexOfFirst { it.id == id }
+        if (from < 0) return
+        val tab = list.removeAt(from)
+        val to = list.indexOfFirst { it.id == targetId }
+        if (to < 0) {
+            // Цель не найдена — возвращаем на место
+            list.add(from, tab)
+            return
+        }
+        // С какой стороны от целевой встать; не раньше main (0) и не после logs (последний)
+        val insertAt = (if (placeAfter) to + 1 else to).coerceIn(1, list.size - 1)
+        list.add(insertAt, tab)
+        _tabs.value = list
+        logger.info { "Tab '$id' moved ${if (placeAfter) "after" else "before"} '$targetId': ${list.map { it.id }}" }
+    }
+
+    /**
      * Удаляет вкладку
      */
     fun removeTab(id: String) {

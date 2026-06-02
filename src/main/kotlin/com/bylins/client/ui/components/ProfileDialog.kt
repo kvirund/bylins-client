@@ -30,6 +30,7 @@ fun ProfileDialog(
     var port by remember { mutableStateOf(profile?.port?.toString() ?: "4000") }
     var encoding by remember { mutableStateOf(profile?.encoding ?: "UTF-8") }
     var mapFile by remember { mutableStateOf(profile?.mapFile ?: "maps.db") }
+    var autoReconnect by remember { mutableStateOf(profile?.autoReconnect ?: false) }
     var encodingMenuExpanded by remember { mutableStateOf(false) }
     var mapFileMenuExpanded by remember { mutableStateOf(false) }
 
@@ -157,6 +158,24 @@ fun ProfileDialog(
                         }
                     }
                 }
+
+                // Авто-переподключение
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { autoReconnect = !autoReconnect },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = autoReconnect, onCheckedChange = { autoReconnect = it })
+                    Column {
+                        Text("Переподключаться автоматически")
+                        Text(
+                            "Восстанавливать соединение при неожиданном разрыве",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 } // Конец прокручиваемого контента
 
                 // Разделитель
@@ -193,7 +212,8 @@ fun ProfileDialog(
                                     host = host,
                                     port = portInt,
                                     encoding = encoding,
-                                    mapFile = finalMapFile
+                                    mapFile = finalMapFile,
+                                    autoReconnect = autoReconnect
                                 )
                             } else {
                                 ConnectionProfile(
@@ -201,7 +221,8 @@ fun ProfileDialog(
                                     host = host,
                                     port = portInt,
                                     encoding = encoding,
-                                    mapFile = finalMapFile
+                                    mapFile = finalMapFile,
+                                    autoReconnect = autoReconnect
                                 )
                             }
                             onSave(newProfile)
