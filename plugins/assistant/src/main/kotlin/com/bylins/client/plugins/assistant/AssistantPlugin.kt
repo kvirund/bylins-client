@@ -29,7 +29,7 @@ import kotlinx.serialization.Serializable
  *   #assistant status          - Статус
  *   #assistant start           - Запустить
  *   #assistant stop            - Остановить
- *   #assistant mode zone/world - Установить область исследования
+ *   #assistant mode zone/zone-world/world - Установить область исследования
  *   #assistant regex           - Показать текущий regex
  *   #assistant regex <pattern> - Установить regex для парсинга промпта
  *   #assistant help            - Справка
@@ -109,10 +109,13 @@ class AssistantPlugin : PluginBase() {
         assistantCore.onExplorationComplete = { reason, scope ->
             api.echo("[ASSISTANT] Исследование завершено: все выходы в $reason исследованы!")
             if (scope == ExplorationScope.ZONE) {
-                api.echo("[ASSISTANT] Для исследования всего мира: #assistant mode world")
-                api.addContextCommand("#assistant mode world", "Режим: весь мир", "room")
+                api.echo("[ASSISTANT] Для исследования зона-за-зоной: #assistant mode zone-world")
+                api.addContextCommand("#assistant mode zone-world", "Режим: зона за зоной", "room")
                 api.addContextCommand("#assistant start", "Продолжить исследование", "room")
             }
+        }
+        assistantCore.onZoneChanged = { oldZone, newZone ->
+            api.echo("[ASSISTANT] Зона $oldZone исследована, переход к зоне $newZone")
         }
 
         // Подписываемся на изменения аффектов и умений
@@ -734,9 +737,13 @@ class AssistantPlugin : PluginBase() {
                 assistantCore.setExplorationScope(ExplorationScope.ZONE)
                 api.echo("[ASSISTANT] Режим исследования: только текущая зона")
             }
+            "zone-world" -> {
+                assistantCore.setExplorationScope(ExplorationScope.ZONE_WORLD)
+                api.echo("[ASSISTANT] Режим исследования: зона за зоной")
+            }
             "world" -> {
                 assistantCore.setExplorationScope(ExplorationScope.WORLD)
-                api.echo("[ASSISTANT] Режим исследования: весь мир")
+                api.echo("[ASSISTANT] Режим исследования: весь мир (глобально ближайшая)")
             }
             else -> {
                 api.echo("[ASSISTANT] Неизвестный режим: $arg")
@@ -751,8 +758,9 @@ class AssistantPlugin : PluginBase() {
         api.echo("Текущий: ${status["explorationScope"]}")
         api.echo("")
         api.echo("Команды:")
-        api.echo("  #assistant mode zone   - исследовать только текущую зону")
-        api.echo("  #assistant mode world  - исследовать весь мир")
+        api.echo("  #assistant mode zone       - исследовать только текущую зону")
+        api.echo("  #assistant mode zone-world - зона за зоной (по умолчанию)")
+        api.echo("  #assistant mode world      - ближайшая неисследованная глобально")
     }
 
     private fun handleStateCommand(arg: String) {
@@ -877,7 +885,7 @@ class AssistantPlugin : PluginBase() {
                 }
             }
 
-            hasUnexploredExits && (roomZoneCheck == roomZone || assistantCore.explorationScope.value == ExplorationScope.WORLD)
+            hasUnexploredExits && (roomZoneCheck == roomZone || assistantCore.explorationScope.value != ExplorationScope.ZONE)
         }
 
         if (result == null) {
@@ -1839,7 +1847,8 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
             #assistant skip <направл.>  - Пропустить выход в указанном направлении
             #assistant mode             - Показать режим исследования
             #assistant mode zone        - Исследовать только текущую зону
-            #assistant mode world       - Исследовать весь мир
+            #assistant mode zone-world  - Зона за зоной (по умолчанию)
+            #assistant mode world       - Ближайшая неисследованная глобально
             #assistant stayzone         - Показать режим границ зоны
             #assistant stayzone on/off  - Не выходить за границы зоны / разрешить с возвратом
             #assistant state            - Показать состояние FSM

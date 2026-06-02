@@ -221,6 +221,19 @@ class PromptDetector(
     fun getRecentPrompts(count: Int): List<String> = recentPrompts.takeLast(count)
 
     /**
+     * Принудительно завершить текущий батч, если есть ожидающий промпт.
+     * Используется перед отправкой команды, чтобы старый промпт
+     * не был ошибочно принят за ответ на новую команду.
+     */
+    fun flush() {
+        if (pendingLine != null) {
+            finalizeBatch(pendingLine!!, pendingRawLine)
+            pendingLine = null
+            pendingRawLine = null
+        }
+    }
+
+    /**
      * Сбросить состояние детектора.
      */
     fun reset() {

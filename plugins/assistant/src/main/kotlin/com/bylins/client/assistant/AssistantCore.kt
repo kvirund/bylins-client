@@ -74,7 +74,9 @@ data class ExitDoorInfo(
 enum class ExplorationScope {
     /** Только текущая зона */
     ZONE,
-    /** Весь мир */
+    /** Зона за зоной: сначала текущая, потом ближайшая с неисследованными выходами */
+    ZONE_WORLD,
+    /** Весь мир — ближайшая неисследованная комната глобально */
     WORLD
 }
 
@@ -107,7 +109,7 @@ class AssistantCore(
     val state: StateFlow<AssistantState> = _state
 
     // Область исследования
-    private val _explorationScope = MutableStateFlow(ExplorationScope.ZONE)
+    private val _explorationScope = MutableStateFlow(ExplorationScope.ZONE_WORLD)
     val explorationScope: StateFlow<ExplorationScope> = _explorationScope
 
     // Оставаться в границах зоны (не выбирать выходы в другие зоны)
@@ -138,6 +140,8 @@ class AssistantCore(
     private var recoveryAction: RecoveryAction? = null
     // Счётчик попыток recovery для текущего выхода
     private var recoveryAttempts: Int = 0
+    // Job отложенной проверки перемещения (MSDP может отставать от промпта)
+    private var movementCheckJob: Job? = null
 
     // --- Информация о дверях (сохраняется на сессию) ---
     // "roomId:direction" → ExitDoorInfo
@@ -349,21 +353,7 @@ class AssistantCore(
                         handleRecoveryResult()
                     } else if (movementSourceRoomId != null) {
                         // Проверяем, переместились ли мы
-                        val currentRoom = api.getCurrentRoom()
-                        val currentRoomId = currentRoom?.get("id") as? String
-                        if (currentRoomId == null) {
-                            // Не можем определить комнату — считаем что не переместились
-                            log("Перемещение: текущая комната неизвестна, считаю неудачным")
-                            handleMovementFailure()
-                        } else if (currentRoomId == movementSourceRoomId) {
-                            // Не переместились — классифицируем и пытаемся решить
-                            log("Перемещение неудачно: остались в комнате $currentRoomId")
-                            handleMovementFailure()
-                        } else {
-                            // Успешно переместились — сброс
-                            resetMovementState()
-                            decideNext()
-                        }
+                        checkMovementResult()
                     } else {
                         decideNext()
                     }
@@ -498,6 +488,18 @@ class AssistantCore(
     }
 
     /**
+     * Отправить команду в режиме исследования.
+     * Сбрасывает pending prompt в PromptDetector (чтобы старый промпт
+     * не был ошибочно принят за ответ) и начинает ожидание ответа.
+     */
+    private fun sendExplorationCommand(command: String) {
+        promptDetector.flush()
+        lastTextBatch = ""
+        api.send(command)
+        waitingForPrompt = true
+    }
+
+    /**
      * Проверяет, является ли выход допустимым для исследования.
      * - Непосещённая комната
      * - В режиме ZONE + stayInZone: комната должна быть в исследуемой зоне
@@ -507,8 +509,8 @@ class AssistantCore(
             return true // Неизвестный выход - исследуем (ручной маппинг)
         }
 
-        // Проверяем зону (если режим ZONE и включён stayInZone)
-        if (_explorationScope.value == ExplorationScope.ZONE &&
+        // Проверяем зону (если режим ZONE/ZONE_WORLD и включён stayInZone)
+        if (_explorationScope.value != ExplorationScope.WORLD &&
             _stayInZone.value &&
             explorationZoneId != null) {
             val targetZone = getZoneFromVnum(targetRoomId)
@@ -546,38 +548,48 @@ class AssistantCore(
         // Определяем зону для исследования (из VNUM, вычислена как vnum/100)
         val explorationZoneId = explorationZoneNumber ?: currentRoomZone
 
-        // Проверка: если режим ZONE и мы в другой зоне - пытаемся вернуться
-        if (_explorationScope.value == ExplorationScope.ZONE &&
-            explorationZoneId != null &&
+        // Проверка: если мы в другой зоне
+        if (explorationZoneId != null &&
             currentRoomZone != null &&
             currentRoomZone != explorationZoneId) {
 
-            log("Обнаружена смена зоны: $currentRoomZone (исследуем $explorationZoneId)")
+            when (_explorationScope.value) {
+                ExplorationScope.ZONE -> {
+                    // В режиме ZONE — пытаемся вернуться
+                    log("Обнаружена смена зоны: $currentRoomZone (исследуем $explorationZoneId)")
 
-            // Ищем путь обратно в исследуемую зону
-            val pathBackResult = api.findNearestMatching { room ->
-                val roomId = room["id"] as? String ?: return@findNearestMatching false
-                val roomZone = getZoneFromVnum(roomId)
-                roomZone == explorationZoneId
-            }
+                    val pathBackResult = api.findNearestMatching { room ->
+                        val roomId = room["id"] as? String ?: return@findNearestMatching false
+                        val roomZone = getZoneFromVnum(roomId)
+                        roomZone == explorationZoneId
+                    }
 
-            if (pathBackResult != null) {
-                val (targetRoom, path) = pathBackResult
-                if (path.isNotEmpty()) {
-                    val targetName = targetRoom["name"] as? String ?: "?"
-                    val direction = path.first()
-                    log("Возвращаюсь в зону $explorationZoneId: $targetName (${path.size} шагов)")
-                    movementSourceRoomId = currentRoomId
-                    movementDirection = direction
-                    lastTextBatch = ""
-                    api.send(direction)
-                    waitingForPrompt = true
-                    return
+                    if (pathBackResult != null) {
+                        val (targetRoom, path) = pathBackResult
+                        if (path.isNotEmpty()) {
+                            val targetName = targetRoom["name"] as? String ?: "?"
+                            val direction = path.first()
+                            log("Возвращаюсь в зону $explorationZoneId: $targetName (${path.size} шагов)")
+                            movementSourceRoomId = currentRoomId
+                            movementDirection = direction
+                            sendExplorationCommand(direction)
+                            return
+                        }
+                    } else {
+                        log("Путь обратно в зону $explorationZoneId не найден, останавливаюсь")
+                        _state.value = AssistantState.IDLE
+                        return
+                    }
                 }
-            } else {
-                log("Путь обратно в зону $explorationZoneId не найден, останавливаюсь")
-                _state.value = AssistantState.IDLE
-                return
+                ExplorationScope.ZONE_WORLD -> {
+                    // В режиме ZONE_WORLD — обновляем зону и продолжаем
+                    log("Переход в зону $currentRoomZone (была $explorationZoneId)")
+                    onZoneChanged?.invoke(explorationZoneId, currentRoomZone)
+                    explorationZoneNumber = currentRoomZone
+                }
+                ExplorationScope.WORLD -> {
+                    // В режиме WORLD — ничего не делаем, продолжаем
+                }
             }
         }
 
@@ -595,32 +607,64 @@ class AssistantCore(
             return
         }
 
-        // Ищем ближайшую комнату с исследуемыми выходами
-        val result = api.findNearestMatching { room ->
-            val roomId = room["id"] as? String ?: return@findNearestMatching false
-            val roomZone = getZoneFromVnum(roomId)
+        // Лямбда для поиска комнаты с исследуемыми выходами в заданной зоне
+        fun findInZone(zoneFilter: Int?): Pair<Map<String, Any>, List<String>>? {
+            return api.findNearestMatching { room ->
+                val roomId = room["id"] as? String ?: return@findNearestMatching false
+                val roomZone = getZoneFromVnum(roomId)
 
-            // В режиме ZONE: комната должна быть в исследуемой зоне
-            if (_explorationScope.value == ExplorationScope.ZONE &&
-                explorationZoneId != null &&
-                roomZone != explorationZoneId) {
-                return@findNearestMatching false
-            }
+                // Фильтр по зоне (если задан)
+                if (zoneFilter != null && roomZone != zoneFilter) {
+                    return@findNearestMatching false
+                }
 
-            @Suppress("UNCHECKED_CAST")
-            val exits = room["exits"] as? Map<String, String> ?: emptyMap()
+                @Suppress("UNCHECKED_CAST")
+                val exits = room["exits"] as? Map<String, String> ?: emptyMap()
 
-            // Есть ли исследуемые выходы? (с учётом зоны и проблемных выходов)
-            exits.entries.any { (direction, targetRoomId) ->
-                val exitKey = "$roomId:$direction"
-                exitKey !in autoProblematicExits &&
-                    exitKey !in userSkippedExits &&
-                    isExitExplorable(targetRoomId, explorationZoneId)
+                exits.entries.any { (direction, targetRoomId) ->
+                    val exitKey = "$roomId:$direction"
+                    exitKey !in autoProblematicExits &&
+                        exitKey !in userSkippedExits &&
+                        isExitExplorable(targetRoomId, zoneFilter ?: explorationZoneId)
+                }
             }
         }
 
+        // Ищем ближайшую комнату с исследуемыми выходами
+        val result = when (_explorationScope.value) {
+            ExplorationScope.ZONE -> findInZone(explorationZoneId)
+            ExplorationScope.ZONE_WORLD -> {
+                // Сначала ищем в текущей зоне
+                val zoneResult = findInZone(explorationZoneId)
+                if (zoneResult != null) {
+                    zoneResult
+                } else {
+                    // Зона исследована — ищем глобально
+                    log("Зона $explorationZoneId исследована, ищу ближайшую неисследованную комнату глобально...")
+                    val globalResult = findInZone(null)
+                    if (globalResult != null) {
+                        // Определяем зону найденной комнаты
+                        val foundRoomId = globalResult.first["id"] as? String
+                        val foundZone = foundRoomId?.let { getZoneFromVnum(it) }
+                        if (foundZone != null && foundZone != explorationZoneId) {
+                            val oldZone = explorationZoneId ?: 0
+                            onZoneChanged?.invoke(oldZone, foundZone)
+                            explorationZoneNumber = foundZone
+                            log("Переход к зоне $foundZone")
+                        }
+                    }
+                    globalResult
+                }
+            }
+            ExplorationScope.WORLD -> findInZone(null)
+        }
+
         if (result == null) {
-            val scopeName = if (_explorationScope.value == ExplorationScope.ZONE) "зоне $explorationZoneId" else "мире"
+            val scopeName = when (_explorationScope.value) {
+                ExplorationScope.ZONE -> "зоне $explorationZoneId"
+                ExplorationScope.ZONE_WORLD -> "мире (все зоны)"
+                ExplorationScope.WORLD -> "мире"
+            }
             log("Все выходы в $scopeName исследованы!")
             _state.value = AssistantState.IDLE
             onExplorationComplete?.invoke(scopeName, _explorationScope.value)
@@ -664,9 +708,7 @@ class AssistantCore(
 
                 movementSourceRoomId = thisRoomId
                 movementDirection = direction
-                lastTextBatch = ""
-                api.send(direction)
-                waitingForPrompt = true
+                sendExplorationCommand(direction)
             } else {
                 log("Ошибка: не найден исследуемый выход")
                 decideNext()
@@ -679,9 +721,7 @@ class AssistantCore(
         log("Иду: $direction → $targetName (${path.size} шагов)")
         movementSourceRoomId = currentRoomId
         movementDirection = direction
-        lastTextBatch = ""
-        api.send(direction)
-        waitingForPrompt = true
+        sendExplorationCommand(direction)
     }
 
     /**
@@ -803,7 +843,8 @@ class AssistantCore(
     // ============================================
 
     // Regex для классификации причины неудачного перемещения
-    private val doorClosedPattern = Regex("""Закрыто\s*\(([^)]+)\)""")
+    private val doorClosedWithNamePattern = Regex("""Закрыто\s*\(([^)]+)\)""")
+    private val doorClosedPattern = Regex("""Закрыто\.""")
     private val doorLockedPattern = Regex("""[Зз]аперт""")
     private val doorNeedsKeyPattern = Regex("""ключ""")
     private val inCombatPattern = Regex("""[Нн]и за что|сражаетесь за свою жизнь|[Вв]ы сражаетесь""")
@@ -817,9 +858,15 @@ class AssistantCore(
      * @return пара (причина, имя двери или null)
      */
     private fun classifyFailure(text: String): Pair<MovementFailReason, String?> {
-        doorClosedPattern.find(text)?.let { match ->
+        // "Закрыто (крепкая дверь)." — с именем двери
+        doorClosedWithNamePattern.find(text)?.let { match ->
             val doorName = match.groupValues[1]
             return MovementFailReason.DOOR_CLOSED to doorName
+        }
+
+        // "Закрыто." — без имени (дверь по умолчанию)
+        if (doorClosedPattern.containsMatchIn(text)) {
+            return MovementFailReason.DOOR_CLOSED to null
         }
 
         if (doorLockedPattern.containsMatchIn(text)) {
@@ -862,8 +909,7 @@ class AssistantCore(
                 log("Открываю $cmdName $rusDir")
                 recoveryAction = RecoveryAction.OPENING_DOOR
                 recoveryAttempts++
-                api.send("открыть $cmdName $rusDir")
-                waitingForPrompt = true
+                sendExplorationCommand("открыть $cmdName $rusDir")
             }
 
             MovementFailReason.DOOR_LOCKED -> {
@@ -873,8 +919,7 @@ class AssistantCore(
                     log("Отпираю $cmdName $rusDir")
                     recoveryAction = RecoveryAction.UNLOCKING_DOOR
                     recoveryAttempts++
-                    api.send("отпереть $cmdName $rusDir")
-                    waitingForPrompt = true
+                    sendExplorationCommand("отпереть $cmdName $rusDir")
                 } else {
                     // Уже пробовали — помечаем как заблокированный
                     log("Не удалось отпереть $cmdName $rusDir, помечаю как проблемный")
@@ -951,8 +996,7 @@ class AssistantCore(
                             log("Дверь заперта, пробую отпереть $cmdName $rusDir")
                             recoveryAction = RecoveryAction.UNLOCKING_DOOR
                             recoveryAttempts++
-                            api.send("отпереть $cmdName $rusDir")
-                            waitingForPrompt = true
+                            sendExplorationCommand("отпереть $cmdName $rusDir")
                         } else {
                             log("Исчерпаны попытки, помечаю $exitKey как проблемный")
                             exitDoors[exitKey] = ExitDoorInfo(doorName = name, isLocked = true)
@@ -972,8 +1016,7 @@ class AssistantCore(
                         // "Ладушки." или пустой текст → дверь открылась
                         log("Дверь открыта, повторяю движение: $direction")
                         recoveryAction = RecoveryAction.RETRYING_MOVE
-                        api.send(direction)
-                        waitingForPrompt = true
+                        sendExplorationCommand(direction)
                     }
                     else -> {
                         // Непонятный ответ — НЕ предполагаем успех, останавливаемся
@@ -1005,8 +1048,7 @@ class AssistantCore(
                         if (recoveryAttempts < 3) {
                             log("Всё ещё заперто, повторяю отпереть $cmdName $rusDir")
                             recoveryAttempts++
-                            api.send("отпереть $cmdName $rusDir")
-                            waitingForPrompt = true
+                            sendExplorationCommand("отпереть $cmdName $rusDir")
                         } else {
                             log("Не удалось отпереть $cmdName, помечаю как проблемный")
                             exitDoors[exitKey] = ExitDoorInfo(doorName = name, isLocked = true)
@@ -1020,8 +1062,7 @@ class AssistantCore(
                         log("Отперто, открываю $cmdName $rusDir")
                         recoveryAction = RecoveryAction.OPENING_DOOR
                         recoveryAttempts++
-                        api.send("открыть $cmdName $rusDir")
-                        waitingForPrompt = true
+                        sendExplorationCommand("открыть $cmdName $rusDir")
                     }
                     else -> {
                         // Непонятный ответ — останавливаемся
@@ -1035,35 +1076,58 @@ class AssistantCore(
             }
 
             RecoveryAction.RETRYING_MOVE -> {
-                // Проверяем, переместились ли
-                val currentRoom = api.getCurrentRoom()
-                val currentRoomId = currentRoom?.get("id") as? String
-                if (currentRoomId != null && currentRoomId == sourceRoomId) {
-                    // Всё ещё не переместились
-                    log("Повторное перемещение неудачно")
-                    val (reason, _) = classifyFailure(lastTextBatch)
-                    if (reason == MovementFailReason.DOOR_CLOSED || reason == MovementFailReason.DOOR_LOCKED) {
-                        // Дверь снова закрылась/заперта — пробуем ещё раз если есть попытки
-                        if (recoveryAttempts < 4) {
-                            handleMovementFailure()
-                        } else {
-                            log("Исчерпаны попытки recovery, помечаю $exitKey как проблемный")
-                            autoProblematicExits.add(exitKey)
-                            resetMovementState()
-                            decideNext()
-                        }
-                    } else {
-                        // Другая причина — помечаем как проблемный
-                        autoProblematicExits.add(exitKey)
-                        resetMovementState()
-                        decideNext()
-                    }
-                } else {
-                    // Успешно переместились
-                    log("Recovery успешен: переместились в $currentRoomId")
-                    resetMovementState()
-                    decideNext()
-                }
+                // Проверяем результат с учётом возможной задержки MSDP
+                checkMovementResult()
+            }
+        }
+    }
+
+    /**
+     * Проверяет результат перемещения с учётом задержки MSDP.
+     * MSDP обновление комнаты может приходить позже промпта.
+     * Если комната не изменилась и причина ясна (дверь, бой) — обрабатывает сразу.
+     * Если причина неясна (UNKNOWN + есть текст) — ждёт MSDP.
+     */
+    private fun checkMovementResult() {
+        val currentRoomId = api.getCurrentRoom()?.get("id") as? String
+        val sourceId = movementSourceRoomId
+
+        if (currentRoomId == null) {
+            log("Перемещение: текущая комната неизвестна")
+            handleMovementFailure()
+            return
+        }
+
+        if (currentRoomId != sourceId) {
+            // Уже обновилось — успех
+            log("Перемещение успешно: $sourceId → $currentRoomId")
+            resetMovementState()
+            decideNext()
+            return
+        }
+
+        // Комната не изменилась — проверяем, есть ли распознаваемая ошибка
+        val (reason, _) = classifyFailure(lastTextBatch)
+        if (reason != MovementFailReason.UNKNOWN) {
+            // Причина ясна (дверь закрыта, бой, и т.д.) — обрабатываем сразу
+            log("Перемещение неудачно: остались в комнате $currentRoomId")
+            handleMovementFailure()
+            return
+        }
+
+        // UNKNOWN + есть текст → возможно MSDP ещё не обновился (пришло описание новой комнаты)
+        // Ждём и проверяем снова
+        movementCheckJob?.cancel()
+        movementCheckJob = scope.launch {
+            delay(500)
+            val recheckedRoomId = api.getCurrentRoom()?.get("id") as? String
+            if (recheckedRoomId != null && recheckedRoomId != sourceId) {
+                log("Перемещение успешно (MSDP задержка): $sourceId → $recheckedRoomId")
+                resetMovementState()
+                decideNext()
+            } else {
+                log("Перемещение неудачно: остались в комнате ${recheckedRoomId ?: "?"}")
+                handleMovementFailure()
             }
         }
     }
@@ -1072,6 +1136,8 @@ class AssistantCore(
      * Сбрасывает состояние отслеживания перемещения.
      */
     private fun resetMovementState() {
+        movementCheckJob?.cancel()
+        movementCheckJob = null
         movementSourceRoomId = null
         movementDirection = null
         lastTextBatch = ""
@@ -1115,6 +1181,9 @@ class AssistantCore(
 
     // Callback для уведомления что исследование завершено (зона/мир полностью исследованы, или ошибка)
     var onExplorationComplete: ((reason: String, scope: ExplorationScope) -> Unit)? = null
+
+    /** Вызывается при переходе к новой зоне в режиме ZONE_WORLD */
+    var onZoneChanged: ((oldZone: Int, newZone: Int) -> Unit)? = null
 
     fun shutdown() {
         commandQueue.clear()
