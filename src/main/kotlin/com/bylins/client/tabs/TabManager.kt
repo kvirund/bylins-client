@@ -107,6 +107,28 @@ class TabManager {
     }
 
     /**
+     * Текущий порядок вкладок (id, без системных main/logs) для сохранения.
+     */
+    fun getTabOrder(): List<String> =
+        _tabs.value.filter { it.id != "main" && it.id != "logs" }.map { it.id }
+
+    /**
+     * Применяет сохранённый порядок вкладок. Вкладки из [order] идут в указанном
+     * порядке, неизвестные (новые/плагинные) — после них, сохраняя относительный
+     * порядок. main всегда первая, logs — последняя.
+     */
+    fun applyTabOrder(order: List<String>) {
+        if (order.isEmpty()) return
+        val list = _tabs.value
+        val main = list.filter { it.id == "main" }
+        val logs = list.filter { it.id == "logs" }
+        val middle = list.filter { it.id != "main" && it.id != "logs" }
+        val ordered = order.mapNotNull { id -> middle.find { it.id == id } }
+        val rest = middle.filter { m -> order.none { it == m.id } }
+        _tabs.value = main + ordered + rest + logs
+    }
+
+    /**
      * Должна ли строка быть скрыта из основного лога: её забирает вкладка
      * в режиме «Перемещать» (MOVE) — то есть строка переносится во вкладку,
      * а не дублируется. Системные вкладки игнорируются.

@@ -173,7 +173,11 @@ data class ConnectionProfileDto(
     val port: Int,
     val encoding: String = "UTF-8",
     val mapFile: String = "maps.db",
-    val activeProfileStack: List<String> = emptyList()
+    val activeProfileStack: List<String> = emptyList(),
+    val outputSplitFractions: Map<String, Float> = emptyMap(),
+    val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
+    val tabOrder: List<String> = emptyList(),
+    val autoReconnect: Boolean = false
 ) {
     fun toConnectionProfile(): ConnectionProfile {
         return ConnectionProfile(
@@ -183,7 +187,11 @@ data class ConnectionProfileDto(
             port = port,
             encoding = encoding,
             mapFile = mapFile,
-            activeProfileStack = activeProfileStack
+            activeProfileStack = activeProfileStack,
+            outputSplitFractions = outputSplitFractions,
+            tabs = tabs,
+            tabOrder = tabOrder,
+            autoReconnect = autoReconnect
         )
     }
 
@@ -196,7 +204,11 @@ data class ConnectionProfileDto(
                 port = profile.port,
                 encoding = profile.encoding,
                 mapFile = profile.mapFile,
-                activeProfileStack = profile.activeProfileStack
+                activeProfileStack = profile.activeProfileStack,
+                outputSplitFractions = profile.outputSplitFractions,
+                tabs = profile.tabs,
+                tabOrder = profile.tabOrder,
+                autoReconnect = profile.autoReconnect
             )
         }
     }

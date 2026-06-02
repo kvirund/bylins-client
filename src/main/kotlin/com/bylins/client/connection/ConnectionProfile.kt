@@ -26,6 +26,9 @@ data class ConnectionProfile(
     val outputSplitFractions: Map<String, Float> = emptyMap(),
     // Профильные вкладки (perProfile == true) — определения и лог хранятся в профиле сервера
     val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
+    // Порядок вкладок вывода (id, без системных main/logs) — свой на каждый сервер,
+    // т.к. видимый набор = глобальные + профильные вкладки этого сервера
+    val tabOrder: List<String> = emptyList(),
     // Автоматически переподключаться при неожиданном разрыве соединения
     val autoReconnect: Boolean = false
 ) {

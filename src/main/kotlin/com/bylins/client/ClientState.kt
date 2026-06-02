@@ -576,9 +576,11 @@ class ClientState {
         }
 
         // Подгружаем профильные вкладки текущего сервера поверх глобальных
+        // и применяем сохранённый порядок вкладок этого сервера
         configData.currentProfileId?.let { profileId ->
             _connectionProfiles.value.find { it.id == profileId }?.let { profile ->
                 tabManager.setProfileTabs(profile.tabs.map { it.toTab() })
+                tabManager.applyTabOrder(profile.tabOrder)
             }
         }
 
@@ -1694,6 +1696,8 @@ class ClientState {
                 loadOutputSplitFractions(it.outputSplitFractions)
                 // Профильные вкладки — свои на этот сервер
                 tabManager.setProfileTabs(it.tabs.map { dto -> dto.toTab() })
+                // Сохранённый порядок вкладок этого сервера
+                tabManager.applyTabOrder(it.tabOrder)
             }
         } ?: run {
             // Если профиль не выбран - очищаем стек и профильные вкладки
@@ -1717,7 +1721,8 @@ class ClientState {
                 connProfile.copy(
                     activeProfileStack = currentStack,
                     outputSplitFractions = getOutputSplitFractions(),
-                    tabs = tabManager.getProfileTabsForSave().map { com.bylins.client.tabs.TabDto.fromTab(it) }
+                    tabs = tabManager.getProfileTabsForSave().map { com.bylins.client.tabs.TabDto.fromTab(it) },
+                    tabOrder = tabManager.getTabOrder()
                 )
             } else {
                 connProfile
