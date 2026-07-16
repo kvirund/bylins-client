@@ -15,7 +15,8 @@ data class Tab(
     val captureMode: CaptureMode = CaptureMode.COPY,
     val maxLines: Int = 2000,  // Уменьшено с 10000 до 2000 для экономии памяти
     val isPluginTab: Boolean = false,  // Вкладка создана плагином (не редактируется пользователем)
-    val perProfile: Boolean = false,   // Привязана к серверу (хранится в профиле), иначе глобальная
+    val profileTab: Boolean = false,   // Видна только на своём сервере (определение в профиле)
+    val profileLog: Boolean = false,   // Лог свой на каждый сервер (profileTab ⟹ profileLog)
     val persistContent: Boolean = false // Сохранять лог вкладки между запусками (по умолчанию нет)
 ) {
     private val _content = MutableStateFlow("")
@@ -191,7 +192,9 @@ data class TabDto(
     val captureMode: String = "COPY",
     val maxLines: Int = 10000,
     val content: String? = null,  // Сохранённое содержимое вкладки (только если persistContent)
-    val perProfile: Boolean = false,
+    val perProfile: Boolean = false,   // legacy: старое поле, мигрируется в profileTab
+    val profileTab: Boolean = false,
+    val profileLog: Boolean = false,
     val persistContent: Boolean = false
 ) {
     fun toTab(): Tab {
@@ -201,13 +204,17 @@ data class TabDto(
         } catch (e: IllegalArgumentException) {
             CaptureMode.COPY
         }
+        // Миграция: старое perProfile == профильная вкладка; каскад profileTab ⟹ profileLog
+        val pt = profileTab || perProfile
+        val pl = profileLog || pt
         val tab = Tab(
             id = id,
             name = name,
             filters = filters.map { it.toTabFilter() },
             captureMode = mode,
             maxLines = maxLines,
-            perProfile = perProfile,
+            profileTab = pt,
+            profileLog = pl,
             persistContent = persistContent
         )
         // Восстанавливаем содержимое
@@ -226,9 +233,13 @@ data class TabDto(
                 filters = tab.filters.map { TabFilterDto.fromTabFilter(it) },
                 captureMode = tab.captureMode.name,
                 maxLines = tab.maxLines,
-                // Лог сохраняем только если вкладка это разрешает (по умолчанию — нет)
-                content = if (tab.persistContent) tab.content.value.takeIf { it.isNotEmpty() } else null,
-                perProfile = tab.perProfile,
+                // Лог в самом TabDto храним, только если он НЕ профильный (профильный
+                // лог глобальной вкладки лежит в profile.tabLogs). Для профильной вкладки
+                // (profileTab) её лог хранится здесь же, в её TabDto внутри профиля.
+                content = if (tab.persistContent && (tab.profileTab || !tab.profileLog))
+                    tab.content.value.takeIf { it.isNotEmpty() } else null,
+                profileTab = tab.profileTab,
+                profileLog = tab.profileLog,
                 persistContent = tab.persistContent
             )
         }

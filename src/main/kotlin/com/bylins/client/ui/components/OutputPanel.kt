@@ -228,7 +228,10 @@ fun OutputPanel(
             // Ключ — только счётчик: смена вкладки эффект не перезапускает, поэтому
             // переключение между вкладками не открывает на них поиск.
             LaunchedEffect(outputSearchRequest) {
-                if (outputSearchRequest > 0) {
+                // Реагируем только на НОВЫЙ запрос (Ctrl+F), а не на пересоздание панели
+                // при возврате на вкладку «Вывод» с уже ненулевым счётчиком.
+                if (outputSearchRequest > 0 && outputSearchRequest != clientState.lastHandledOutputSearchRequest) {
+                    clientState.lastHandledOutputSearchRequest = outputSearchRequest
                     holder.searchActive = true
                     holder.bumpSearchOpen()
                 }
@@ -260,11 +263,11 @@ fun OutputPanel(
                 showTabDialog = false
                 editingTab = null
             },
-            onSave = { name, filters, captureMode, perProfile, persistContent ->
+            onSave = { name, filters, captureMode, profileTab, profileLog, persistContent ->
                 if (editingTab != null) {
-                    clientState.updateTab(editingTab!!.id, name, filters, captureMode, perProfile, persistContent)
+                    clientState.updateTab(editingTab!!.id, name, filters, captureMode, profileTab, profileLog, persistContent)
                 } else {
-                    clientState.createTab(name, filters, captureMode, perProfile, persistContent)
+                    clientState.createTab(name, filters, captureMode, profileTab, profileLog, persistContent)
                 }
                 showTabDialog = false
                 editingTab = null

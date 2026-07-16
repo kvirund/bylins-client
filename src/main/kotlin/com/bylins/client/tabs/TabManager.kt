@@ -75,7 +75,8 @@ class TabManager {
         name: String,
         filters: List<TabFilter>,
         captureMode: CaptureMode,
-        perProfile: Boolean = false,
+        profileTab: Boolean = false,
+        profileLog: Boolean = false,
         persistContent: Boolean = false
     ) {
         if (id == "main") {
@@ -91,7 +92,8 @@ class TabManager {
                     filters = filters,
                     captureMode = captureMode,
                     maxLines = tab.maxLines,
-                    perProfile = perProfile,
+                    profileTab = profileTab,
+                    profileLog = profileLog || profileTab,
                     persistContent = persistContent
                 )
                 // Копируем старое содержимое
@@ -352,22 +354,49 @@ class TabManager {
      * (системные main/logs + непрофильные пользовательские).
      */
     fun getGlobalTabsForSave(): List<Tab> {
-        return _tabs.value.filter { !it.isPluginTab && !it.perProfile }
+        return _tabs.value.filter { !it.isPluginTab && !it.profileTab }
     }
 
     /**
      * Профильные вкладки текущего загруженного сервера для сохранения в его профиль.
      */
     fun getProfileTabsForSave(): List<Tab> {
-        return _tabs.value.filter { !it.isPluginTab && it.perProfile }
+        return _tabs.value.filter { !it.isPluginTab && it.profileTab }
     }
 
     /**
-     * Заменяет набор профильных вкладок (perProfile) на вкладки нового сервера.
+     * Лог глобальных вкладок с профильным логом (profileLog, но не profileTab) —
+     * для сохранения в профиль текущего сервера. Только при persistContent.
+     * Возвращает id вкладки → текущее содержимое.
+     */
+    fun getPerProfileLogs(): Map<String, String> {
+        return _tabs.value
+            .filter { !it.isPluginTab && !it.profileTab && it.profileLog && it.persistContent }
+            .associate { it.id to it.content.value }
+    }
+
+    /**
+     * Применяет профильные логи к глобальным вкладкам с профильным логом:
+     * у каждой такой вкладки буфер заменяется на лог текущего сервера (или пустой).
+     */
+    fun applyPerProfileLogs(logs: Map<String, String>) {
+        for (tab in _tabs.value) {
+            if (tab.isPluginTab || tab.profileTab || !tab.profileLog) continue
+            tab.clear()
+            val content = logs[tab.id]
+            if (!content.isNullOrEmpty()) {
+                tab.appendText(content)
+                tab.flush()
+            }
+        }
+    }
+
+    /**
+     * Заменяет набор профильных вкладок (profileTab) на вкладки нового сервера.
      * Системные, глобальные и плагинные вкладки сохраняются.
      */
     fun setProfileTabs(profileTabs: List<Tab>) {
-        val kept = _tabs.value.filter { it.perProfile.not() || it.isPluginTab }
+        val kept = _tabs.value.filter { it.profileTab.not() || it.isPluginTab }
         // Профильные вкладки вставляем перед системной вкладкой "Логи"
         val logsIndex = kept.indexOfFirst { it.id == "logs" }
         val merged = if (logsIndex >= 0) {

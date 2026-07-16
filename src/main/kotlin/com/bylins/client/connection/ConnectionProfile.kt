@@ -24,8 +24,11 @@ data class ConnectionProfile(
     val activeProfileStack: List<String> = emptyList(),
     // Доли разделителя панели вывода по id вкладки — СВОИ на каждый сервер
     val outputSplitFractions: Map<String, Float> = emptyMap(),
-    // Профильные вкладки (perProfile == true) — определения и лог хранятся в профиле сервера
+    // Профильные вкладки (profileTab == true) — определения и лог хранятся в профиле сервера
     val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
+    // Профильные логи глобальных вкладок (profileLog, но не profileTab): id вкладки → лог.
+    // Свои на каждый сервер при общей (глобальной) вкладке и настройках.
+    val tabLogs: Map<String, String> = emptyMap(),
     // Порядок вкладок вывода (id, без системных main/logs) — свой на каждый сервер,
     // т.к. видимый набор = глобальные + профильные вкладки этого сервера
     val tabOrder: List<String> = emptyList(),

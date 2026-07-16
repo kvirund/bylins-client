@@ -33,12 +33,13 @@ private data class PatternEntry(
 fun TabDialog(
     tab: com.bylins.client.tabs.Tab? = null,
     onDismiss: () -> Unit,
-    onSave: (String, List<TabFilter>, CaptureMode, Boolean, Boolean) -> Unit
+    onSave: (String, List<TabFilter>, CaptureMode, Boolean, Boolean, Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(tab?.name ?: "") }
     var nameError by remember { mutableStateOf<String?>(null) }
     var captureMode by remember { mutableStateOf(tab?.captureMode ?: CaptureMode.COPY) }
-    var perProfile by remember { mutableStateOf(tab?.perProfile ?: false) }
+    var profileTab by remember { mutableStateOf(tab?.profileTab ?: false) }
+    var profileLog by remember { mutableStateOf(tab?.profileLog ?: false) }
     var persistContent by remember { mutableStateOf(tab?.persistContent ?: false) }
 
     val patterns = remember {
@@ -145,16 +146,48 @@ fun TabDialog(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Профильная: настройки/лог вкладки привязаны к серверу (профилю)
+                    // Профильная вкладка: видна только на своём сервере (определение в профиле).
+                    // Включение профильной вкладки автоматически делает лог профильным.
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { perProfile = !perProfile },
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            profileTab = !profileTab
+                            if (profileTab) profileLog = true
+                        },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(checked = perProfile, onCheckedChange = { perProfile = it })
+                        Checkbox(
+                            checked = profileTab,
+                            onCheckedChange = {
+                                profileTab = it
+                                if (it) profileLog = true
+                            }
+                        )
                         Column {
-                            Text("Профильная (привязать к серверу)")
+                            Text("Профильная вкладка (видна только на своём сервере)")
                             Text(
-                                "Настройки и лог этой вкладки — свои на каждый сервер",
+                                "Определение и лог хранятся в профиле сервера",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    // Профильный лог: лог свой на каждый сервер (вкладка остаётся глобальной).
+                    // Если вкладка профильная — лог профильный принудительно (нельзя снять).
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !profileTab) {
+                            profileLog = !profileLog
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = profileLog || profileTab,
+                            enabled = !profileTab,
+                            onCheckedChange = { profileLog = it }
+                        )
+                        Column {
+                            Text("Профильный лог (свой на каждый сервер)")
+                            Text(
+                                "Вкладка общая, но лог не смешивается между серверами",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -168,7 +201,10 @@ fun TabDialog(
                         Column {
                             Text("Сохранять лог между запусками")
                             Text(
-                                if (perProfile) "Лог сохраняется в профиль сервера" else "Лог сохраняется глобально",
+                                when {
+                                    profileTab || profileLog -> "Лог сохраняется в профиль сервера"
+                                    else -> "Лог сохраняется глобально"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -342,7 +378,7 @@ fun TabDialog(
                                         matchWithColors = entry.matchWithColors
                                     )
                                 }
-                                onSave(name.trim(), filters, captureMode, perProfile, persistContent)
+                                onSave(name.trim(), filters, captureMode, profileTab, profileLog, persistContent)
                             }
                         }
                     ) {

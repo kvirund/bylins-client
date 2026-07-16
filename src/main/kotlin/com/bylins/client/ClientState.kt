@@ -324,6 +324,10 @@ class ClientState {
     fun requestOutputSearch() {
         _outputSearchRequest.value++
     }
+    // Последний обработанный счётчик запроса поиска. Переживает пересоздание
+    // OutputPanel (смена верхних вкладок), чтобы повторная композиция не открывала
+    // поиск из-за уже ненулевого счётчика.
+    var lastHandledOutputSearchRequest: Int = 0
 
     // MSDP статус (включён ли протокол)
     private val _msdpEnabled = MutableStateFlow(false)
@@ -580,6 +584,7 @@ class ClientState {
         configData.currentProfileId?.let { profileId ->
             _connectionProfiles.value.find { it.id == profileId }?.let { profile ->
                 tabManager.setProfileTabs(profile.tabs.map { it.toTab() })
+                tabManager.applyPerProfileLogs(profile.tabLogs)
                 tabManager.applyTabOrder(profile.tabOrder)
             }
         }
@@ -1449,7 +1454,8 @@ class ClientState {
         name: String,
         filters: List<com.bylins.client.tabs.TabFilter>,
         captureMode: com.bylins.client.tabs.CaptureMode,
-        perProfile: Boolean = false,
+        profileTab: Boolean = false,
+        profileLog: Boolean = false,
         persistContent: Boolean = false
     ) {
         val tab = com.bylins.client.tabs.Tab(
@@ -1457,7 +1463,8 @@ class ClientState {
             name = name,
             filters = filters,
             captureMode = captureMode,
-            perProfile = perProfile,
+            profileTab = profileTab,
+            profileLog = profileLog || profileTab,
             persistContent = persistContent
         )
         addTab(tab)
@@ -1468,10 +1475,11 @@ class ClientState {
         name: String,
         filters: List<com.bylins.client.tabs.TabFilter>,
         captureMode: com.bylins.client.tabs.CaptureMode,
-        perProfile: Boolean = false,
+        profileTab: Boolean = false,
+        profileLog: Boolean = false,
         persistContent: Boolean = false
     ) {
-        tabManager.updateTab(id, name, filters, captureMode, perProfile, persistContent)
+        tabManager.updateTab(id, name, filters, captureMode, profileTab, profileLog, persistContent)
         saveConfigNow()
     }
 
@@ -1652,7 +1660,7 @@ class ClientState {
     // Управление профилями подключений
     fun addConnectionProfile(profile: com.bylins.client.connection.ConnectionProfile) {
         _connectionProfiles.value = _connectionProfiles.value + profile
-        saveConfig()
+        saveConfigNow()
         logger.info { "Added connection profile: ${profile.name}" }
     }
 
@@ -1660,7 +1668,7 @@ class ClientState {
         _connectionProfiles.value = _connectionProfiles.value.map {
             if (it.id == profile.id) profile else it
         }
-        saveConfig()
+        saveConfigNow()
         logger.info { "Updated connection profile: ${profile.name}" }
     }
 
@@ -1670,7 +1678,7 @@ class ClientState {
         if (_currentProfileId.value == profileId) {
             _currentProfileId.value = null
         }
-        saveConfig()
+        saveConfigNow()
         logger.info { "Removed connection profile: $profileId" }
     }
 
@@ -1696,6 +1704,8 @@ class ClientState {
                 loadOutputSplitFractions(it.outputSplitFractions)
                 // Профильные вкладки — свои на этот сервер
                 tabManager.setProfileTabs(it.tabs.map { dto -> dto.toTab() })
+                // Профильные логи глобальных вкладок — свои на этот сервер
+                tabManager.applyPerProfileLogs(it.tabLogs)
                 // Сохранённый порядок вкладок этого сервера
                 tabManager.applyTabOrder(it.tabOrder)
             }
@@ -1722,6 +1732,7 @@ class ClientState {
                     activeProfileStack = currentStack,
                     outputSplitFractions = getOutputSplitFractions(),
                     tabs = tabManager.getProfileTabsForSave().map { com.bylins.client.tabs.TabDto.fromTab(it) },
+                    tabLogs = tabManager.getPerProfileLogs(),
                     tabOrder = tabManager.getTabOrder()
                 )
             } else {

@@ -5,12 +5,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,12 +102,30 @@ fun SettingsPanel(
                 }
 
                 if (currentLogFile != null) {
-                    Text(
-                        text = "Файл: $currentLogFile",
-                        color = colorScheme.success,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
+                    val clipboard = LocalClipboardManager.current
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Путь можно выделить и скопировать (Ctrl+C), либо кликнуть по нему
+                        // целиком для копирования всего пути в буфер обмена.
+                        SelectionContainer(modifier = Modifier.weight(1f, fill = false)) {
+                            Text(
+                                text = "Файл: $currentLogFile",
+                                color = colorScheme.success,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier
+                                    .pointerHoverIcon(PointerIcon.Hand)
+                                    .clickable {
+                                        clipboard.setText(AnnotatedString(currentLogFile!!))
+                                        statusMessage = "Путь скопирован в буфер обмена"
+                                        statusColor = colorScheme.success
+                                    }
+                            )
+                        }
+                    }
                 }
 
                 Row(
@@ -133,13 +156,22 @@ fun SettingsPanel(
 
                     Button(
                         onClick = {
-                            openDirectory(clientState.getLogsDirectory())
-                            statusMessage = "Открыта директория логов"
+                            val file = currentLogFile
+                            if (file != null) {
+                                revealInExplorer(file)
+                                statusMessage = "Лог показан в проводнике"
+                            } else {
+                                openDirectory(clientState.getLogsDirectory())
+                                statusMessage = "Открыта директория логов"
+                            }
                             statusColor = colorScheme.success
                         },
                         colors = ButtonDefaults.buttonColors(backgroundColor = colorScheme.primary)
                     ) {
-                        Text("Открыть папку", color = colorScheme.onSurface)
+                        Text(
+                            text = if (currentLogFile != null) "Показать в проводнике" else "Открыть папку",
+                            color = colorScheme.onSurface
+                        )
                     }
 
                     Button(
@@ -762,6 +794,26 @@ private fun openDirectory(path: String) {
         }
     } catch (e: Exception) {
         logger.error { "Error opening directory: ${e.message}" }
+    }
+}
+
+/**
+ * Открывает проводник с выделенным файлом [filePath].
+ * На Linux нет стандартного «выделить файл» — открываем родительскую папку.
+ */
+private fun revealInExplorer(filePath: String) {
+    try {
+        val os = System.getProperty("os.name").lowercase()
+        when {
+            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", "/select,$filePath"))
+            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", "-R", filePath))
+            else -> {
+                val parent = File(filePath).parent ?: filePath
+                Runtime.getRuntime().exec(arrayOf("xdg-open", parent))
+            }
+        }
+    } catch (e: Exception) {
+        logger.error { "Error revealing file in explorer: ${e.message}" }
     }
 }
 

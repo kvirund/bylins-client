@@ -176,6 +176,7 @@ data class ConnectionProfileDto(
     val activeProfileStack: List<String> = emptyList(),
     val outputSplitFractions: Map<String, Float> = emptyMap(),
     val tabs: List<com.bylins.client.tabs.TabDto> = emptyList(),
+    val tabLogs: Map<String, String> = emptyMap(),
     val tabOrder: List<String> = emptyList(),
     val autoReconnect: Boolean = false
 ) {
@@ -190,6 +191,7 @@ data class ConnectionProfileDto(
             activeProfileStack = activeProfileStack,
             outputSplitFractions = outputSplitFractions,
             tabs = tabs,
+            tabLogs = tabLogs,
             tabOrder = tabOrder,
             autoReconnect = autoReconnect
         )
@@ -207,6 +209,7 @@ data class ConnectionProfileDto(
                 activeProfileStack = profile.activeProfileStack,
                 outputSplitFractions = profile.outputSplitFractions,
                 tabs = profile.tabs,
+                tabLogs = profile.tabLogs,
                 tabOrder = profile.tabOrder,
                 autoReconnect = profile.autoReconnect
             )
