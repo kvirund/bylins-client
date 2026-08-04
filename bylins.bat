@@ -29,7 +29,7 @@ if not defined JAVA_HOME (
 
 if not defined JAVA_HOME (
     echo JDK не найден. Установите JDK 17+ или задайте переменную JAVA_HOME.
-    pause
+    if not defined BYLINS_NOPAUSE pause
     exit /b 1
 )
 
@@ -40,7 +40,8 @@ call "%~dp0gradlew.bat" run --console=plain
 if errorlevel 1 (
     echo.
     echo Запуск завершился с ошибкой.
-    pause
+    rem BYLINS_NOPAUSE выставляет bylins.vbs: окно скрыто, ждать нечего
+    if not defined BYLINS_NOPAUSE pause
 )
 
 endlocal
