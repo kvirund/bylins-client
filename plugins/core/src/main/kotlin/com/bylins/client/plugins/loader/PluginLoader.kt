@@ -145,6 +145,10 @@ class PluginLoader {
         val dependencies = parseDependencies(map["dependencies"])
         val softDependencies = (map["soft-dependencies"] as? List<String>) ?: emptyList()
 
+        // Запрашиваемые разрешения (выдаёт пользователь в настройках, не загрузчик)
+        val permissions = ((map["permissions"] as? List<*>) ?: emptyList<Any>())
+            .mapNotNull { com.bylins.client.plugins.PluginPermission.fromId(it.toString().trim()) }
+
         return PluginMetadata(
             id = id,
             name = name,
@@ -155,7 +159,8 @@ class PluginLoader {
             mainClass = mainClass,
             dependencies = dependencies,
             softDependencies = softDependencies,
-            apiVersion = apiVersion
+            apiVersion = apiVersion,
+            permissions = permissions
         )
     }
 

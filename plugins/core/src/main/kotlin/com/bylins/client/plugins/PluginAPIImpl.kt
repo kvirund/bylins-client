@@ -125,8 +125,24 @@ class PluginAPIImpl(
     private val clearPathHighlightFunc: () -> Unit,
     // Контекстные команды
     private val addContextCommandFunc: (String, String, String) -> Unit,
-    private val removeContextCommandFunc: (String) -> Unit
+    private val removeContextCommandFunc: (String) -> Unit,
+    // Управление клиентом (защищено разрешениями пользователя)
+    private val clientControl: ClientControl? = null,
+    private val permissionChecker: (String, PluginPermission) -> Boolean = { _, _ -> false }
 ) : PluginAPI {
+
+    override fun hasPermission(permission: PluginPermission): Boolean =
+        permissionChecker(pluginId, permission)
+
+    /**
+     * Управление клиентом с проверкой разрешений перед каждым вызовом:
+     * пользователь мог отозвать право уже после старта плагина.
+     */
+    override val client: ClientControl = GuardedClientControl(
+        pluginId = pluginId,
+        delegate = clientControl,
+        hasPermission = { perm -> permissionChecker(pluginId, perm) }
+    )
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }

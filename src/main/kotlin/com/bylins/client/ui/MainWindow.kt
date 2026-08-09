@@ -1,8 +1,10 @@
 package com.bylins.client.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +23,13 @@ import com.bylins.client.ui.theme.AppTheme
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import java.awt.Cursor
+
+// Ниже этой ширины (dp) перетаскивание разделителя сворачивает боковую панель
+private const val COLLAPSE_DRAG_THRESHOLD_DP = 120
+
+// Ширина (dp), до которой «распрямляем» панель при разворачивании, если она
+// осталась схлопнутой после утаскивания разделителя
+private const val RESTORE_MIN_WIDTH_DP = 220
 
 // Определение вкладки
 data class TabDef(val id: String, val name: String)
@@ -194,8 +203,47 @@ fun MainWindow() {
                             // Вывод от сервера с боковой панелью
                             val miniMapWidth by clientState.miniMapWidth.collectAsState()
                             val density = LocalDensity.current
+                            val collapsed by clientState.sidePanelCollapsed.collectAsState()
 
-                            Row(modifier = Modifier.fillMaxSize()) {
+                            // Ширина области (для авто-сворачивания в узком окне).
+                            // Порог задаём по ширине, которая остаётся панели вывода:
+                            // если вывод становится уже минимума — прячем боковую панель.
+                            // Актуальная ширина для долгоживущего drag-жеста (pointerInput(Unit)
+                            // захватил бы устаревшее значение)
+                            val miniMapWidthRef by rememberUpdatedState(miniMapWidth)
+
+                            // Идёт ли перетаскивание разделителя и предпросмотр свёрнутого вида
+                            var isDraggingDivider by remember { mutableStateOf(false) }
+                            var dragCollapsePreview by remember { mutableStateOf(false) }
+
+                            var areaWidthPx by remember { mutableStateOf(0) }
+                            val minOutputWidthDp = 560f
+                            val areaWidthDp = areaWidthPx / density.density
+                            val outputWidthIfExpanded = areaWidthDp - miniMapWidth - 18f // язычок + разделитель
+                            val isNarrow = areaWidthPx > 0 && outputWidthIfExpanded < minOutputWidthDp
+
+                            // В узком окне сворачиваем автоматически, при возврате к широкому
+                            // восстанавливаем состояние, которое было до сворачивания.
+                            var collapsedBeforeNarrow by remember { mutableStateOf<Boolean?>(null) }
+                            LaunchedEffect(isNarrow) {
+                                if (isNarrow) {
+                                    if (collapsedBeforeNarrow == null) {
+                                        collapsedBeforeNarrow = collapsed
+                                        clientState.setSidePanelCollapsed(true)
+                                    }
+                                } else {
+                                    collapsedBeforeNarrow?.let {
+                                        clientState.setSidePanelCollapsed(it)
+                                        collapsedBeforeNarrow = null
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onSizeChanged { areaWidthPx = it.width }
+                            ) {
                                 OutputPanel(
                                     clientState = clientState,
                                     modifier = Modifier
@@ -203,25 +251,92 @@ fun MainWindow() {
                                         .fillMaxHeight()
                                 )
 
-                                // Draggable divider
+                                // Кнопка сворачивания/разворачивания боковой панели
                                 Box(
                                     modifier = Modifier
-                                        .width(4.dp)
+                                        .width(18.dp)
                                         .fillMaxHeight()
-                                        .background(appColorScheme.border)
-                                        .pointerHoverIcon(PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)))
-                                        .pointerInput(Unit) {
-                                            detectDragGestures { change, dragAmount ->
-                                                change.consume()
-                                                val newWidth = (miniMapWidth - dragAmount.x / density.density).toInt()
-                                                clientState.setMiniMapWidth(newWidth)
+                                        .background(appColorScheme.surface)
+                                        .pointerHoverIcon(PointerIcon.Hand)
+                                        .clickable {
+                                            if (collapsed) {
+                                                // Разворачиваем: если ширина осталась «схлопнутой»
+                                                // после утаскивания разделителя — даём удобную.
+                                                if (miniMapWidth < RESTORE_MIN_WIDTH_DP) {
+                                                    clientState.setMiniMapWidth(RESTORE_MIN_WIDTH_DP)
+                                                }
+                                                clientState.setSidePanelCollapsed(false)
+                                            } else {
+                                                clientState.setSidePanelCollapsed(true)
                                             }
-                                        }
-                                )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (collapsed) "◀" else "▶",
+                                        color = appColorScheme.onSurfaceVariant,
+                                        fontSize = 10.sp
+                                    )
+                                }
 
-                                // Боковая панель со статусом
-                                val statusElements by clientState.statusManager.elements.collectAsState()
-                                if (statusElements.isNotEmpty()) {
+                                // Разделитель остаётся в композиции всё время жеста, даже когда
+                                // панель «свёрнута» предпросмотром: иначе его удаление обрывает
+                                // drag и вернуть панель, не отпуская кнопку, невозможно.
+                                if (!collapsed || isDraggingDivider) {
+                                    // Draggable divider
+                                    Box(
+                                        modifier = Modifier
+                                            .width(4.dp)
+                                            .fillMaxHeight()
+                                            .background(appColorScheme.border)
+                                            .pointerHoverIcon(PointerIcon(Cursor.getPredefinedCursor(Cursor.E_RESIZE_CURSOR)))
+                                            .pointerInput(Unit) {
+                                                // Аккумулятор от старта жеста: dragAmount — дельта за
+                                                // событие, а ширина зажата снизу (150dp). Без накопления
+                                                // «утащить за минимум» невозможно — панель залипала сжатой.
+                                                var startWidth = 0
+                                                var accumDp = 0f
+                                                detectDragGestures(
+                                                    onDragStart = {
+                                                        startWidth = miniMapWidthRef
+                                                        accumDp = 0f
+                                                        isDraggingDivider = true
+                                                        dragCollapsePreview = false
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        // Ограничиваем накопление, чтобы возврат был
+                                                        // отзывчивым (нет «мёртвого хода» за краем)
+                                                        accumDp = (accumDp + dragAmount.x / density.density)
+                                                            .coerceAtMost(startWidth.toFloat())
+                                                        val requested = (startWidth - accumDp).toInt()
+                                                        if (requested < COLLAPSE_DRAG_THRESHOLD_DP) {
+                                                            // Предпросмотр свёрнутого вида; окончательное
+                                                            // состояние применяем при отпускании
+                                                            dragCollapsePreview = true
+                                                        } else {
+                                                            dragCollapsePreview = false
+                                                            clientState.setMiniMapWidth(requested)
+                                                        }
+                                                    },
+                                                    onDragEnd = {
+                                                        clientState.setSidePanelCollapsed(dragCollapsePreview)
+                                                        dragCollapsePreview = false
+                                                        isDraggingDivider = false
+                                                    },
+                                                    onDragCancel = {
+                                                        clientState.setSidePanelCollapsed(dragCollapsePreview)
+                                                        dragCollapsePreview = false
+                                                        isDraggingDivider = false
+                                                    }
+                                                )
+                                            }
+                                    )
+
+                                    // Боковая панель со статусом. Предпросмотр скрытия действует
+                                    // ТОЛЬКО во время жеста — иначе после сворачивания перетаскиванием
+                                    // разворот кнопкой давал пустую панель нулевой ширины.
+                                    if (!(isDraggingDivider && dragCollapsePreview)) {
                                     Column(
                                         modifier = Modifier
                                             .width(miniMapWidth.dp)
@@ -233,6 +348,7 @@ fun MainWindow() {
                                                 .fillMaxWidth()
                                                 .fillMaxHeight()
                                         )
+                                    }
                                     }
                                 }
                             }

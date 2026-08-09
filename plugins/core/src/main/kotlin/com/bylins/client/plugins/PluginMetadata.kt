@@ -32,7 +32,13 @@ data class PluginMetadata(
     val softDependencies: List<String> = emptyList(),
 
     /** Минимальная версия API клиента */
-    val apiVersion: String = "1.0"
+    val apiVersion: String = "1.0",
+
+    /**
+     * Разрешения, которые плагин запрашивает (plugin.yml: `permissions: [client-control]`).
+     * Запрос ≠ выдача: пользователь включает их вручную в настройках плагинов.
+     */
+    val permissions: List<PluginPermission> = emptyList()
 )
 
 /**

@@ -271,6 +271,42 @@ class ClientState {
     // Состояние свёрнутости групп статус-панели
     private val _statusGroupCollapsed = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
+    // --- Управление клиентом из плагинов и разрешения на него ---
+
+    /** Реализация «нажатий кнопок» для плагинов (профили, триггеры, соединение). */
+    private val clientControl: com.bylins.client.plugins.ClientControl by lazy {
+        com.bylins.client.plugins.ClientControlImpl(this)
+    }
+
+    /** Выданные пользователем разрешения: id плагина → набор id разрешений. */
+    private val _pluginPermissions = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    val pluginPermissions: StateFlow<Map<String, Set<String>>> = _pluginPermissions
+
+    fun hasPluginPermission(pluginId: String, permission: com.bylins.client.plugins.PluginPermission): Boolean =
+        _pluginPermissions.value[pluginId]?.contains(permission.id) == true
+
+    /** Выдаёт/отзывает разрешение плагину (действует немедленно). */
+    fun setPluginPermission(
+        pluginId: String,
+        permission: com.bylins.client.plugins.PluginPermission,
+        granted: Boolean
+    ) {
+        val current = _pluginPermissions.value[pluginId] ?: emptySet()
+        val updated = if (granted) current + permission.id else current - permission.id
+        _pluginPermissions.value = _pluginPermissions.value + (pluginId to updated)
+        saveConfig()
+        logger.info { "Plugin '$pluginId' permission '${permission.id}' granted=$granted" }
+    }
+
+    // Свёрнута ли правая (боковая) панель на вкладке «Вывод»
+    private val _sidePanelCollapsed = MutableStateFlow(false)
+    val sidePanelCollapsed: StateFlow<Boolean> = _sidePanelCollapsed
+    fun setSidePanelCollapsed(collapsed: Boolean) {
+        if (_sidePanelCollapsed.value == collapsed) return
+        _sidePanelCollapsed.value = collapsed
+        saveConfig()
+    }
+
     // Целевой профиль для добавления хоткеев/триггеров/алиасов в UI панелях (null = база)
     private val _panelTargetProfileId = MutableStateFlow<String?>(null)
     val panelTargetProfileId: StateFlow<String?> = _panelTargetProfileId
@@ -484,6 +520,12 @@ class ClientState {
             shutdown()
         })
 
+        // Конфиг читаем ДО инициализации плагинов: выданные разрешения должны
+        // быть известны уже в onEnable, иначе плагин стартует «без прав» и
+        // вынужден их потом переспрашивать.
+        val configData = configManager.loadConfig()
+        _pluginPermissions.value = configData.pluginPermissions
+
         // Инициализируем скриптинг
         initializeScripting()
 
@@ -504,9 +546,7 @@ class ClientState {
         // Инициализируем профили персонажей
         initializeProfiles()
 
-        // Продолжаем стандартную инициализацию
-        // Пытаемся загрузить сохранённую конфигурацию
-        val configData = configManager.loadConfig()
+        // Конфиг уже прочитан выше (до инициализации плагинов)
 
         // Загружаем кодировку из конфига
         _encoding = configData.encoding
@@ -527,6 +567,7 @@ class ClientState {
         // Постоянные вкладки не могут быть скрыты даже через конфиг
         _hiddenTabs.value = configData.hiddenTabs - PERMANENT_TAB_IDS
         _statusGroupCollapsed.value = configData.statusGroupCollapsed
+        _sidePanelCollapsed.value = configData.sidePanelCollapsed
         loadOutputSplitFractions(configData.outputSplitFractions)
         logManager.setLogWithColors(configData.logWithColors)
 
@@ -1562,6 +1603,8 @@ class ClientState {
             lastMapRoomId = lastMapRoomId,
             logWithColors = logManager.logWithColors.value,
             statusGroupCollapsed = _statusGroupCollapsed.value,
+            sidePanelCollapsed = _sidePanelCollapsed.value,
+            pluginPermissions = _pluginPermissions.value,
             outputSplitFractions = getOutputSplitFractions()
         )
     }
@@ -2618,7 +2661,10 @@ class ClientState {
             removeContextCommandFunc = { command ->
                 val queue = contextCommandManager.commandQueue.value
                 queue.filter { it.command == command }.forEach { contextCommandManager.removeCommand(it.id) }
-            }
+            },
+            // Управление клиентом: доступно только с разрешением, выданным пользователем
+            clientControl = clientControl,
+            permissionChecker = { id, permission -> hasPluginPermission(id, permission) }
         )
     }
 

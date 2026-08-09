@@ -113,15 +113,16 @@ val prepareRun by tasks.registering(Copy::class) {
     group = "application"
     description = "Prepares run directory with plugins and scripts"
 
-    dependsOn(":plugins:assistant:buildPlugin")
+    dependsOn(":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
 
     // Создаём директорию для плагинов
     doFirst {
         layout.buildDirectory.dir("run/plugins").get().asFile.mkdirs()
     }
 
-    // Копируем JAR плагина
+    // Копируем JAR плагинов
     from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"))
+    from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar"))
     into(layout.buildDirectory.dir("run/plugins"))
 }
 

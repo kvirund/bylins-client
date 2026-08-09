@@ -143,6 +143,7 @@ private fun PluginConfigContent(
 ) {
     val colorScheme = LocalAppColorScheme.current
     val plugins by clientState.getPlugins().collectAsState()
+    val pluginPermissions by clientState.pluginPermissions.collectAsState()
     val pluginsDirectory = clientState.getPluginsDirectory()
     var showLoadPluginDialog by remember { mutableStateOf(false) }
 
@@ -209,6 +210,10 @@ private fun PluginConfigContent(
                 PluginItem(
                     plugin = plugin,
                     colorScheme = colorScheme,
+                    grantedPermissions = pluginPermissions[plugin.metadata.id] ?: emptySet(),
+                    onPermissionChange = { id, permission, granted ->
+                        clientState.setPluginPermission(id, permission, granted)
+                    },
                     onToggle = { id, enabled ->
                         if (enabled) {
                             clientState.enablePlugin(id)
@@ -280,6 +285,8 @@ private fun PluginConfigContent(
 private fun PluginItem(
     plugin: LoadedPlugin,
     colorScheme: com.bylins.client.ui.theme.ColorScheme,
+    grantedPermissions: Set<String>,
+    onPermissionChange: (String, com.bylins.client.plugins.PluginPermission, Boolean) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onReload: (String) -> Unit,
     onUnload: (String) -> Unit
@@ -369,6 +376,54 @@ private fun PluginItem(
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
+                    }
+
+                    // Запрошенные плагином разрешения — выдаются пользователем ЯВНО.
+                    // Без выдачи защищённые вызовы API отклоняются.
+                    if (plugin.metadata.permissions.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Разрешения:",
+                            color = colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        plugin.metadata.permissions.forEach { permission ->
+                            val granted = permission.id in grantedPermissions
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onPermissionChange(plugin.metadata.id, permission, !granted)
+                                    }
+                            ) {
+                                Checkbox(
+                                    checked = granted,
+                                    onCheckedChange = { checked ->
+                                        onPermissionChange(plugin.metadata.id, permission, checked)
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = Color(0xFFFF9800),
+                                        uncheckedColor = colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                Column {
+                                    Text(
+                                        text = permission.title,
+                                        color = colorScheme.onSurface,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = permission.description,
+                                        color = colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Путь к JAR файлу и время загрузки

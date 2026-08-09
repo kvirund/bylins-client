@@ -56,7 +56,9 @@ class ConfigManager {
         lastMapRoomId: String? = null,
         logWithColors: Boolean = false,
         statusGroupCollapsed: Map<String, Boolean> = emptyMap(),
-        outputSplitFractions: Map<String, Float> = emptyMap()
+        outputSplitFractions: Map<String, Float> = emptyMap(),
+        sidePanelCollapsed: Boolean = false,
+        pluginPermissions: Map<String, Set<String>> = emptyMap()
     ) {
         try {
             val config = ClientConfig(
@@ -82,7 +84,9 @@ class ConfigManager {
                 lastMapRoomId = lastMapRoomId,
                 logWithColors = logWithColors,
                 statusGroupCollapsed = statusGroupCollapsed,
-                outputSplitFractions = outputSplitFractions
+                outputSplitFractions = outputSplitFractions,
+                sidePanelCollapsed = sidePanelCollapsed,
+                pluginPermissions = pluginPermissions
             )
 
             val jsonString = json.encodeToString(config)
@@ -138,6 +142,8 @@ class ConfigManager {
             val logWithColors = config.logWithColors
             val statusGroupCollapsed = config.statusGroupCollapsed
             val outputSplitFractions = config.outputSplitFractions
+            val sidePanelCollapsed = config.sidePanelCollapsed
+            val pluginPermissions = config.pluginPermissions
 
             val contextCommandRules = config.contextCommandRules
             val contextCommandMaxQueueSize = config.contextCommandMaxQueueSize
@@ -166,7 +172,9 @@ class ConfigManager {
                 lastMapRoomId = lastMapRoomId,
                 logWithColors = logWithColors,
                 statusGroupCollapsed = statusGroupCollapsed,
-                outputSplitFractions = outputSplitFractions
+                outputSplitFractions = outputSplitFractions,
+                sidePanelCollapsed = sidePanelCollapsed,
+                pluginPermissions = pluginPermissions
             )
         } catch (e: Exception) {
             logger.error { "Failed to load config: ${e.message}" }
@@ -292,5 +300,7 @@ data class ConfigData(
     val lastMapRoomId: String? = null,
     val logWithColors: Boolean = false,
     val statusGroupCollapsed: Map<String, Boolean> = emptyMap(),
-    val outputSplitFractions: Map<String, Float> = emptyMap()
+    val outputSplitFractions: Map<String, Float> = emptyMap(),
+    val sidePanelCollapsed: Boolean = false,
+    val pluginPermissions: Map<String, Set<String>> = emptyMap()
 )
