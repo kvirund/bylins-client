@@ -8,6 +8,12 @@ rem Переходим в папку проекта (там, где лежит �
 cd /d "%~dp0"
 
 rem --- Поиск JDK 17+ ---
+rem Сначала проверяем то, что уже задано в системе: значение бывает битым
+rem (например, с лишней кавычкой на конце) — тогда путь к javaw не соберётся
+rem и запуск молча провалится. Такое значение отбрасываем и ищем сами.
+set "JAVA_HOME=%JAVA_HOME:"=%"
+if not exist "%JAVA_HOME%\bin\javaw.exe" set "JAVA_HOME="
+
 if not defined JAVA_HOME (
     for %%D in (
         "C:\Program Files\Eclipse Adoptium\jdk-17.0.17.10-hotspot"

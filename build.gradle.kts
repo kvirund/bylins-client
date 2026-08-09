@@ -137,6 +137,39 @@ val prepareScripts by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("run/scripts"))
 }
 
+// Обновление плагинов в УЖЕ ЗАПУЩЕННОМ клиенте.
+//
+// Перезагрузка плагина в UI читает JAR из снимка, зафиксированного при старте,
+// поэтому свежую сборку туда нужно положить. JAR загруженного плагина занят
+// classloader'ом — сначала выгрузите плагин в UI («Выгрузить»), затем эта
+// задача, затем «Загрузить».
+val deployPlugins by tasks.registering {
+    group = "application"
+    description = "Кладёт свежие плагины в активный снимок (для #plugin reload)"
+
+    dependsOn(":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+
+    doLast {
+        val appDir = layout.buildDirectory.dir("app").get().asFile
+        val currentFile = File(appDir, "current.txt")
+        if (!currentFile.exists()) {
+            println("Снимок не найден — клиент ещё ни разу не запускался через bylins.bat")
+            return@doLast
+        }
+        val target = File(appDir, currentFile.readText().trim() + "/plugins")
+
+        listOf(
+            project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"),
+            project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar")
+        ).forEach { provider ->
+            val jar = provider.get().asFile
+            val dest = File(target, jar.name)
+            val ok = runCatching { jar.copyTo(dest, overwrite = true) }.isSuccess
+            println(if (ok) "обновлён: ${dest.name}" else "занят (выгрузите плагин в UI): ${dest.name}")
+        }
+    }
+}
+
 // Задача для полной подготовки директории запуска
 val prepareRunDir by tasks.registering {
     group = "application"
