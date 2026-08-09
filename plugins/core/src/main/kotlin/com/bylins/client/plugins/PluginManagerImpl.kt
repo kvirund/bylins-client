@@ -27,6 +27,17 @@ class PluginManagerImpl(
         System.getProperty("bylins.plugins.dir", "plugins")
     )
 
+    /**
+     * Где плагины хранят свои данные (config.yaml и прочее).
+     *
+     * Отделено от каталога с JAR: тот может быть версионированным снимком,
+     * пересобираемым при каждом запуске, и данные вместе с ним терялись бы.
+     * По умолчанию — рядом с JAR (прежнее поведение).
+     */
+    private val pluginsDataDirectory = File(
+        System.getProperty("bylins.plugins.data.dir") ?: pluginsDirectory.absolutePath
+    )
+
     private val pluginLoader = PluginLoader()
     private val classLoaders = mutableMapOf<String, PluginClassLoader>()
     private val pluginApis = mutableMapOf<String, PluginAPIImpl>()
@@ -60,7 +71,7 @@ class PluginManagerImpl(
                 }
 
                 // Создаем API для плагина
-                val dataFolder = File(pluginsDirectory, metadata.id)
+                val dataFolder = File(pluginsDataDirectory, metadata.id)
                 val api = apiFactory(metadata.id, dataFolder)
                 pluginApis[metadata.id] = api
 

@@ -56,6 +56,7 @@ set /p APPVER=<"%~dp0build\app\current.txt"
     -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 ^
     -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -DCONSOLE_CHARSET=UTF-8 ^
     -Dbylins.plugins.dir=build/app/%APPVER%/plugins ^
+    -Dbylins.plugins.data.dir="%USERPROFILE%\.bylins-client\plugins" ^
     -cp "%~dp0build\app\deps\*;%~dp0build\app\%APPVER%\lib\*" com.bylins.client.MainKt
 if errorlevel 1 (
     echo.
