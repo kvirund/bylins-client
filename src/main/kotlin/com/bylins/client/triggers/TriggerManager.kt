@@ -7,6 +7,12 @@ class TriggerManager(
     private val onCommand: (String) -> Unit,
     private val onTriggerFired: ((Trigger, String, Map<Int, String>) -> Unit)? = null
 ) {
+    /**
+     * Откуда брать текущую комнату для триггеров с областью действия.
+     * По умолчанию местоположение неизвестно — работают только глобальные.
+     */
+    var getCurrentRoom: () -> com.bylins.client.mapper.Room? = { null }
+
     private val _triggers = MutableStateFlow<List<Trigger>>(emptyList())
     val triggers: StateFlow<List<Trigger>> = _triggers
 
@@ -41,9 +47,12 @@ class TriggerManager(
     fun processLine(line: String): List<TriggerMatch> {
         val matches = mutableListOf<TriggerMatch>()
 
+        val room = getCurrentRoom()
         for (trigger in _triggers.value) {
             if (!trigger.enabled) continue
             if (trigger.once && firedOnceTriggers.contains(trigger.id)) continue
+            // Триггер с областью действия срабатывает только в своей зоне/комнате
+            if (!com.bylins.client.contextcommands.matchesRoom(trigger.scope, room)) continue
 
             val matchResult = trigger.pattern.find(line)
             if (matchResult != null) {
@@ -73,9 +82,11 @@ class TriggerManager(
     fun processLineWithTriggers(line: String, externalTriggers: List<Trigger>): List<TriggerMatch> {
         val matches = mutableListOf<TriggerMatch>()
 
+        val room = getCurrentRoom()
         for (trigger in externalTriggers) {
             if (!trigger.enabled) continue
             if (trigger.once && firedOnceTriggers.contains(trigger.id)) continue
+            if (!com.bylins.client.contextcommands.matchesRoom(trigger.scope, room)) continue
 
             val matchResult = trigger.pattern.find(line)
             if (matchResult != null) {

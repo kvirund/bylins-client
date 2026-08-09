@@ -9,7 +9,12 @@ data class Trigger(
     val priority: Int = 0,
     val colorize: TriggerColorize? = null,
     val gag: Boolean = false,
-    val once: Boolean = false
+    val once: Boolean = false,
+    /**
+     * Где триггер действует: null/World — везде (обычное поведение),
+     * Zone/Room — только в указанных зонах или комнатах.
+     */
+    val scope: com.bylins.client.contextcommands.ContextScope? = null
 )
 
 data class TriggerColorize(

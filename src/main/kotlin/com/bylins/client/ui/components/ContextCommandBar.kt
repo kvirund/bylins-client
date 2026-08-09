@@ -73,6 +73,7 @@ fun ContextCommandBar(
     // Popup with full list
     if (showPopup) {
         ContextCommandPopup(
+            zoneLabel = { clientState.zoneLabel(it) },
             commands = displayCommands,
             onDismiss = { showPopup = false },
             onExecute = { index ->
@@ -129,6 +130,8 @@ private fun ContextCommandChip(
 @Composable
 private fun ContextCommandPopup(
     commands: List<ContextCommand>,
+    /** Как показать зону: «Название (53)» или «Зона 53», если имени нет. */
+    zoneLabel: (String?) -> String,
     onDismiss: () -> Unit,
     onExecute: (Int) -> Unit,
     onRemove: (String) -> Unit
@@ -183,6 +186,7 @@ private fun ContextCommandPopup(
                             command = command,
                             index = index,
                             onExecute = { onExecute(index) },
+                            zoneLabel = zoneLabel,
                             onRemove = { onRemove(command.id) }
                         )
                     }
@@ -196,6 +200,8 @@ private fun ContextCommandPopup(
 private fun ContextCommandPopupItem(
     command: ContextCommand,
     index: Int,
+    /** Как показать зону: «Название (53)» или «Зона 53», если имени нет. */
+    zoneLabel: (String?) -> String,
     onExecute: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -209,8 +215,8 @@ private fun ContextCommandPopupItem(
 
     val sourceText = when (val source = command.source) {
         is ContextCommandSource.Pattern -> "pattern: ${source.matchedText.take(30)}"
-        is ContextCommandSource.RoomBased -> "room: ${source.roomId}"
-        is ContextCommandSource.ZoneBased -> "zone: ${source.zone}"
+        is ContextCommandSource.RoomBased -> "комната: ${source.roomId}"
+        is ContextCommandSource.ZoneBased -> "зона: ${zoneLabel(source.zone)}"
         is ContextCommandSource.Manual -> if (source.description.isNotEmpty()) source.description else "manual"
     }
 

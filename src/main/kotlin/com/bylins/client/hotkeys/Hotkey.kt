@@ -10,7 +10,12 @@ data class Hotkey(
     val shift: Boolean = false,
     val commands: List<String>,
     val enabled: Boolean = true,
-    val ignoreNumLock: Boolean = false // Игнорировать состояние NumLock для клавиш цифровой клавиатуры
+    val ignoreNumLock: Boolean = false, // Игнорировать состояние NumLock для клавиш цифровой клавиатуры
+    /**
+     * Где хоткей действует: null/World — везде, Zone/Room — только в указанных
+     * зонах или комнатах (например, «прыгать» только в конкретной локации).
+     */
+    val scope: com.bylins.client.contextcommands.ContextScope? = null
 ) {
     /**
      * Проверяет, соответствует ли хоткей нажатым клавишам

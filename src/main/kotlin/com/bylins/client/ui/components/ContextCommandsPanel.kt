@@ -552,7 +552,13 @@ private fun ContextRuleDialog(
     val availableZonesWithNames = remember(mapRooms, zoneNames) {
         mapRooms.values
             .filter { !it.zone.isNullOrEmpty() }
-            .map { it.zone!! to (zoneNames[it.zone] ?: it.zone) }
+            .map { room ->
+                val id = room.zone!!
+                val name = zoneNames[id]
+                // Имя есть не у всех зон: комнаты ссылаются на любой номер,
+                // а в карту зона попадает только когда её завели/назвали
+                id to if (name.isNullOrBlank()) "Зона $id" else "$name ($id)"
+            }
             .distinct()
             .sortedBy { it.second }
     }

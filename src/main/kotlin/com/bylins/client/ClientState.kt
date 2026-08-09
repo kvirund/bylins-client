@@ -115,6 +115,12 @@ class ClientState {
         send(command)
     }
 
+    init {
+        // Триггеры и хоткеи с областью действия должны знать, где игрок сейчас
+        triggerManager.getCurrentRoom = { mapManager.getCurrentRoom() }
+        hotkeyManager.getCurrentRoom = { mapManager.getCurrentRoom() }
+    }
+
     private val logManager = LogManager()
     private val sessionStats = SessionStats()
     private val statsHistory = com.bylins.client.stats.StatsHistory()
@@ -473,6 +479,19 @@ class ClientState {
     val pathHighlightTargetId get() = mapManager.pathHighlightTargetId
     val zoneNotes get() = mapManager.zoneNotes
     val zoneNames get() = mapManager.zoneNames
+
+    /**
+     * Подпись зоны для UI: «Название (53)», а при отсутствии имени — «Зона 53».
+     *
+     * Имя есть только у зон, заведённых в карте; комнаты же ссылаются на любой
+     * номер, поэтому голый id встречается регулярно и его нужно показывать
+     * осмысленно.
+     */
+    fun zoneLabel(zoneId: String?): String {
+        if (zoneId.isNullOrEmpty()) return "неизвестная зона"
+        val name = mapManager.zoneNames.value[zoneId]
+        return if (name.isNullOrBlank()) "Зона $zoneId" else "$name ($zoneId)"
+    }
     val mapViewCenterRoomId get() = mapManager.viewCenterRoomId
 
     fun getZoneNotes(zoneName: String): String = mapManager.getZoneNotes(zoneName)

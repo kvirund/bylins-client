@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.StateFlow
 class HotkeyManager(
     private val onCommand: (String) -> Unit
 ) {
+    /** Откуда брать текущую комнату для хоткеев с областью действия. */
+    var getCurrentRoom: () -> com.bylins.client.mapper.Room? = { null }
+
     private val _hotkeys = MutableStateFlow<List<Hotkey>>(emptyList())
     val hotkeys: StateFlow<List<Hotkey>> = _hotkeys
 
@@ -43,8 +46,11 @@ class HotkeyManager(
         isShiftPressed: Boolean,
         ignoreNumLock: Boolean = false
     ): Boolean {
+        val room = getCurrentRoom()
         for (hotkey in _hotkeys.value) {
             if (!hotkey.enabled) continue
+            // Хоткей с областью действия работает только в своей зоне/комнате
+            if (!com.bylins.client.contextcommands.matchesRoom(hotkey.scope, room)) continue
 
             if (hotkey.matches(key, isCtrlPressed, isAltPressed, isShiftPressed, ignoreNumLock)) {
                 executeHotkey(hotkey)
@@ -67,8 +73,10 @@ class HotkeyManager(
         ignoreNumLock: Boolean = false,
         externalHotkeys: List<Hotkey>
     ): Boolean {
+        val room = getCurrentRoom()
         for (hotkey in externalHotkeys) {
             if (!hotkey.enabled) continue
+            if (!com.bylins.client.contextcommands.matchesRoom(hotkey.scope, room)) continue
 
             if (hotkey.matches(key, isCtrlPressed, isAltPressed, isShiftPressed, ignoreNumLock)) {
                 executeHotkey(hotkey)
