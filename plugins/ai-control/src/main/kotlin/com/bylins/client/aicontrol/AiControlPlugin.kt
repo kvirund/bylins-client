@@ -44,6 +44,7 @@ class AiControlPlugin : PluginBase() {
     // если игрок остановил сервер сам, поднимать его обратно нельзя)
     private var autoStartPending = true
     private var panelCollapsed = true
+    private var lastPanelFingerprint: String? = null
     private var autoStartTimer: com.bylins.client.plugins.TimerHandle? = null
 
     private val logTabId = "ai_control_log"
@@ -76,10 +77,11 @@ class AiControlPlugin : PluginBase() {
         }
 
         // Правая панель: состояние сервера и список подключённых ИИ.
-        // Обновляем по таймеру — сессии открываются/закрываются извне (по HTTP),
-        // а не только по действиям игрока.
-        api.setInterval(2000) { refreshStatusPanel() }
-        refreshStatusPanel()
+        // Сессии появляются извне (по HTTP), поэтому опрашиваем состояние —
+        // но перерисовываем ТОЛЬКО при изменениях: иначе кнопки пересоздаются
+        // каждый тик вместе с обработчиками, и клик теряется.
+        api.setInterval(3000) { refreshStatusPanel() }
+        refreshStatusPanel(force = true)
 
         registerCommands()
 
@@ -253,7 +255,18 @@ class AiControlPlugin : PluginBase() {
      * Перерисовывает блок в правой панели: сервер, порт и список контекстов
      * с кнопками «Стоп» (закрыть) и «Дать перо» (передать право записи).
      */
-    private fun refreshStatusPanel() {
+    private fun refreshStatusPanel(force: Boolean = false) {
+        // Отпечаток видимого состояния: пока он не менялся, панель не трогаем
+        val fingerprint = buildString {
+            append(panelCollapsed).append('|').append(server?.isRunning == true).append('|')
+            sessions.all().forEach { s ->
+                append(s.id).append(s.muted).append(s.hasWriteLease)
+                    .append(s.stats.commandsSent).append(s.stats.triggers).append(';')
+            }
+        }
+        if (!force && fingerprint == lastPanelFingerprint) return
+        lastPanelFingerprint = fingerprint
+
         val nodes = mutableListOf<PluginUINode>()
         val running = server?.isRunning == true
         val all = sessions.all()
@@ -271,7 +284,8 @@ class AiControlPlugin : PluginBase() {
                 panelCollapsed = !panelCollapsed
                 config = config.copy(panelCollapsed = panelCollapsed)
                 saveConfig(config)
-                refreshStatusPanel()
+                audit("Панель ${if (panelCollapsed) "свёрнута" else "развёрнута"}")
+                refreshStatusPanel(force = true)
             }
         )
 
@@ -307,7 +321,7 @@ class AiControlPlugin : PluginBase() {
                                 onClick = {
                                     sessions.close(s.id)
                                     audit("[${s.name}] отключён игроком из панели")
-                                    refreshStatusPanel()
+                                    refreshStatusPanel(force = true)
                                 }
                             ),
                             PluginUINode.Button(
@@ -315,7 +329,7 @@ class AiControlPlugin : PluginBase() {
                                 onClick = {
                                     s.muted = !s.muted
                                     audit("[${s.name}] ${if (s.muted) "заглушен" else "снова может слать команды"}")
-                                    refreshStatusPanel()
+                                    refreshStatusPanel(force = true)
                                 }
                             ),
                             PluginUINode.Button(
@@ -324,7 +338,7 @@ class AiControlPlugin : PluginBase() {
                                 onClick = {
                                     sessions.grantWriteLease(s.id)
                                     audit("[${s.name}] получил право отправлять команды")
-                                    refreshStatusPanel()
+                                    refreshStatusPanel(force = true)
                                 }
                             )
                         )
