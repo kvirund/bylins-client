@@ -99,6 +99,20 @@ sealed class StatusElement {
         val order: Int = 0,
         val hint: String? = null          // Подсказка при наведении
     ) : StatusElement()
+
+    /**
+     * Произвольный блок плагина в статус-панели.
+     *
+     * В отличие от остальных элементов, содержимое описывает сам плагин через
+     * [com.bylins.client.plugins.ui.PluginUINode] — значит доступны кнопки и
+     * прочие интерактивные узлы (например, «Отключить» у ИИ-сессии).
+     */
+    data class PluginPanel(
+        override val id: String,
+        val label: String,
+        val content: com.bylins.client.plugins.ui.PluginUINode,
+        val order: Int = 0
+    ) : StatusElement()
 }
 
 /**

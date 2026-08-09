@@ -48,6 +48,7 @@ class AiHttpServer(
         srv.createContext("/session/open", handler(::handleSessionOpen))
         srv.createContext("/session/close", handler(::handleSessionClose))
         srv.createContext("/session/list", handler(::handleSessionList))
+        srv.createContext("/session/lease", handler(::handleSessionLease))
         srv.createContext("/output", handler(::handleOutput))
         srv.createContext("/exec", handler(::handleExec))
         srv.createContext("/client", handler(::handleClient))
@@ -147,6 +148,17 @@ class AiHttpServer(
         val closed = sessions.close(id)
         if (closed) audit("[$name] контекст закрыт, ресурсы освобождены")
         return mapOf("closed" to closed)
+    }
+
+    /** Запрос права записи: отдаётся, если текущий держатель молчит. */
+    private fun handleSessionLease(exchange: HttpExchange, req: JsonObject): Any {
+        val session = requireSession(exchange)
+        val granted = sessions.requestWriteLease(session)
+        if (granted) audit("[${session.name}] взял право отправлять команды")
+        return mapOf(
+            "granted" to granted,
+            "holder" to sessions.all().find { it.hasWriteLease }?.name
+        )
     }
 
     private fun handleSessionList(exchange: HttpExchange, req: JsonObject): Any {

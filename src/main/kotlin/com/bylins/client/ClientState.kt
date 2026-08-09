@@ -2557,6 +2557,9 @@ class ClientState {
             addStatusModifiedValueFunc = { id, label, value, base, modifier, color, order ->
                 statusManager.addModifiedValue(id, label, value, base, modifier, color, order)
             },
+            addStatusPanelFunc = { id, label, content, order ->
+                statusManager.addPluginPanel(id, label, content, order)
+            },
             addStatusGroupFunc = { id, label, elements, collapsed, order ->
                 // Преобразуем StatusElementData в StatusElement
                 val statusElements = elements.map { data ->
@@ -3320,6 +3323,11 @@ class ClientState {
                     element.color?.let { put("color", it) }
                     put("order", element.order)
                 }
+                is com.bylins.client.status.StatusElement.PluginPanel -> mapOf(
+                    "type" to "plugin_panel",
+                    "id" to element.id,
+                    "label" to element.label
+                )
             }
         }
 

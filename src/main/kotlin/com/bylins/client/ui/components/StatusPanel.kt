@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
 import java.awt.Cursor
@@ -113,6 +114,7 @@ fun StatusPanel(
                     is StatusElement.PathPanel -> StatusPathPanelElement(element, clientState)
                     is StatusElement.Group -> StatusGroupElement(element, clientState)
                     is StatusElement.ModifiedValue -> StatusModifiedValueElement(element)
+                    is StatusElement.PluginPanel -> StatusPluginPanelElement(element)
                 }
             }
         }
@@ -788,3 +790,29 @@ private fun parseColor(colorString: String): Color {
     }
 }
 
+
+/**
+ * Блок плагина в правой панели.
+ *
+ * Содержимое описывает сам плагин через PluginUINode, поэтому здесь просто
+ * отдаём его общему рендереру — так плагину доступны кнопки (например,
+ * «Отключить» напротив ИИ-сессии), а не только текст и полоски.
+ */
+@Composable
+private fun StatusPluginPanelElement(element: StatusElement.PluginPanel) {
+    val colorScheme = LocalAppColorScheme.current
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        if (element.label.isNotEmpty()) {
+            Text(
+                text = element.label,
+                color = colorScheme.primary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        com.bylins.client.ui.plugins.RenderPluginUI(
+            node = element.content,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}

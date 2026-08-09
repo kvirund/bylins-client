@@ -158,6 +158,15 @@ TOOLS = [
         },
     },
     {
+        "name": "mud_take_lease",
+        "description": (
+            "Запросить право отправлять команды. Отдаётся, если текущий держатель "
+            "молчит; активного агента не перебивает — тогда попросите игрока "
+            "передать право командой «#ai take»."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "mud_close",
         "description": "Закрыть свой контекст: снимает созданные им триггеры и освобождает право записи.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -196,6 +205,12 @@ def call_tool(name, args):
         params = args.get("params") or {}
         result = _with_reopen(lambda: _session_call("/client/" + action.strip("/"), params))
         return json.dumps(result, ensure_ascii=False, indent=2)
+
+    if name == "mud_take_lease":
+        result = _with_reopen(lambda: _session_call("/session/lease"))
+        if result.get("granted"):
+            return "Право отправлять команды получено"
+        return "Отказано: право сейчас у «%s» (агент активен)" % (result.get("holder") or "?")
 
     if name == "mud_close":
         if not _session["token"]:

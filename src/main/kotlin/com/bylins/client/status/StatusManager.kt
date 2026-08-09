@@ -33,6 +33,7 @@ class StatusManager(
                 is StatusElement.PathPanel -> element.order
                 is StatusElement.Group -> element.order
                 is StatusElement.ModifiedValue -> element.order
+                is StatusElement.PluginPanel -> element.order
             }
         }
     }
@@ -160,6 +161,20 @@ class StatusManager(
     }
 
     /**
+     * Добавляет или обновляет произвольный блок плагина (с кнопками и прочими
+     * интерактивными узлами). Повторный вызов с тем же id заменяет содержимое.
+     */
+    fun addPluginPanel(
+        id: String,
+        label: String,
+        content: com.bylins.client.plugins.ui.PluginUINode,
+        order: Int = _elements.value.size
+    ) {
+        val panel = StatusElement.PluginPanel(id, label, content, order)
+        _elements.value = _elements.value + (id to panel)
+    }
+
+    /**
      * Добавляет или обновляет значение с модификатором
      * @param value Эффективное (текущее) значение
      * @param base Базовое значение до модификатора (null если неизвестно)
@@ -216,6 +231,7 @@ class StatusManager(
                         is StatusElement.MiniMap -> nested.id
                         is StatusElement.PathPanel -> nested.id
                         is StatusElement.Group -> nested.id
+                        is StatusElement.PluginPanel -> nested.id
                     }
                     if (nestedId == id) {
                         found = true
@@ -309,6 +325,9 @@ class StatusManager(
                 color = if (updates.containsKey("color")) updates["color"] as? String else existing.color,
                 order = (updates["order"] as? Number)?.toInt() ?: existing.order
             )
+            // Содержимое блока плагина задаёт сам плагин (addStatusPanel),
+            // точечное обновление полей к нему неприменимо
+            is StatusElement.PluginPanel -> existing
         }
     }
 
@@ -437,6 +456,8 @@ class StatusManager(
                 element.modifier?.let { put("modifier", it) }
                 element.color?.let { put("color", it) }
             }
+            // Блок плагина не имеет скалярного значения — в переменные не выносим
+            is StatusElement.PluginPanel -> mapOf("type" to "plugin_panel", "label" to element.label)
         }
 
         variableManager.setStatusVariable("_status_$id", value)

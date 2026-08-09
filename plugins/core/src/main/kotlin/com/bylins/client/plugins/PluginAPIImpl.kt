@@ -112,6 +112,7 @@ class PluginAPIImpl(
     private val addStatusTextFunc: (String, String, String?, String?, Boolean, String?, Int) -> Unit,
     private val addStatusModifiedValueFunc: (String, String, Int, Int?, Int?, String?, Int) -> Unit,
     private val addStatusGroupFunc: (String, String, List<StatusElementData>, Boolean, Int) -> Unit,
+    private val addStatusPanelFunc: (String, String, com.bylins.client.plugins.ui.PluginUINode, Int) -> Unit = { _, _, _, _ -> },
     private val removeStatusFunc: (String) -> Unit,
     private val clearStatusFunc: () -> Unit,
     private val updateStatusFunc: (String, Map<String, Any>) -> Unit,
@@ -830,6 +831,16 @@ class PluginAPIImpl(
     ) {
         val fullId = "${pluginId}_$id"
         addStatusModifiedValueFunc(fullId, label, value, base, modifier, color, order)
+    }
+
+    override fun addStatusPanel(
+        id: String,
+        label: String,
+        content: com.bylins.client.plugins.ui.PluginUINode,
+        order: Int
+    ) {
+        // Префикс id плагина: чтобы блоки разных плагинов не конфликтовали
+        addStatusPanelFunc("${pluginId}_$id", label, content, order)
     }
 
     override fun addStatusGroup(

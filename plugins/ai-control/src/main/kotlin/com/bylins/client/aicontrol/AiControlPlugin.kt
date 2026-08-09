@@ -70,6 +70,12 @@ class AiControlPlugin : PluginBase() {
             sessions.evictIdle().forEach { id -> audit("Сессия $id закрыта по таймауту") }
         }
 
+        // Правая панель: состояние сервера и список подключённых ИИ.
+        // Обновляем по таймеру — сессии открываются/закрываются извне (по HTTP),
+        // а не только по действиям игрока.
+        api.setInterval(2000) { refreshStatusPanel() }
+        refreshStatusPanel()
+
         registerCommands()
 
         // Автозапуск. Плагины включаются РАНЬШЕ, чем клиент загружает конфиг с
@@ -236,6 +242,84 @@ class AiControlPlugin : PluginBase() {
         sessions.closeAll()
         api.echo("[ИИ] Сервер остановлен, контексты закрыты")
         audit("Сервер остановлен")
+    }
+
+    /**
+     * Перерисовывает блок в правой панели: сервер, порт и список контекстов
+     * с кнопками «Стоп» (закрыть) и «Дать перо» (передать право записи).
+     */
+    private fun refreshStatusPanel() {
+        val nodes = mutableListOf<com.bylins.client.plugins.ui.PluginUINode>()
+        val running = server?.isRunning == true
+
+        nodes += com.bylins.client.plugins.ui.PluginUINode.Text(
+            text = if (running) "Сервер: 127.0.0.1:${config.port}" else "Сервер остановлен",
+            style = com.bylins.client.plugins.ui.PluginUINode.TextStyle.SUBTITLE
+        )
+        nodes += com.bylins.client.plugins.ui.PluginUINode.Button(
+            text = if (running) "Остановить сервер" else "Запустить сервер",
+            onClick = { if (running) stopServer() else startServer() }
+        )
+
+        val all = sessions.all()
+        if (all.isEmpty()) {
+            nodes += com.bylins.client.plugins.ui.PluginUINode.Text(
+                text = "Агентов нет",
+                style = com.bylins.client.plugins.ui.PluginUINode.TextStyle.CAPTION
+            )
+        } else {
+            all.forEach { s ->
+                val mark = when {
+                    s.muted -> "заглушен"
+                    s.hasWriteLease -> "пишет"
+                    else -> "читает"
+                }
+                nodes += com.bylins.client.plugins.ui.PluginUINode.Divider()
+                nodes += com.bylins.client.plugins.ui.PluginUINode.Text(
+                    text = "${s.name} [$mark]",
+                    style = com.bylins.client.plugins.ui.PluginUINode.TextStyle.SUBTITLE
+                )
+                nodes += com.bylins.client.plugins.ui.PluginUINode.Text(
+                    text = "команд: ${s.stats.commandsSent}, триггеров: ${s.stats.triggers}",
+                    style = com.bylins.client.plugins.ui.PluginUINode.TextStyle.CAPTION
+                )
+                nodes += com.bylins.client.plugins.ui.PluginUINode.Row(
+                    children = listOf(
+                        com.bylins.client.plugins.ui.PluginUINode.Button(
+                            text = "Отключить",
+                            onClick = {
+                                sessions.close(s.id)
+                                audit("[${s.name}] отключён игроком из панели")
+                                refreshStatusPanel()
+                            }
+                        ),
+                        com.bylins.client.plugins.ui.PluginUINode.Button(
+                            text = if (s.muted) "Разрешить" else "Заглушить",
+                            onClick = {
+                                s.muted = !s.muted
+                                audit("[${s.name}] ${if (s.muted) "заглушен" else "снова может слать команды"}")
+                                refreshStatusPanel()
+                            }
+                        ),
+                        com.bylins.client.plugins.ui.PluginUINode.Button(
+                            text = "Перо",
+                            enabled = !s.hasWriteLease,
+                            onClick = {
+                                sessions.grantWriteLease(s.id)
+                                audit("[${s.name}] получил право отправлять команды")
+                                refreshStatusPanel()
+                            }
+                        )
+                    )
+                )
+            }
+        }
+
+        api.addStatusPanel(
+            id = "sessions",
+            label = "ИИ-агенты",
+            content = com.bylins.client.plugins.ui.PluginUINode.Column(children = nodes)
+        )
     }
 
     /** Пишет строку в лог-вкладку: игрок видит, что делают агенты. */

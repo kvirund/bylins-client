@@ -14,7 +14,9 @@ class SessionManager(
     private val api: PluginAPI,
     private val journal: OutputJournal,
     /** Сколько миллисекунд без активности до автозакрытия сессии. */
-    private val idleTimeoutMs: Long = 5 * 60_000
+    private val idleTimeoutMs: Long = 5 * 60_000,
+    /** Через сколько молчания держателя право записи можно забрать. */
+    private val leaseIdleMs: Long = 30_000
 ) {
     private val sessions = ConcurrentHashMap<String, AiSession>()
 
@@ -84,6 +86,20 @@ class SessionManager(
     /** Может ли сессия отправлять команды прямо сейчас. */
     fun canWrite(session: AiSession): Boolean =
         !session.closed && !session.muted && session.hasWriteLease
+
+    /**
+     * Запрос права записи агентом.
+     *
+     * Отдаём, если держатель молчит дольше [leaseIdleMs] — иначе живой агент
+     * не может отобрать перо у зависшего, и остальные простаивают. Активного
+     * держателя не перебиваем: для этого есть явная передача игроком.
+     */
+    fun requestWriteLease(session: AiSession, now: Long = System.currentTimeMillis()): Boolean {
+        if (session.hasWriteLease) return true
+        val holder = sessions.values.find { it.hasWriteLease && !it.closed }
+        if (holder != null && now - holder.lastSeenAt < leaseIdleMs) return false
+        return grantWriteLease(session.id)
+    }
 
     /**
      * Закрывает сессии, от которых давно не было запросов.

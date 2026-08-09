@@ -110,6 +110,34 @@ class SessionManagerTest {
     }
 
     @Test
+    fun `lease request is refused while holder is active`() {
+        val m = manager()
+        m.open("claude")            // держатель
+        val b = m.open("gpt")
+        assertFalse(m.requestWriteLease(b))
+        assertFalse(m.canWrite(b))
+    }
+
+    @Test
+    fun `lease request succeeds when holder goes silent`() {
+        val m = manager()
+        val a = m.open("claude")
+        val b = m.open("gpt")
+        // Держатель молчит дольше порога — перо забирает живой агент
+        assertTrue(m.requestWriteLease(b, now = System.currentTimeMillis() + 60_000))
+        assertTrue(m.canWrite(b))
+        assertFalse(a.hasWriteLease)
+    }
+
+    @Test
+    fun `lease request by current holder is a no-op success`() {
+        val m = manager()
+        val a = m.open("claude")
+        assertTrue(m.requestWriteLease(a))
+        assertTrue(a.hasWriteLease)
+    }
+
+    @Test
     fun `idle sessions are evicted and their resources freed`() {
         val m = manager(idleTimeoutMs = 1000)
         val s = m.open("claude")
