@@ -1074,6 +1074,90 @@ class ClientState {
         return msdpSubscribers[variableName]?.size ?: 0
     }
 
+    /**
+     * Обновляет карту по MSDP-переменной ROOM: комната, зона, выходы.
+     * Раньше это делал только плагин-ассистент, поэтому без него местоположение
+     * определялось лишь парсингом текста.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun handleMsdpRoom(value: Any) {
+        if (!mapManager.mapEnabled.value) return
+        val roomData = value as? Map<String, Any> ?: return
+        val vnum = roomData["VNUM"]?.toString() ?: return
+
+        val exits = mutableMapOf<String, String>()
+        (roomData["EXITS"] as? Map<*, *>)?.forEach { (dir, target) ->
+            exits[dir.toString().lowercase()] = target.toString()
+        }
+
+        runCatching {
+            handleRoomFromMsdpInternal(
+                vnum = vnum,
+                name = roomData["NAME"]?.toString() ?: "",
+                zone = roomData["ZONE"]?.toString(),
+                area = roomData["AREA"]?.toString(),
+                terrain = roomData["TERRAIN"]?.toString(),
+                exits = exits
+            )
+        }.onFailure { logger.warn { "Не удалось обновить комнату из MSDP: ${it.message}" } }
+    }
+
+    /**
+     * Общая обработка комнаты из MSDP: и для плагинов (PluginAPI), и для самого
+     * клиента. Держать это в двух местах значило бы расхождение поведения.
+     */
+    private fun handleRoomFromMsdpInternal(
+        vnum: String,
+        name: String,
+        zone: String?,
+        area: String?,
+        terrain: String?,
+        exits: Map<String, String>
+    ): Map<String, Any> {
+        // Имя зоны (area) запоминаем по её id — иначе в UI виден голый номер
+        if (!zone.isNullOrBlank() && !area.isNullOrBlank()) {
+            mapManager.setZoneName(zone, area)
+        }
+
+        val exitsWithTargets: Map<com.bylins.client.mapper.Direction, String> =
+            exits.mapNotNull { (key, value) ->
+                val dir = com.bylins.client.mapper.Direction.fromCommand(key)
+                if (dir != null) dir to value else null
+            }.toMap()
+
+        val existingRoom = mapManager.getRoom(vnum)
+        val room = if (existingRoom != null) {
+            existingRoom.copy(
+                name = name.ifBlank { existingRoom.name },
+                zone = zone ?: existingRoom.zone,
+                terrain = terrain ?: existingRoom.terrain,
+                visited = true
+            )
+        } else {
+            com.bylins.client.mapper.Room(
+                id = vnum,
+                name = name,
+                zone = zone,
+                terrain = terrain,
+                visited = true
+            )
+        }
+
+        exitsWithTargets.forEach { (direction, targetVnum) ->
+            room.addExit(direction, targetVnum)
+            // Соседнюю комнату заводим сразу, чтобы карта знала о ней как о неисследованной
+            if (mapManager.getRoom(targetVnum) == null) {
+                mapManager.addRoom(
+                    com.bylins.client.mapper.Room(id = targetVnum, name = "", visited = false)
+                )
+            }
+        }
+
+        mapManager.addRoom(room)
+        mapManager.setCurrentRoom(vnum)
+        return room.toMap()
+    }
+
     fun updateMsdpData(data: Map<String, Any>) {
         _msdpData.value = _msdpData.value + data
 
@@ -1087,6 +1171,12 @@ class ClientState {
                 firePluginEvent(com.bylins.client.plugins.events.MsdpReportableVariablesEvent(variables))
             }
         }
+
+        // Комната из MSDP — источник правдивее парсинга текста: при обычном
+        // перемещении сервер часто шлёт краткое описание без списка выходов,
+        // парсер его не распознаёт, и «вход в комнату» не наступает (из-за чего
+        // не срабатывали контекстные команды и правила с областью действия).
+        data["ROOM"]?.let { handleMsdpRoom(it) }
 
         // Автоматически обновляем переменные из MSDP (сохраняем оригинальные значения)
         data.forEach { (key, value) ->
@@ -2614,53 +2704,7 @@ class ClientState {
                 statusManager.addMiniMap(id, currentRoomId, visible, actualOrder)
             },
             handleRoomFromMsdpFunc = { vnum, name, zone, area, terrain, exits ->
-                // Сохраняем имя зоны (area name) по zone_id
-                if (!zone.isNullOrBlank() && !area.isNullOrBlank()) {
-                    mapManager.setZoneName(zone, area)
-                }
-
-                // Обрабатываем выходы - формат Map<direction, targetVnum>
-                val exitsWithTargets: Map<com.bylins.client.mapper.Direction, String> = exits.mapNotNull { (key, value) ->
-                    val dir = com.bylins.client.mapper.Direction.fromCommand(key)
-                    if (dir != null) dir to value else null
-                }.toMap()
-
-                // Получаем или создаём комнату
-                val existingRoom = mapManager.getRoom(vnum)
-                val room = if (existingRoom != null) {
-                    existingRoom.copy(
-                        name = name,
-                        zone = zone ?: existingRoom.zone,
-                        terrain = terrain ?: existingRoom.terrain,
-                        visited = true
-                    )
-                } else {
-                    com.bylins.client.mapper.Room(
-                        id = vnum,
-                        name = name,
-                        zone = zone,
-                        terrain = terrain,
-                        visited = true
-                    )
-                }
-
-                // Добавляем выходы с целевыми комнатами
-                exitsWithTargets.forEach { (direction, targetVnum) ->
-                    room.addExit(direction, targetVnum)
-                    // Создаём целевую комнату если её нет
-                    if (mapManager.getRoom(targetVnum) == null) {
-                        val unexploredRoom = com.bylins.client.mapper.Room(
-                            id = targetVnum,
-                            name = "",
-                            visited = false
-                        )
-                        mapManager.addRoom(unexploredRoom)
-                    }
-                }
-
-                mapManager.addRoom(room)
-                mapManager.setCurrentRoom(vnum)
-                room.toMap()
+                handleRoomFromMsdpInternal(vnum, name, zone, area, terrain, exits)
             },
             registerMapCommandFunc = { name, callback ->
                 registerMapCommand(name) { room -> callback(room.toMap()) }
