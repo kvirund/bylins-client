@@ -52,6 +52,7 @@ class AiHttpServer(
         srv.createContext("/output", handler(::handleOutput))
         srv.createContext("/exec", handler(::handleExec))
         srv.createContext("/client", handler(::handleClient))
+        srv.createContext("/map", handler(::handleMap))
 
         srv.start()
         server = srv
@@ -248,6 +249,132 @@ class AiHttpServer(
      * Управление клиентом. Требует разрешений, выданных пользователем:
      * проверку делает сам PluginAPI.client, здесь только маршрутизация.
      */
+    /**
+     * Карта: где игрок, что вокруг, как дойти и что записано о комнатах.
+     *
+     * Чтение открыто любой сессии (агент и так видит вывод), а изменение карты
+     * требует того же разрешения, что и остальное управление клиентом.
+     */
+    private fun handleMap(exchange: HttpExchange, req: JsonObject): Any {
+        val session = requireSession(exchange)
+        val action = exchange.requestURI.path.removePrefix("/map").trim('/')
+
+        fun requireControl() {
+            if (!api.hasPermission(com.bylins.client.plugins.PluginPermission.CLIENT_CONTROL)) {
+                throw com.bylins.client.plugins.PluginPermissionDeniedException(
+                    "ai-control", com.bylins.client.plugins.PluginPermission.CLIENT_CONTROL
+                )
+            }
+        }
+
+        return when (action) {
+            // --- Чтение ---
+            "", "room" -> mapOf("room" to api.getCurrentRoom())
+
+            "get" -> mapOf(
+                "room" to api.getRoom(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            )
+
+            "search" -> mapOf(
+                "rooms" to api.searchRooms(req.str("query") ?: throw ApiError(400, "Нужно query"))
+            )
+
+            // Путь до комнаты: направления для ходьбы и сами комнаты по порядку
+            "path" -> {
+                val target = req.str("targetRoomId") ?: throw ApiError(400, "Нужно targetRoomId")
+                mapOf(
+                    "directions" to api.findPath(target),
+                    "roomIds" to api.findPathRoomIds(target)
+                )
+            }
+
+            // Ближайшая комната со свойством или подстрокой в названии —
+            // «где тут лавка» без ручного обхода карты
+            "nearest" -> {
+                val property = req.str("property")
+                val nameContains = req.str("nameContains")?.lowercase()
+                if (property == null && nameContains == null) {
+                    throw ApiError(400, "Нужно property или nameContains")
+                }
+                val found = api.findNearestMatching { room ->
+                    val byProperty = property?.let { key ->
+                        @Suppress("UNCHECKED_CAST")
+                        (room["properties"] as? Map<String, String>)?.containsKey(key) == true
+                    } ?: false
+                    val byName = nameContains?.let { part ->
+                        (room["name"] as? String)?.lowercase()?.contains(part) == true
+                    } ?: false
+                    byProperty || byName
+                }
+                mapOf("room" to found?.first, "directions" to found?.second)
+            }
+
+            "properties" -> mapOf(
+                "properties" to api.getRoomProperties(req.str("roomId") ?: throw ApiError(400, "Нужно roomId"))
+            )
+
+            "zone/properties" -> mapOf(
+                "properties" to api.getZoneProperties(req.str("zoneId") ?: throw ApiError(400, "Нужно zoneId"))
+            )
+
+            // --- Изменение (требует разрешения) ---
+            "note" -> {
+                requireControl()
+                api.setRoomNote(
+                    req.str("roomId") ?: throw ApiError(400, "Нужно roomId"),
+                    req.str("note") ?: ""
+                )
+                audit("[${session.name}] заметка к комнате ${req.str("roomId")}")
+                mapOf("ok" to true)
+            }
+
+            "property/set" -> {
+                requireControl()
+                api.setRoomProperty(
+                    req.str("roomId") ?: throw ApiError(400, "Нужно roomId"),
+                    req.str("key") ?: throw ApiError(400, "Нужно key"),
+                    req.str("value") ?: ""
+                )
+                audit("[${session.name}] свойство комнаты ${req.str("roomId")}: ${req.str("key")}")
+                mapOf("ok" to true)
+            }
+
+            "property/remove" -> {
+                requireControl()
+                api.removeRoomProperty(
+                    req.str("roomId") ?: throw ApiError(400, "Нужно roomId"),
+                    req.str("key") ?: throw ApiError(400, "Нужно key")
+                )
+                mapOf("ok" to true)
+            }
+
+            "zone/property/set" -> {
+                requireControl()
+                api.setZoneProperty(
+                    req.str("zoneId") ?: throw ApiError(400, "Нужно zoneId"),
+                    req.str("key") ?: throw ApiError(400, "Нужно key"),
+                    req.str("value") ?: ""
+                )
+                mapOf("ok" to true)
+            }
+
+            // Подсветка маршрута на карте — чтобы игрок видел, куда ведёт агент
+            "highlight" -> {
+                requireControl()
+                api.setPathHighlight(req.strList("roomIds"), req.str("targetRoomId"))
+                mapOf("ok" to true)
+            }
+
+            "highlight/clear" -> {
+                requireControl()
+                api.clearPathHighlight()
+                mapOf("ok" to true)
+            }
+
+            else -> throw ApiError(404, "Неизвестное действие карты: $action")
+        }
+    }
+
     /** Область действия из тела запроса: {"scope": {"type":"zone","zones":[...]}}. */
     private fun scopeOf(req: JsonObject): Map<String, Any?>? {
         val raw = req["scope"] as? JsonObject ?: return null

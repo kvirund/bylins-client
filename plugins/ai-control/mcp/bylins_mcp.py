@@ -172,6 +172,29 @@ TOOLS = [
         },
     },
     {
+        "name": "mud_map",
+        "description": (
+            "Карта мира: где игрок, что известно о комнатах, как дойти. "
+            "Действия чтения: room (текущая комната), get (по id), search (по названию), "
+            "path (маршрут до комнаты: направления и список комнат), "
+            "nearest (ближайшая комната по свойству или части названия), "
+            "properties, zone/properties. "
+            "Действия записи (требуют разрешения «Управление клиентом»): note, "
+            "property/set, property/remove, zone/property/set, highlight, highlight/clear."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "Действие из списка выше"},
+                "params": {
+                    "type": "object",
+                    "description": "Параметры: id, roomId, query, targetRoomId, property, nameContains, key, value",
+                },
+            },
+            "required": ["action"],
+        },
+    },
+    {
         "name": "mud_take_lease",
         "description": (
             "Запросить право отправлять команды. Отдаётся, если текущий держатель "
@@ -218,6 +241,12 @@ def call_tool(name, args):
             raise RuntimeError("Нужно action")
         params = args.get("params") or {}
         result = _with_reopen(lambda: _session_call("/client/" + action.strip("/"), params))
+        return json.dumps(result, ensure_ascii=False, indent=2)
+
+    if name == "mud_map":
+        action = args.get("action") or "room"
+        params = args.get("params") or {}
+        result = _with_reopen(lambda: _session_call("/map/" + action.strip("/"), params))
         return json.dumps(result, ensure_ascii=False, indent=2)
 
     if name == "mud_take_lease":

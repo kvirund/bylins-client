@@ -34,6 +34,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"connected": True, "sessions": [{"id": "s1", "name": "claude"}]})
         if path.startswith("/client/"):
             return self.reply(200, {"ok": True, "action": path})
+        if path.startswith("/map/"):
+            return self.reply(200, {"room": {"id": "75919", "name": "Дом десятника"}, "action": path})
         if path == "/session/lease":
             return self.reply(200, {"granted": True, "holder": "claude"})
         if path == "/session/close":
@@ -75,7 +77,7 @@ rpc({"jsonrpc":"2.0","method":"notifications/initialized"})
 
 r = rpc({"jsonrpc":"2.0","id":2,"method":"tools/list"})
 names = [t["name"] for t in r["result"]["tools"]]
-check("tools/list", set(names) == {"mud_read","mud_exec","mud_status","mud_client","mud_take_lease","mud_close"}, names)
+check("tools/list", set(names) == {"mud_read","mud_exec","mud_status","mud_client","mud_map","mud_take_lease","mud_close"}, names)
 
 r = rpc({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"mud_read","arguments":{"limit":50}}})
 text = r["result"]["content"][0]["text"]
@@ -96,6 +98,9 @@ check("mud_status", '"connected": true' in r["result"]["content"][0]["text"], r)
 
 r = rpc({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"mud_client","arguments":{}}})
 check("ошибка инструмента не рвёт связь", r["result"].get("isError") is True, r)
+
+r = rpc({"jsonrpc":"2.0","id":70,"method":"tools/call","params":{"name":"mud_map","arguments":{"action":"room"}}})
+check("mud_map", "Дом десятника" in r["result"]["content"][0]["text"], r)
 
 r = rpc({"jsonrpc":"2.0","id":75,"method":"tools/call","params":{"name":"mud_take_lease","arguments":{}}})
 check("mud_take_lease", "получено" in r["result"]["content"][0]["text"], r)
