@@ -93,6 +93,29 @@ class AiHttpServer(
 
     private class ApiError(val status: Int, message: String) : RuntimeException(message)
 
+    /**
+     * Результат мутации: `false` от клиента означает «сущность не найдена».
+     * Возвращать на это `{"ok":false}` бесполезно — вызывающий не отличит
+     * «нет прав» от «неверный id», поэтому отвечаем 404 с текстом.
+     */
+    private fun mutated(result: Boolean, notFound: String): Any =
+        if (result) mapOf("ok" to true) else throw ApiError(404, notFound)
+
+    /**
+     * Изменять состояние клиента может только сессия с правом записи —
+     * иначе два агента незаметно перетирают настройки друг друга.
+     */
+    private fun requireWrite(session: AiSession) {
+        if (sessions.canWrite(session)) return
+        if (session.muted) throw ApiError(403, "Сессия заглушена игроком (#ai mute)")
+        val holder = sessions.all().find { it.hasWriteLease }
+        throw ApiError(
+            403,
+            "Нет права на запись: его держит сессия ${holder?.name ?: "?"} (${holder?.id ?: "-"}). " +
+                "Запросите право через /session/lease или попросите игрока: #ai take <id>"
+        )
+    }
+
     private fun requireMaster(exchange: HttpExchange) {
         val token = exchange.requestHeaders.getFirst("X-Master-Token")
         if (token != masterToken) throw ApiError(401, "Неверный мастер-токен")
@@ -260,6 +283,7 @@ class AiHttpServer(
         val action = exchange.requestURI.path.removePrefix("/map").trim('/')
 
         fun requireControl() {
+            requireWrite(session)
             if (!api.hasPermission(com.bylins.client.plugins.PluginPermission.CLIENT_CONTROL)) {
                 throw com.bylins.client.plugins.PluginPermissionDeniedException(
                     "ai-control", com.bylins.client.plugins.PluginPermission.CLIENT_CONTROL
@@ -384,6 +408,11 @@ class AiHttpServer(
     private fun handleClient(exchange: HttpExchange, req: JsonObject): Any {
         val session = requireSession(exchange)
         val action = exchange.requestURI.path.removePrefix("/client/").trim('/')
+        // Любое изменение состояния клиента — только с правом записи
+        val isMutation = action.substringAfterLast('/') in
+            setOf("create", "update", "delete", "select", "push", "pop", "requires", "start", "stop") ||
+            action in setOf("connect", "disconnect")
+        if (isMutation) requireWrite(session)
         val client = api.client
 
         fun audited(what: String, result: Any): Any {
@@ -409,17 +438,20 @@ class AiHttpServer(
                     autoReconnect = req.bool("autoReconnect", false)
                 )
             ))
-            "profiles/update" -> audited("изменён профиль", mapOf(
-                "ok" to client.updateConnectionProfile(
+            "profiles/update" -> audited("изменён профиль", mutated(
+                client.updateConnectionProfile(
                     req.str("id") ?: throw ApiError(400, "Нужно id"),
                     req.toChanges()
-                )
+                ),
+                "Профиль подключения не найден: ${req.str("id")}"
             ))
-            "profiles/delete" -> audited("удалён профиль", mapOf(
-                "ok" to client.deleteConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "profiles/delete" -> audited("удалён профиль", mutated(
+                client.deleteConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Профиль подключения не найден: ${req.str("id")}"
             ))
-            "profiles/select" -> audited("выбран профиль", mapOf(
-                "ok" to client.selectConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "profiles/select" -> audited("выбран профиль", mutated(
+                client.selectConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Профиль подключения не найден: ${req.str("id")}"
             ))
 
             // Триггеры
@@ -436,11 +468,13 @@ class AiHttpServer(
                     scope = scopeOf(req)
                 )
             ))
-            "triggers/update" -> audited("изменён триггер", mapOf(
-                "ok" to client.updateTrigger(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges())
+            "triggers/update" -> audited("изменён триггер", mutated(
+                client.updateTrigger(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges()),
+                "Триггер не найден: ${req.str("id")}"
             ))
-            "triggers/delete" -> audited("удалён триггер", mapOf(
-                "ok" to client.deleteTrigger(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "triggers/delete" -> audited("удалён триггер", mutated(
+                client.deleteTrigger(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Триггер не найден: ${req.str("id")}"
             ))
 
             // Алиасы
@@ -454,8 +488,13 @@ class AiHttpServer(
                     profileId = req.str("profileId")
                 )
             ))
-            "aliases/delete" -> audited("удалён алиас", mapOf(
-                "ok" to client.deleteAlias(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "aliases/update" -> audited("изменён алиас", mutated(
+                client.updateAlias(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges()),
+                "Алиас не найден: ${req.str("id")}"
+            ))
+            "aliases/delete" -> audited("удалён алиас", mutated(
+                client.deleteAlias(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Алиас не найден: ${req.str("id")}"
             ))
 
             // Хоткеи
@@ -473,8 +512,13 @@ class AiHttpServer(
                     scope = scopeOf(req)
                 )
             ))
-            "hotkeys/delete" -> audited("удалён хоткей", mapOf(
-                "ok" to client.deleteHotkey(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "hotkeys/update" -> audited("изменён хоткей", mutated(
+                client.updateHotkey(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges()),
+                "Хоткей не найден: ${req.str("id")}"
+            ))
+            "hotkeys/delete" -> audited("удалён хоткей", mutated(
+                client.deleteHotkey(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Хоткей не найден: ${req.str("id")}"
             ))
 
             // Вкладки вывода
@@ -489,8 +533,9 @@ class AiHttpServer(
                     persistContent = req.bool("persistContent", false)
                 )
             ))
-            "tabs/delete" -> audited("удалена вкладка", mapOf(
-                "ok" to client.deleteTab(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "tabs/delete" -> audited("удалена вкладка", mutated(
+                client.deleteTab(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Вкладка не найдена: ${req.str("id")}"
             ))
 
             // Контекстные команды (предложения в панели, не автоматические)
@@ -503,13 +548,18 @@ class AiHttpServer(
                     ttl = req.str("ttl") ?: "room_change",
                     ttlMinutes = req["ttlMinutes"]?.let { req.int("ttlMinutes", 10) },
                     priority = req.int("priority", 0),
-                    enabled = req.bool("enabled", true)
+                    enabled = req.bool("enabled", true),
+                    profileId = req.str("profileId")
                 )
             ))
-            "context/rules/delete" -> audited("удалено контекстное правило", mapOf(
-                "ok" to client.deleteContextRule(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "context/rules/delete" -> audited("удалено контекстное правило", mutated(
+                client.deleteContextRule(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Контекстное правило не найдено: ${req.str("id")}"
             ))
             "context/queue" -> mapOf("queue" to client.listContextQueue())
+
+            // Где игрок сейчас: комната и зона с человекочитаемой подписью
+            "where" -> client.getLocation()
 
             // Настройки клиента
             "settings" -> mapOf("settings" to client.getSettings())
@@ -529,17 +579,20 @@ class AiHttpServer(
                     requires = req.strList("requires")
                 )
             ))
-            "characters/requires" -> audited("изменены зависимости профиля", mapOf(
-                "ok" to client.setCharacterProfileDependencies(
+            "characters/requires" -> audited("изменены зависимости профиля", mutated(
+                client.setCharacterProfileDependencies(
                     req.str("id") ?: throw ApiError(400, "Нужно id"),
                     req.strList("requires")
-                )
+                ),
+                "Профиль персонажа не найден: ${req.str("id")}"
             ))
-            "characters/push" -> audited("активирован профиль персонажа", mapOf(
-                "ok" to client.pushCharacterProfile(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "characters/push" -> audited("активирован профиль персонажа", mutated(
+                client.pushCharacterProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Профиль персонажа не найден: ${req.str("id")}"
             ))
-            "characters/pop" -> audited("деактивирован профиль персонажа", mapOf(
-                "ok" to client.popCharacterProfile(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            "characters/pop" -> audited("деактивирован профиль персонажа", mutated(
+                client.popCharacterProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
+                "Профиль не найден или не активен: ${req.str("id")}"
             ))
 
             else -> throw ApiError(404, "Неизвестное действие: $action")

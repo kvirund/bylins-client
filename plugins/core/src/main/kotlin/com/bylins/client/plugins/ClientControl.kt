@@ -169,13 +169,21 @@ interface ClientControl {
         ttl: String = "room_change",
         ttlMinutes: Int? = null,
         priority: Int = 0,
-        enabled: Boolean = true
+        enabled: Boolean = true,
+        /** Если задан — правило живёт в профиле персонажа, как триггеры и хоткеи. */
+        profileId: String? = null
     ): String
 
     fun deleteContextRule(id: String): Boolean
 
     /** Команды, предложенные игроку прямо сейчас (очередь в панели). */
     fun listContextQueue(): List<Map<String, Any?>>
+
+    /**
+     * Где игрок сейчас: комната и зона (с готовой подписью «Название (53)»).
+     * Зону не нужно вычислять из id комнаты — клиент её и так знает.
+     */
+    fun getLocation(): Map<String, Any?>
 
     // --- Настройки клиента ---
 

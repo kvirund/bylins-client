@@ -474,20 +474,30 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
 
     private val ctx get() = state.contextCommandManager
 
-    override fun listContextRules(): List<Map<String, Any?>> = ctx.rules.value.map { rule ->
-        mapOf(
-            "id" to rule.id,
-            "enabled" to rule.enabled,
+    override fun listContextRules(): List<Map<String, Any?>> {
+        fun com.bylins.client.contextcommands.ContextCommandRule.toMap(profileId: String?) = mapOf(
+            "id" to id,
+            "enabled" to enabled,
             // Pattern — по строке вывода, Permanent — просто «пока игрок здесь»
-            "pattern" to (rule.triggerType as? com.bylins.client.contextcommands.ContextTriggerType.Pattern)
+            "pattern" to (triggerType as? com.bylins.client.contextcommands.ContextTriggerType.Pattern)
                 ?.regex?.pattern,
-            "permanent" to (rule.triggerType is com.bylins.client.contextcommands.ContextTriggerType.Permanent),
-            "scope" to scopeToMap(rule.scope),
-            "command" to rule.command,
-            "ttl" to ttlToString(rule.ttl),
-            "priority" to rule.priority
+            "permanent" to (triggerType is com.bylins.client.contextcommands.ContextTriggerType.Permanent),
+            "scope" to scopeToMap(scope),
+            "command" to command,
+            "ttl" to ttlToString(ttl),
+            "priority" to priority,
+            "profileId" to profileId
         )
+        val base = ctx.rules.value.map { it.toMap(null) }
+        val fromProfiles = state.profileManager.profiles.value.flatMap { profile ->
+            profile.contextCommandRules.map { it.toMap(profile.id) }
+        }
+        return base + fromProfiles
     }
+
+    private fun profileOfContextRule(ruleId: String): String? =
+        state.profileManager.profiles.value
+            .find { profile -> profile.contextCommandRules.any { it.id == ruleId } }?.id
 
     override fun createContextRule(
         command: String,
@@ -496,7 +506,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         ttl: String,
         ttlMinutes: Int?,
         priority: Int,
-        enabled: Boolean
+        enabled: Boolean,
+        profileId: String?
     ): String {
         val rule = com.bylins.client.contextcommands.ContextCommandRule(
             enabled = enabled,
@@ -510,16 +521,43 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             ttl = parseTtl(ttl, ttlMinutes),
             priority = priority
         )
-        ctx.addRule(rule)
+        if (profileId != null) {
+            require(state.profileManager.profiles.value.any { it.id == profileId }) {
+                "Профиль персонажа не найден: $profileId"
+            }
+            state.profileManager.addContextRuleToProfile(profileId, rule)
+        } else {
+            ctx.addRule(rule)
+        }
         state.saveConfig()
         return rule.id
     }
 
     override fun deleteContextRule(id: String): Boolean {
+        val profileId = profileOfContextRule(id)
+        if (profileId != null) {
+            state.profileManager.removeContextRuleFromProfile(profileId, id)
+            state.saveConfig()
+            return true
+        }
         if (ctx.rules.value.none { it.id == id }) return false
         ctx.removeRule(id)
         state.saveConfig()
         return true
+    }
+
+    /** Где игрок сейчас — чтобы зону не приходилось вычислять из id комнаты. */
+    override fun getLocation(): Map<String, Any?> {
+        val roomId = state.currentRoomId.value
+        val room = roomId?.let { state.mapRooms.value[it] }
+        return mapOf(
+            "roomId" to room?.id,
+            "roomName" to room?.name,
+            "zone" to room?.zone,
+            "zoneLabel" to state.zoneLabel(room?.zone),
+            "exits" to (room?.exits?.keys?.map { it.name } ?: emptyList<String>()),
+            "properties" to (room?.properties ?: emptyMap<String, String>())
+        )
     }
 
     override fun listContextQueue(): List<Map<String, Any?>> = ctx.commandQueue.value.map { cmd ->
@@ -563,10 +601,10 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         "zonePanelWidth" to state.zonePanelWidth.value,
         "ignoreNumLock" to state.ignoreNumLock.value,
         "sidePanelCollapsed" to state.sidePanelCollapsed.value,
+        // Путь к файлу и каталог живут в getLogInfo(): держать их в двух местах
+        // значит рано или поздно разойтись
         "logging" to state.isLogging.value,
-        "logWithColors" to state.logWithColors.value,
-        "logFile" to state.currentLogFile.value,
-        "logsDirectory" to state.getLogsDirectory()
+        "logWithColors" to state.logWithColors.value
     )
 
     override fun updateSettings(changes: Map<String, Any?>): Map<String, Any?> {
