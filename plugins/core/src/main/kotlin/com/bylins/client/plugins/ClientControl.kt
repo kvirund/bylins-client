@@ -83,12 +83,16 @@ interface ClientControl {
     /** Список алиасов: id, name, pattern, commands, enabled. */
     fun listAliases(): List<Map<String, Any?>>
 
-    /** Создаёт алиас, возвращает id. */
+    /**
+     * Создаёт алиас, возвращает id.
+     * @param profileId если задан — алиас кладётся в профиль персонажа.
+     */
     fun createAlias(
         name: String,
         pattern: String,
         commands: List<String>,
-        enabled: Boolean = true
+        enabled: Boolean = true,
+        profileId: String? = null
     ): String
 
     fun updateAlias(id: String, changes: Map<String, Any?>): Boolean
@@ -99,7 +103,10 @@ interface ClientControl {
     /** Список хоткеев: id, name, key, modifiers, commands, enabled. */
     fun listHotkeys(): List<Map<String, Any?>>
 
-    /** Создаёт хоткей (key — например "F5", "NumPad8"), возвращает id. */
+    /**
+     * Создаёт хоткей (key — например "F5", "Num8"), возвращает id.
+     * @param profileId если задан — хоткей кладётся в профиль персонажа.
+     */
     fun createHotkey(
         name: String,
         key: String,
@@ -107,7 +114,8 @@ interface ClientControl {
         ctrl: Boolean = false,
         alt: Boolean = false,
         shift: Boolean = false,
-        enabled: Boolean = true
+        enabled: Boolean = true,
+        profileId: String? = null
     ): String
 
     fun updateHotkey(id: String, changes: Map<String, Any?>): Boolean

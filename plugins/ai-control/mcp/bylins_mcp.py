@@ -154,7 +154,15 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "action": {"type": "string", "description": "Действие из списка выше"},
-                "params": {"type": "object", "description": "Параметры действия (id, name, pattern, ...)"},
+                "params": {
+                    "type": "object",
+                    "description": (
+                        "Параметры действия (id, name, pattern, commands, ...). "
+                        "Для triggers/create, aliases/create, hotkeys/create можно указать "
+                        "profileId — тогда правило попадёт в профиль персонажа и будет "
+                        "работать, только пока этот профиль активен."
+                    ),
+                },
             },
             "required": ["action"],
         },

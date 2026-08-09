@@ -316,7 +316,8 @@ class AiHttpServer(
                     name = req.str("name") ?: "ai-alias",
                     pattern = req.str("pattern") ?: throw ApiError(400, "Нужен pattern"),
                     commands = req.strList("commands"),
-                    enabled = req.bool("enabled", true)
+                    enabled = req.bool("enabled", true),
+                    profileId = req.str("profileId")
                 )
             ))
             "aliases/delete" -> audited("удалён алиас", mapOf(
@@ -333,7 +334,8 @@ class AiHttpServer(
                     ctrl = req.bool("ctrl", false),
                     alt = req.bool("alt", false),
                     shift = req.bool("shift", false),
-                    enabled = req.bool("enabled", true)
+                    enabled = req.bool("enabled", true),
+                    profileId = req.str("profileId")
                 )
             ))
             "hotkeys/delete" -> audited("удалён хоткей", mapOf(

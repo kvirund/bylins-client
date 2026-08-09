@@ -199,18 +199,35 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
 
     // --- Алиасы ---
 
-    override fun listAliases(): List<Map<String, Any?>> = state.aliases.value.map {
-        mapOf(
-            "id" to it.id,
-            "name" to it.name,
-            "pattern" to it.pattern.pattern,
-            "commands" to it.commands,
-            "enabled" to it.enabled,
-            "priority" to it.priority
+    /** Базовые алиасы + алиасы профилей персонажей (с пометкой profileId). */
+    override fun listAliases(): List<Map<String, Any?>> {
+        fun com.bylins.client.aliases.Alias.toMap(profileId: String?) = mapOf(
+            "id" to id,
+            "name" to name,
+            "pattern" to pattern.pattern,
+            "commands" to commands,
+            "enabled" to enabled,
+            "priority" to priority,
+            "profileId" to profileId
         )
+        val base = state.aliases.value.map { it.toMap(null) }
+        val fromProfiles = state.profileManager.profiles.value.flatMap { profile ->
+            profile.aliases.map { it.toMap(profile.id) }
+        }
+        return base + fromProfiles
     }
 
-    override fun createAlias(name: String, pattern: String, commands: List<String>, enabled: Boolean): String {
+    private fun profileOfAlias(aliasId: String): String? =
+        state.profileManager.profiles.value
+            .find { profile -> profile.aliases.any { it.id == aliasId } }?.id
+
+    override fun createAlias(
+        name: String,
+        pattern: String,
+        commands: List<String>,
+        enabled: Boolean,
+        profileId: String?
+    ): String {
         val alias = com.bylins.client.aliases.Alias(
             id = java.util.UUID.randomUUID().toString(),
             name = name,
@@ -218,12 +235,24 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             commands = commands,
             enabled = enabled
         )
-        state.addAlias(alias)
+        if (profileId != null) {
+            require(state.profileManager.profiles.value.any { it.id == profileId }) {
+                "Профиль персонажа не найден: $profileId"
+            }
+            state.profileManager.addAliasToProfile(profileId, alias)
+        } else {
+            state.addAlias(alias)
+        }
         return alias.id
     }
 
     override fun updateAlias(id: String, changes: Map<String, Any?>): Boolean {
-        val existing = state.aliases.value.find { it.id == id } ?: return false
+        val profileId = profileOfAlias(id)
+        val existing = if (profileId != null) {
+            state.profileManager.profiles.value.first { it.id == profileId }.aliases.first { it.id == id }
+        } else {
+            state.aliases.value.find { it.id == id } ?: return false
+        }
         @Suppress("UNCHECKED_CAST")
         val updated = existing.copy(
             name = changes["name"] as? String ?: existing.name,
@@ -232,13 +261,22 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             enabled = changes["enabled"] as? Boolean ?: existing.enabled,
             priority = (changes["priority"] as? Number)?.toInt() ?: existing.priority
         )
-        // Замена по тому же id: отдельного updateAlias в ClientState нет
-        state.removeAlias(id)
-        state.addAlias(updated)
+        if (profileId != null) {
+            state.profileManager.updateAliasInProfile(profileId, updated)
+        } else {
+            // Замена по тому же id: отдельного updateAlias в ClientState нет
+            state.removeAlias(id)
+            state.addAlias(updated)
+        }
         return true
     }
 
     override fun deleteAlias(id: String): Boolean {
+        val profileId = profileOfAlias(id)
+        if (profileId != null) {
+            state.profileManager.removeAliasFromProfile(profileId, id)
+            return true
+        }
         if (state.aliases.value.none { it.id == id }) return false
         state.removeAlias(id)
         return true
@@ -246,17 +284,28 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
 
     // --- Хоткеи ---
 
-    override fun listHotkeys(): List<Map<String, Any?>> = state.hotkeys.value.map {
-        mapOf(
-            "id" to it.id,
-            "key" to com.bylins.client.hotkeys.Hotkey.getKeyName(it.key),
-            "ctrl" to it.ctrl,
-            "alt" to it.alt,
-            "shift" to it.shift,
-            "commands" to it.commands,
-            "enabled" to it.enabled
+    /** Базовые хоткеи + хоткеи профилей персонажей (с пометкой profileId). */
+    override fun listHotkeys(): List<Map<String, Any?>> {
+        fun com.bylins.client.hotkeys.Hotkey.toMap(profileId: String?) = mapOf(
+            "id" to id,
+            "key" to com.bylins.client.hotkeys.Hotkey.getKeyName(key),
+            "ctrl" to ctrl,
+            "alt" to alt,
+            "shift" to shift,
+            "commands" to commands,
+            "enabled" to enabled,
+            "profileId" to profileId
         )
+        val base = state.hotkeys.value.map { it.toMap(null) }
+        val fromProfiles = state.profileManager.profiles.value.flatMap { profile ->
+            profile.hotkeys.map { it.toMap(profile.id) }
+        }
+        return base + fromProfiles
     }
+
+    private fun profileOfHotkey(hotkeyId: String): String? =
+        state.profileManager.profiles.value
+            .find { profile -> profile.hotkeys.any { it.id == hotkeyId } }?.id
 
     override fun createHotkey(
         name: String,
@@ -265,7 +314,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         ctrl: Boolean,
         alt: Boolean,
         shift: Boolean,
-        enabled: Boolean
+        enabled: Boolean,
+        profileId: String?
     ): String {
         val parsedKey = com.bylins.client.hotkeys.Hotkey.parseKey(key)
             ?: throw IllegalArgumentException("Неизвестная клавиша: $key")
@@ -278,12 +328,24 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             commands = commands,
             enabled = enabled
         )
-        state.addHotkey(hotkey)
+        if (profileId != null) {
+            require(state.profileManager.profiles.value.any { it.id == profileId }) {
+                "Профиль персонажа не найден: $profileId"
+            }
+            state.profileManager.addHotkeyToProfile(profileId, hotkey)
+        } else {
+            state.addHotkey(hotkey)
+        }
         return hotkey.id
     }
 
     override fun updateHotkey(id: String, changes: Map<String, Any?>): Boolean {
-        val existing = state.hotkeys.value.find { it.id == id } ?: return false
+        val profileId = profileOfHotkey(id)
+        val existing = if (profileId != null) {
+            state.profileManager.profiles.value.first { it.id == profileId }.hotkeys.first { it.id == id }
+        } else {
+            state.hotkeys.value.find { it.id == id } ?: return false
+        }
         val newKey = (changes["key"] as? String)?.let {
             com.bylins.client.hotkeys.Hotkey.parseKey(it)
                 ?: throw IllegalArgumentException("Неизвестная клавиша: $it")
@@ -297,12 +359,21 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             commands = (changes["commands"] as? List<String>) ?: existing.commands,
             enabled = changes["enabled"] as? Boolean ?: existing.enabled
         )
-        state.removeHotkey(id)
-        state.addHotkey(updated)
+        if (profileId != null) {
+            state.profileManager.updateHotkeyInProfile(profileId, updated)
+        } else {
+            state.removeHotkey(id)
+            state.addHotkey(updated)
+        }
         return true
     }
 
     override fun deleteHotkey(id: String): Boolean {
+        val profileId = profileOfHotkey(id)
+        if (profileId != null) {
+            state.profileManager.removeHotkeyFromProfile(profileId, id)
+            return true
+        }
         if (state.hotkeys.value.none { it.id == id }) return false
         state.removeHotkey(id)
         return true
