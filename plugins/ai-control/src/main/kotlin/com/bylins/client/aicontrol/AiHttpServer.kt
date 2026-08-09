@@ -356,6 +356,15 @@ class AiHttpServer(
                 "ok" to client.deleteTab(req.str("id") ?: throw ApiError(400, "Нужно id"))
             ))
 
+            // Настройки клиента
+            "settings" -> mapOf("settings" to client.getSettings())
+            "settings/update" -> audited("изменены настройки", mapOf(
+                "applied" to client.updateSettings(req.toChanges())
+            ))
+            "logs" -> mapOf("log" to client.getLogInfo())
+            "logs/start" -> audited("включено логирование", mapOf("ok" to true).also { client.setLogging(true) })
+            "logs/stop" -> audited("выключено логирование", mapOf("ok" to true).also { client.setLogging(false) })
+
             // Профили персонажей
             "characters" -> mapOf("profiles" to client.listCharacterProfiles())
             "characters/create" -> audited("создан профиль персонажа '${req.str("name")}'", mapOf(

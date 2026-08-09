@@ -358,6 +358,55 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         return true
     }
 
+    // --- Настройки клиента ---
+
+    override fun getSettings(): Map<String, Any?> = mapOf(
+        "theme" to state.currentTheme.value,
+        "fontFamily" to state.fontFamily.value,
+        "fontSize" to state.fontSize.value,
+        "encoding" to (state.getCurrentProfile()?.encoding ?: "UTF-8"),
+        "miniMapWidth" to state.miniMapWidth.value,
+        "miniMapHeight" to state.miniMapHeight.value,
+        "zonePanelWidth" to state.zonePanelWidth.value,
+        "ignoreNumLock" to state.ignoreNumLock.value,
+        "sidePanelCollapsed" to state.sidePanelCollapsed.value,
+        "logging" to state.isLogging.value,
+        "logWithColors" to state.logWithColors.value,
+        "logFile" to state.currentLogFile.value,
+        "logsDirectory" to state.getLogsDirectory()
+    )
+
+    override fun updateSettings(changes: Map<String, Any?>): Map<String, Any?> {
+        val applied = mutableMapOf<String, Any?>()
+        changes.forEach { (key, value) ->
+            when (key) {
+                "theme" -> (value as? String)?.let { state.setTheme(it); applied[key] = it }
+                "fontFamily" -> (value as? String)?.let { state.setFontFamily(it); applied[key] = it }
+                "fontSize" -> (value as? Number)?.toInt()?.let { state.setFontSize(it); applied[key] = it }
+                "encoding" -> (value as? String)?.let { state.setEncoding(it); applied[key] = it }
+                "ignoreNumLock" -> (value as? Boolean)?.let { state.setIgnoreNumLock(it); applied[key] = it }
+                "sidePanelCollapsed" -> (value as? Boolean)?.let { state.setSidePanelCollapsed(it); applied[key] = it }
+                "logWithColors" -> (value as? Boolean)?.let { state.setLogWithColors(it); applied[key] = it }
+                "logging" -> (value as? Boolean)?.let { setLogging(it); applied[key] = it }
+                // Неизвестные ключи молча пропускаем: список настроек растёт,
+                // и плагин не должен падать из-за незнакомого имени
+            }
+        }
+        return applied
+    }
+
+    override fun getLogInfo(): Map<String, Any?> = mapOf(
+        "enabled" to state.isLogging.value,
+        "file" to state.currentLogFile.value,
+        "directory" to state.getLogsDirectory(),
+        "filesCount" to state.getLogFiles().size,
+        "withColors" to state.logWithColors.value
+    )
+
+    override fun setLogging(enabled: Boolean) {
+        if (enabled) state.startLogging(stripAnsi = !state.logWithColors.value) else state.stopLogging()
+    }
+
     // --- Профили персонажей ---
 
     override fun listCharacterProfiles(): List<Map<String, Any?>> {

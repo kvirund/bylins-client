@@ -130,6 +130,29 @@ interface ClientControl {
 
     fun deleteTab(id: String): Boolean
 
+    // --- Настройки клиента ---
+
+    /**
+     * Текущие настройки: тема, шрифт, кодировка, размеры панелей, логирование.
+     * Ключи совпадают с теми, что принимает [updateSettings].
+     */
+    fun getSettings(): Map<String, Any?>
+
+    /**
+     * Меняет настройки. Неизвестные ключи игнорируются.
+     * @return применённые значения (что реально изменилось).
+     */
+    fun updateSettings(changes: Map<String, Any?>): Map<String, Any?>
+
+    /**
+     * Состояние логирования: включено ли, текущий файл, каталог, число файлов,
+     * сохраняются ли ANSI-цвета.
+     */
+    fun getLogInfo(): Map<String, Any?>
+
+    /** Включает или выключает запись лога. */
+    fun setLogging(enabled: Boolean)
+
     // --- Профили персонажей (стек) ---
 
     /** Список профилей персонажей: id, name, active, triggers/aliases/hotkeys (количества). */

@@ -140,13 +140,15 @@ TOOLS = [
         "name": "mud_client",
         "description": (
             "Управление самим клиентом — то же, что игрок делает кнопками: профили "
-            "подключения, соединение, триггеры, алиасы, хоткеи, вкладки. "
+            "подключения, соединение, триггеры, алиасы, хоткеи, вкладки, настройки "
+            "(тема, шрифт, кодировка) и логирование (куда пишется лог, вкл/выкл). "
             "Требует разрешений, выданных игроком в настройках плагинов.\n"
             "Действия: connect, disconnect, connected, profiles, profiles/create, "
             "profiles/update, profiles/delete, profiles/select, triggers, triggers/create, "
             "triggers/update, triggers/delete, aliases, aliases/create, aliases/delete, "
             "hotkeys, hotkeys/create, hotkeys/delete, tabs, tabs/create, tabs/delete, "
-            "characters, characters/push, characters/pop."
+            "settings, settings/update, logs, logs/start, logs/stop, "
+            "characters, characters/create, characters/push, characters/pop, characters/requires."
         ),
         "inputSchema": {
             "type": "object",

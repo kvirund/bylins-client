@@ -79,6 +79,12 @@ internal class GuardedClientControl(
     ): String = control().createTab(name, patterns, captureMode, profileTab, profileLog, persistContent)
     override fun deleteTab(id: String): Boolean = control().deleteTab(id)
 
+    // --- Настройки клиента ---
+    override fun getSettings(): Map<String, Any?> = control().getSettings()
+    override fun updateSettings(changes: Map<String, Any?>): Map<String, Any?> = control().updateSettings(changes)
+    override fun getLogInfo(): Map<String, Any?> = control().getLogInfo()
+    override fun setLogging(enabled: Boolean) = control().setLogging(enabled)
+
     // --- Профили персонажей ---
     override fun listCharacterProfiles(): List<Map<String, Any?>> = control().listCharacterProfiles()
     override fun createCharacterProfile(name: String, description: String, requires: List<String>): String =
