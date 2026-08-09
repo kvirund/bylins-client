@@ -244,7 +244,8 @@ class TabDtoTest {
             id = "test",
             name = "Test Tab",
             captureMode = CaptureMode.MOVE,
-            maxLines = 300
+            maxLines = 300,
+            persistContent = true
         )
         tab.appendText("Some content")
         tab.flush()
@@ -256,6 +257,50 @@ class TabDtoTest {
         assertEquals("MOVE", dto.captureMode)
         assertEquals(300, dto.maxLines)
         assertEquals("Some content", dto.content)
+        assertTrue(dto.persistContent)
+    }
+
+    @Test
+    fun `TabDto does not save log unless tab allows it`() {
+        // По умолчанию лог не сохраняется: иначе серверный текст утекал бы
+        // в общий конфиг и появлялся на других серверах
+        val tab = Tab(id = "test", name = "Test Tab")
+        tab.appendText("Some content")
+        tab.flush()
+
+        assertNull(TabDto.fromTab(tab).content)
+    }
+
+    @Test
+    fun `profile log is stored in profile, not in tab definition`() {
+        // Глобальная вкладка с профильным логом: сам лог хранится в профиле
+        // сервера (ConnectionProfile.tabLogs), поэтому в TabDto его быть не должно
+        val tab = Tab(
+            id = "test",
+            name = "Test Tab",
+            profileLog = true,
+            persistContent = true
+        )
+        tab.appendText("Some content")
+        tab.flush()
+
+        assertNull(TabDto.fromTab(tab).content)
+    }
+
+    @Test
+    fun `profile tab keeps its log inside profile definition`() {
+        // Профильная вкладка целиком лежит в профиле — лог хранится вместе с ней
+        val tab = Tab(
+            id = "test",
+            name = "Test Tab",
+            profileTab = true,
+            profileLog = true,
+            persistContent = true
+        )
+        tab.appendText("Some content")
+        tab.flush()
+
+        assertEquals("Some content", TabDto.fromTab(tab).content)
     }
 
     @Test
