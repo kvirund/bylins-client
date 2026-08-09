@@ -152,26 +152,55 @@ val prepareRunDir by tasks.registering {
 // когда доходит до ленивой загрузки изменённого класса (NoClassDefFoundError).
 // Снимок обновляется только этой задачей — обычные compileKotlin/buildPlugin
 // его не касаются.
-val stageApp by tasks.registering(Sync::class) {
+// Сторонние зависимости кладём отдельно и один раз: они весят сотни мегабайт
+// и от правок кода не меняются, поэтому копировать их в каждый снимок незачем.
+val stageDeps by tasks.registering(Sync::class) {
     group = "application"
-    description = "Собирает изолированный снимок приложения в build/app"
+    description = "Копирует зависимости приложения в build/app/deps"
 
-    dependsOn(tasks.named("jar"), ":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+    from(configurations.named("runtimeClasspath"))
+    into(layout.buildDirectory.dir("app/deps"))
+}
 
-    into(layout.buildDirectory.dir("app"))
+// Версионированный снимок: каждая сборка кладётся в свою папку, а ярлык
+// читает build/app/current.txt. Так снимок можно обновлять ДАЖЕ при
+// работающем клиенте — он продолжает читать свою (старую) папку, а
+// следующий запуск подхватит новую.
+val stageApp by tasks.registering {
+    group = "application"
+    description = "Собирает версионированный снимок приложения в build/app"
 
-    // Приложение и его зависимости
-    into("lib") {
-        from(tasks.named("jar"))
-        from(configurations.named("runtimeClasspath"))
-    }
-    // Плагины и скрипты — рядом со снимком, чтобы их JAR тоже не перезаписывались
-    into("plugins") {
-        from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"))
-        from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar"))
-    }
-    into("scripts") {
-        from("scripts") { exclude("*.disabled") }
+    dependsOn(stageDeps, tasks.named("jar"), ":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+
+    doLast {
+        val appDir = layout.buildDirectory.dir("app").get().asFile
+        val version = "v${System.currentTimeMillis()}"
+        val target = File(appDir, version)
+
+        copy {
+            from(tasks.named("jar"))
+            into(File(target, "lib"))
+        }
+        copy {
+            from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"))
+            from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar"))
+            into(File(target, "plugins"))
+        }
+        copy {
+            from("scripts") { exclude("*.disabled") }
+            into(File(target, "scripts"))
+        }
+
+        // Указатель для скрипта запуска
+        File(appDir, "current.txt").writeText(version)
+
+        // Чистим старые снимки, кроме текущего. Занятые запущенным клиентом
+        // удалить не получится — это нормально, уберутся в следующий раз.
+        appDir.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("v") && it.name != version }
+            ?.forEach { runCatching { it.deleteRecursively() } }
+
+        println("Снимок готов: ${target.absolutePath}")
     }
 }
 
