@@ -36,6 +36,21 @@ fun TriggersPanel(
     val activeStack by clientState.profileManager.activeStack.collectAsState()
     val profiles by clientState.profileManager.profiles.collectAsState()
 
+    // Зоны и текущая комната — для выбора области действия правила
+    val mapRoomsForScope by clientState.mapRooms.collectAsState()
+    val zoneNamesForScope by clientState.zoneNames.collectAsState()
+    val availableZones = remember(mapRoomsForScope, zoneNamesForScope) {
+        mapRoomsForScope.values
+            .mapNotNull { it.zone }
+            .distinct()
+            .sorted()
+            .map { id ->
+                val name = zoneNamesForScope[id]
+                id to if (name.isNullOrBlank()) "Зона $id" else "$name ($id)"
+            }
+    }
+    val currentRoomIdForScope by clientState.currentRoomId.collectAsState()
+
     // Обновляем при изменении триггеров, стека или профилей
     LaunchedEffect(triggers, activeStack, profiles) {
         triggersWithSource.value = clientState.getAllTriggersWithSource()
@@ -202,6 +217,8 @@ fun TriggersPanel(
             trigger = editingTrigger,
             availableProfiles = if (editingTrigger == null) availableProfiles else emptyList(),
             initialTargetProfileId = lastTargetProfileId,
+            availableZones = availableZones,
+            currentRoomId = currentRoomIdForScope,
             onDismiss = {
                 showDialog = false
                 editingTrigger = null

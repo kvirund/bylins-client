@@ -33,6 +33,8 @@ fun HotkeyDialog(
     hotkey: Hotkey? = null,
     availableProfiles: List<Pair<String?, String>> = emptyList(), // (id или null для базы, имя)
     initialTargetProfileId: String? = null, // Последний использованный профиль
+    availableZones: List<Pair<String, String>> = emptyList(), // (id зоны, «Название (id)»)
+    currentRoomId: String? = null,
     onDismiss: () -> Unit,
     onSave: (Hotkey, String?) -> Unit // Hotkey + targetProfileId
 ) {
@@ -46,6 +48,8 @@ fun HotkeyDialog(
     var alt by remember { mutableStateOf(hotkey?.alt ?: false) }
     var shift by remember { mutableStateOf(hotkey?.shift ?: false) }
     var commands by remember { mutableStateOf(hotkey?.commands?.joinToString("\n") ?: "") }
+    // Область действия: null — хоткей работает везде
+    var scope by remember { mutableStateOf(hotkey?.scope) }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isCapturing by remember { mutableStateOf(false) }
@@ -280,6 +284,16 @@ fun HotkeyDialog(
                     }
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Где хоткей действует (по умолчанию — везде)
+                ScopeSelector(
+                    scope = scope,
+                    availableZones = availableZones,
+                    currentRoomId = currentRoomId,
+                    onScopeChange = { scope = it }
+                )
+
                 // Ошибка
                 if (errorMessage != null) {
                     Text(
@@ -358,7 +372,8 @@ fun HotkeyDialog(
                                 shift = shift,
                                 commands = commandList,
                                 enabled = hotkey?.enabled ?: true,
-                                ignoreNumLock = hotkey?.ignoreNumLock ?: false
+                                ignoreNumLock = hotkey?.ignoreNumLock ?: false,
+                                scope = scope
                             )
 
                             onSave(newHotkey, selectedTargetProfileId)

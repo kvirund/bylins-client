@@ -21,6 +21,8 @@ fun TriggerDialog(
     trigger: Trigger? = null, // null для создания нового, не-null для редактирования
     availableProfiles: List<Pair<String?, String>> = emptyList(), // (id или null для базы, имя)
     initialTargetProfileId: String? = null, // Последний использованный профиль
+    availableZones: List<Pair<String, String>> = emptyList(), // (id зоны, «Название (id)»)
+    currentRoomId: String? = null,
     onDismiss: () -> Unit,
     onSave: (Trigger, String?) -> Unit // Trigger + targetProfileId
 ) {
@@ -35,6 +37,8 @@ fun TriggerDialog(
     var priority by remember { mutableStateOf(trigger?.priority?.toString() ?: "0") }
     var gag by remember { mutableStateOf(trigger?.gag ?: false) }
     var once by remember { mutableStateOf(trigger?.once ?: false) }
+    // Область действия: null — везде (обычный триггер)
+    var scope by remember { mutableStateOf(trigger?.scope) }
 
     var useColorize by remember { mutableStateOf(trigger?.colorize != null) }
     var foreground by remember { mutableStateOf(trigger?.colorize?.foreground ?: "#FFFFFF") }
@@ -257,6 +261,18 @@ fun TriggerDialog(
                             )
                         }
 
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Где триггер действует (по умолчанию — везде)
+                        ScopeSelector(
+                            scope = scope,
+                            availableZones = availableZones,
+                            currentRoomId = currentRoomId,
+                            onScopeChange = { scope = it }
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         // Checkbox Colorize
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
@@ -422,7 +438,8 @@ fun TriggerDialog(
                                             priority = priorityInt,
                                             gag = gag,
                                             once = once,
-                                            colorize = colorize
+                                            colorize = colorize,
+                                            scope = scope
                                         )
 
                                         onSave(newTrigger, selectedTargetProfileId)

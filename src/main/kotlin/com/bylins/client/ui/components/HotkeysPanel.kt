@@ -32,6 +32,21 @@ fun HotkeysPanel(
     // Получаем все хоткеи с источниками
     val hotkeysWithSource = remember { mutableStateOf(clientState.getAllHotkeysWithSource()) }
     val hotkeys by clientState.hotkeys.collectAsState()
+
+    // Зоны и текущая комната — для выбора области действия правила
+    val mapRoomsForScope by clientState.mapRooms.collectAsState()
+    val zoneNamesForScope by clientState.zoneNames.collectAsState()
+    val availableZones = remember(mapRoomsForScope, zoneNamesForScope) {
+        mapRoomsForScope.values
+            .mapNotNull { it.zone }
+            .distinct()
+            .sorted()
+            .map { id ->
+                val name = zoneNamesForScope[id]
+                id to if (name.isNullOrBlank()) "Зона $id" else "$name ($id)"
+            }
+    }
+    val currentRoomIdForScope by clientState.currentRoomId.collectAsState()
     val activeStack by clientState.profileManager.activeStack.collectAsState()
     val profiles by clientState.profileManager.profiles.collectAsState()
 
@@ -151,6 +166,8 @@ fun HotkeysPanel(
             HotkeyDialog(
                 availableProfiles = availableProfiles,
                 initialTargetProfileId = lastTargetProfileId,
+                availableZones = availableZones,
+                currentRoomId = currentRoomIdForScope,
                 onDismiss = { showAddDialog = false },
                 onSave = { hotkey, targetProfileId ->
                     // Новый хоткей - добавляем в выбранную цель
@@ -169,6 +186,8 @@ fun HotkeysPanel(
         if (editingHotkey != null) {
             HotkeyDialog(
                 hotkey = editingHotkey,
+                availableZones = availableZones,
+                currentRoomId = currentRoomIdForScope,
                 onDismiss = {
                     editingHotkey = null
                     editingHotkeySource = null
