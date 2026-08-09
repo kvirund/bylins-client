@@ -27,7 +27,9 @@ import com.bylins.client.ui.theme.LocalAppColorScheme
 fun RenderPluginUI(
     node: PluginUINode,
     modifier: Modifier = Modifier,
-    onTextFieldFocusChanged: ((Boolean) -> Unit)? = null
+    onTextFieldFocusChanged: ((Boolean) -> Unit)? = null,
+    /** Плотный режим для узких мест вроде статус-панели: мелкие кнопки. */
+    compact: Boolean = false
 ) {
     val colorScheme = LocalAppColorScheme.current
 
@@ -42,7 +44,7 @@ fun RenderPluginUI(
                 verticalArrangement = Arrangement.spacedBy(node.spacing.dp)
             ) {
                 node.children.forEach { child ->
-                    RenderPluginUI(child, onTextFieldFocusChanged = onTextFieldFocusChanged)
+                    RenderPluginUI(child, onTextFieldFocusChanged = onTextFieldFocusChanged, compact = compact)
                 }
             }
         }
@@ -54,7 +56,7 @@ fun RenderPluginUI(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 node.children.forEach { child ->
-                    RenderPluginUI(child, onTextFieldFocusChanged = onTextFieldFocusChanged)
+                    RenderPluginUI(child, onTextFieldFocusChanged = onTextFieldFocusChanged, compact = compact)
                 }
             }
         }
@@ -63,7 +65,7 @@ fun RenderPluginUI(
             Box(
                 modifier = modifier.padding(node.padding.dp)
             ) {
-                RenderPluginUI(node.child, onTextFieldFocusChanged = onTextFieldFocusChanged)
+                RenderPluginUI(node.child, onTextFieldFocusChanged = onTextFieldFocusChanged, compact = compact)
             }
         }
 
@@ -79,7 +81,7 @@ fun RenderPluginUI(
                 Column(
                     modifier = Modifier.fillMaxWidth().verticalScroll(scrollState)
                 ) {
-                    RenderPluginUI(node.child, onTextFieldFocusChanged = onTextFieldFocusChanged)
+                    RenderPluginUI(node.child, onTextFieldFocusChanged = onTextFieldFocusChanged, compact = compact)
                 }
                 VerticalScrollbar(
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
@@ -168,10 +170,17 @@ fun RenderPluginUI(
                     backgroundColor = colorScheme.primary,
                     disabledBackgroundColor = colorScheme.surface
                 ),
-                modifier = modifier
+                contentPadding = if (compact) {
+                    PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                } else {
+                    ButtonDefaults.ContentPadding
+                },
+                elevation = if (compact) ButtonDefaults.elevation(0.dp, 0.dp, 0.dp) else ButtonDefaults.elevation(),
+                modifier = if (compact) modifier.height(22.dp) else modifier
             ) {
                 Text(
                     text = node.text,
+                    fontSize = if (compact) 11.sp else androidx.compose.ui.unit.TextUnit.Unspecified,
                     color = if (node.enabled) colorScheme.onSurface else colorScheme.onSurfaceVariant
                 )
             }

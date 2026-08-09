@@ -111,6 +111,7 @@ sealed class StatusElement {
         override val id: String,
         val label: String,
         val content: com.bylins.client.plugins.ui.PluginUINode,
+        val collapsed: Boolean = false,
         val order: Int = 0
     ) : StatusElement()
 }

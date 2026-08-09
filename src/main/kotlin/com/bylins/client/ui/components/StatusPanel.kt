@@ -114,7 +114,7 @@ fun StatusPanel(
                     is StatusElement.PathPanel -> StatusPathPanelElement(element, clientState)
                     is StatusElement.Group -> StatusGroupElement(element, clientState)
                     is StatusElement.ModifiedValue -> StatusModifiedValueElement(element)
-                    is StatusElement.PluginPanel -> StatusPluginPanelElement(element)
+                    is StatusElement.PluginPanel -> StatusPluginPanelElement(element, clientState)
                 }
             }
         }
@@ -799,20 +799,48 @@ private fun parseColor(colorString: String): Color {
  * «Отключить» напротив ИИ-сессии), а не только текст и полоски.
  */
 @Composable
-private fun StatusPluginPanelElement(element: StatusElement.PluginPanel) {
-    val colorScheme = LocalAppColorScheme.current
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        if (element.label.isNotEmpty()) {
-            Text(
-                text = element.label,
-                color = colorScheme.primary,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
-            )
+private fun StatusPluginPanelElement(element: StatusElement.PluginPanel, clientState: ClientState) {
+    val expanded = !element.collapsed
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Заголовок — как у обычных групп статус-панели, кликом сворачивается
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(element.id) {
+                        detectTapGestures { clientState.statusManager.toggleGroupCollapsed(element.id) }
+                    },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = element.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (expanded) "▼" else "▶",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+
+            if (expanded) {
+                com.bylins.client.ui.plugins.RenderPluginUI(
+                    node = element.content,
+                    modifier = Modifier.fillMaxWidth(),
+                    compact = true   // узкая панель: кнопки поменьше
+                )
+            }
         }
-        com.bylins.client.ui.plugins.RenderPluginUI(
-            node = element.content,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }

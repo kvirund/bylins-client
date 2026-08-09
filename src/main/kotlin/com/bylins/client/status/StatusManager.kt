@@ -168,9 +168,13 @@ class StatusManager(
         id: String,
         label: String,
         content: com.bylins.client.plugins.ui.PluginUINode,
+        collapsed: Boolean = false,
         order: Int = _elements.value.size
     ) {
-        val panel = StatusElement.PluginPanel(id, label, content, order)
+        // Свёрнутость — состояние UI, а не плагина: при обновлении содержимого
+        // сохраняем то, что выбрал игрок
+        val current = (_elements.value[id] as? StatusElement.PluginPanel)?.collapsed ?: collapsed
+        val panel = StatusElement.PluginPanel(id, label, content, current, order)
         _elements.value = _elements.value + (id to panel)
     }
 
@@ -370,6 +374,15 @@ class StatusManager(
      */
     fun toggleGroupCollapsed(id: String): Boolean? {
         val existing = _elements.value[id]
+
+        // Блоки плагинов сворачиваются так же, как обычные группы
+        if (existing is StatusElement.PluginPanel) {
+            val newCollapsed = !existing.collapsed
+            _elements.value = _elements.value + (id to existing.copy(collapsed = newCollapsed))
+            onCollapsedStateChanged?.invoke(id, newCollapsed)
+            return newCollapsed
+        }
+
         if (existing !is StatusElement.Group) return null
 
         val newCollapsed = !existing.collapsed

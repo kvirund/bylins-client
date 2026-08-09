@@ -22,8 +22,6 @@ data class AiControlConfig(
     val journalCapacity: Int = 5000,
     /** Через сколько минут простоя закрывать сессию агента. */
     val idleTimeoutMinutes: Int = 5,
-    /** Свёрнут ли блок в правой панели (по умолчанию да — обычно он не нужен). */
-    val panelCollapsed: Boolean = true
 )
 
 /**
@@ -43,7 +41,6 @@ class AiControlPlugin : PluginBase() {
     // Ждём ли ещё автозапуска (снимается после старта или ручного #ai stop:
     // если игрок остановил сервер сам, поднимать его обратно нельзя)
     private var autoStartPending = true
-    private var panelCollapsed = true
     private var lastPanelFingerprint: String? = null
     private var autoStartTimer: com.bylins.client.plugins.TimerHandle? = null
 
@@ -57,7 +54,6 @@ class AiControlPlugin : PluginBase() {
             saveConfig(config)
         }
 
-        panelCollapsed = config.panelCollapsed
         journal = OutputJournal(config.journalCapacity)
         sessions = SessionManager(api, journal, config.idleTimeoutMinutes * 60_000L)
 
@@ -258,7 +254,7 @@ class AiControlPlugin : PluginBase() {
     private fun refreshStatusPanel(force: Boolean = false) {
         // Отпечаток видимого состояния: пока он не менялся, панель не трогаем
         val fingerprint = buildString {
-            append(panelCollapsed).append('|').append(server?.isRunning == true).append('|')
+            append(server?.isRunning == true).append('|')
             sessions.all().forEach { s ->
                 append(s.id).append(s.muted).append(s.hasWriteLease)
                     .append(s.stats.commandsSent).append(s.stats.triggers).append(';')
@@ -271,26 +267,7 @@ class AiControlPlugin : PluginBase() {
         val running = server?.isRunning == true
         val all = sessions.all()
 
-        // Заголовок-переключатель: свёрнутый вид показывает только сводку,
-        // чтобы панель не занимала место, когда агентов нет.
-        val summary = when {
-            !running -> "сервер выключен"
-            all.isEmpty() -> "агентов нет"
-            else -> "агентов: ${all.size}"
-        }
-        nodes += PluginUINode.Button(
-            text = if (panelCollapsed) "▶ ИИ-агенты ($summary)" else "▼ ИИ-агенты",
-            onClick = {
-                panelCollapsed = !panelCollapsed
-                config = config.copy(panelCollapsed = panelCollapsed)
-                saveConfig(config)
-                audit("Панель ${if (panelCollapsed) "свёрнута" else "развёрнута"}")
-                refreshStatusPanel(force = true)
-            }
-        )
-
-        if (!panelCollapsed) {
-            nodes += PluginUINode.Text(
+        nodes += PluginUINode.Text(
                 text = if (running) "Сервер: 127.0.0.1:${config.port}" else "Сервер остановлен",
                 style = PluginUINode.TextStyle.SUBTITLE
             )
@@ -333,7 +310,7 @@ class AiControlPlugin : PluginBase() {
                                 }
                             ),
                             PluginUINode.Button(
-                                text = "Перо",
+                                text = "Управление",
                                 enabled = !s.hasWriteLease,
                                 onClick = {
                                     sessions.grantWriteLease(s.id)
@@ -343,13 +320,12 @@ class AiControlPlugin : PluginBase() {
                             )
                         )
                     )
-                }
             }
         }
 
         api.addStatusPanel(
             id = "sessions",
-            label = "",                 // заголовок рисуем сами — он же переключатель
+            label = "ИИ-агенты",        // заголовок и сворачивание рисует статус-панель
             content = PluginUINode.Column(children = nodes),
             order = Int.MAX_VALUE       // всегда внизу правой панели
         )

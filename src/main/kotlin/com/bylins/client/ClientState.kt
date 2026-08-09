@@ -2558,7 +2558,9 @@ class ClientState {
                 statusManager.addModifiedValue(id, label, value, base, modifier, color, order)
             },
             addStatusPanelFunc = { id, label, content, order ->
-                statusManager.addPluginPanel(id, label, content, order)
+                // Свёрнутость восстанавливаем из конфига — как для обычных групп
+                val savedCollapsed = _statusGroupCollapsed.value[id] ?: false
+                statusManager.addPluginPanel(id, label, content, savedCollapsed, order)
             },
             addStatusGroupFunc = { id, label, elements, collapsed, order ->
                 // Преобразуем StatusElementData в StatusElement
