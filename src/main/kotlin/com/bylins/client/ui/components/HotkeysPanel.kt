@@ -499,6 +499,11 @@ private fun HotkeyRow(
             modifier = Modifier.weight(1f)
         )
 
+        // Область действия: сразу видно, что хоткей работает не везде
+        ScopeBadges(hotkey.scope)
+
+        Spacer(modifier = Modifier.width(4.dp))
+
         // Кнопки управления
         Row(
             horizontalArrangement = Arrangement.spacedBy(4.dp),

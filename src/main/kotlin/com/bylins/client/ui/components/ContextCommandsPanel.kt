@@ -548,6 +548,7 @@ private fun ContextRuleDialog(
     // Получаем данные из маппера для выбора зон и комнат
     val mapRooms by clientState.mapRooms.collectAsState()
     val zoneNames by clientState.zoneNames.collectAsState()
+    val currentRoomId by clientState.currentRoomId.collectAsState()
     // Собираем уникальные пары (zoneId, zoneName) для отображения
     val availableZonesWithNames = remember(mapRooms, zoneNames) {
         mapRooms.values
@@ -581,17 +582,9 @@ private fun ContextRuleDialog(
         )
     }
 
-    // Scope: Room / Zone / World
-    var selectedScope by remember {
-        mutableStateOf(
-            when (rule?.scope) {
-                is ContextScope.Room -> "room"
-                is ContextScope.Zone -> "zone"
-                is ContextScope.World -> "world"
-                null -> "world"
-            }
-        )
-    }
+    // Область действия — общий для клиента компонент (ScopeSelector),
+    // раньше здесь был свой набор радиокнопок и полей
+    var scope by remember { mutableStateOf(rule?.scope ?: ContextScope.World) }
 
     // Pattern (for Pattern trigger type)
     var pattern by remember {
@@ -774,458 +767,14 @@ private fun ContextRuleDialog(
                         )
                     }
 
-                    // Scope selector: Room / Zone / World
-                    Text(
-                        text = "Scope",
-                        color = Color(0xFFBBBBBB),
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
+                    // Область действия — общий компонент клиента: тот же вид,
+                    // что в диалогах триггера и хоткея
+                    ScopeSelector(
+                        scope = scope,
+                        availableZones = availableZonesWithNames,
+                        currentRoomId = currentRoomId,
+                        onScopeChange = { scope = it ?: ContextScope.World }
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("world" to "World", "zone" to "Zone", "room" to "Room").forEach { (value, label) ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(
-                                    selected = selectedScope == value,
-                                    onClick = { selectedScope = value },
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = Color(0xFF4CAF50)
-                                    )
-                                )
-                                Text(label, color = Color.White, fontSize = 12.sp)
-                            }
-                        }
-                    }
-
-                    // Scope-specific fields
-                    when (selectedScope) {
-                        "room" -> {
-                            var showRoomPicker by remember { mutableStateOf(false) }
-                            var roomSearchQuery by remember { mutableStateOf("") }
-
-                            // Парсим выбранные room IDs
-                            val selectedRoomIds = remember(roomIds) {
-                                roomIds.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Комнаты",
-                                    color = Color(0xFFBBBBBB),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Button(
-                                    onClick = {
-                                        roomSearchQuery = ""
-                                        showRoomPicker = true
-                                    },
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF3D3D3D)),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text("+ Добавить", color = Color.White, fontSize = 11.sp)
-                                }
-                            }
-
-                            // Список выбранных комнат как chips
-                            if (selectedRoomIds.isNotEmpty()) {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = Color(0xFF1E1E1E),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(8.dp)) {
-                                        selectedRoomIds.forEach { roomId ->
-                                            val room = mapRooms[roomId]
-                                            // Формат: "Room (Vnum) • ZoneName"
-                                            val displayName = if (room != null) {
-                                                val zoneName = room.zone?.let { zoneNames[it] }
-                                                val locationPart = if (!zoneName.isNullOrEmpty()) " • $zoneName" else ""
-                                                "${room.name} (${room.id})$locationPart"
-                                            } else {
-                                                roomId
-                                            }
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 2.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    displayName,
-                                                    color = Color.White,
-                                                    fontSize = 11.sp,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                IconButton(
-                                                    onClick = {
-                                                        roomIds = selectedRoomIds.filter { it != roomId }.joinToString("\n")
-                                                    },
-                                                    modifier = Modifier.size(20.dp)
-                                                ) {
-                                                    Text("✕", color = Color.Gray, fontSize = 12.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    "Нет выбранных комнат",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Теги комнат
-                            Text(
-                                text = "Теги комнат (через запятую)",
-                                color = Color(0xFFBBBBBB),
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            OutlinedTextField(
-                                value = roomPropertyKeys,
-                                onValueChange = { roomPropertyKeys = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                placeholder = { Text("shop, blacksmith, quest_npc", color = Color.Gray, fontSize = 12.sp) },
-                                colors = TextFieldDefaults.outlinedTextFieldColors(
-                                    textColor = Color.White,
-                                    backgroundColor = Color(0xFF1E1E1E),
-                                    cursorColor = Color.White,
-                                    focusedBorderColor = Color(0xFF4CAF50),
-                                    unfocusedBorderColor = Color.Gray
-                                ),
-                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                                singleLine = true
-                            )
-                            Text(
-                                text = "Команда активируется в комнатах с любым из указанных тегов",
-                                color = Color.Gray,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-
-                            // Room picker dialog
-                            if (showRoomPicker) {
-                                Dialog(onDismissRequest = { showRoomPicker = false }) {
-                                    Card(
-                                        modifier = Modifier.width(450.dp).heightIn(max = 500.dp),
-                                        backgroundColor = Color(0xFF2D2D2D),
-                                        elevation = 8.dp
-                                    ) {
-                                        Column(modifier = Modifier.padding(16.dp)) {
-                                            Text(
-                                                "Выбор комнаты",
-                                                color = Color.White,
-                                                fontSize = 16.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                modifier = Modifier.padding(bottom = 8.dp)
-                                            )
-
-                                            // Проверяем, похож ли ввод на VNUM (числовой ID)
-                                            val isVnumInput = roomSearchQuery.trim().all { it.isDigit() } && roomSearchQuery.isNotBlank()
-                                            val vnumAlreadySelected = isVnumInput && roomIds.lines().any { it.trim() == roomSearchQuery.trim() }
-
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                OutlinedTextField(
-                                                    value = roomSearchQuery,
-                                                    onValueChange = { roomSearchQuery = it },
-                                                    modifier = Modifier.weight(1f),
-                                                    placeholder = { Text("Поиск или ввод VNUM...", color = Color.Gray, fontSize = 12.sp) },
-                                                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                                                        textColor = Color.White,
-                                                        backgroundColor = Color(0xFF1E1E1E),
-                                                        cursorColor = Color.White,
-                                                        focusedBorderColor = colorScheme.primary,
-                                                        unfocusedBorderColor = Color.Gray
-                                                    ),
-                                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                                                    singleLine = true,
-                                                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                                                        onDone = {
-                                                            if (isVnumInput && !vnumAlreadySelected) {
-                                                                val vnum = roomSearchQuery.trim()
-                                                                roomIds = if (roomIds.isBlank()) vnum else roomIds + "\n" + vnum
-                                                                showRoomPicker = false
-                                                            }
-                                                        }
-                                                    )
-                                                )
-                                                Button(
-                                                    onClick = {
-                                                        val vnum = roomSearchQuery.trim()
-                                                        roomIds = if (roomIds.isBlank()) vnum else roomIds + "\n" + vnum
-                                                        showRoomPicker = false
-                                                    },
-                                                    enabled = isVnumInput && !vnumAlreadySelected,
-                                                    colors = ButtonDefaults.buttonColors(
-                                                        backgroundColor = colorScheme.primary,
-                                                        disabledBackgroundColor = colorScheme.surfaceVariant
-                                                    ),
-                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                                                ) {
-                                                    Text(
-                                                        "Добавить",
-                                                        color = if (isVnumInput && !vnumAlreadySelected) Color.White else colorScheme.onSurfaceVariant,
-                                                        fontSize = 12.sp
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(8.dp))
-
-                                            val filteredRooms = remember(roomSearchQuery, visitedRooms) {
-                                                val query = roomSearchQuery.lowercase()
-                                                if (query.isBlank()) visitedRooms.take(50)
-                                                else visitedRooms.filter {
-                                                    it.name.lowercase().contains(query) ||
-                                                    it.id.lowercase().contains(query) ||
-                                                    it.zone?.lowercase()?.contains(query) == true
-                                                }.take(50)
-                                            }
-
-                                            androidx.compose.foundation.lazy.LazyColumn(
-                                                modifier = Modifier.weight(1f).fillMaxWidth()
-                                            ) {
-                                                items(filteredRooms.size) { index ->
-                                                    val room = filteredRooms[index]
-                                                    val alreadySelected = roomIds.lines().any { it.trim() == room.id }
-                                                    // Формируем строку: "Room • ZoneName" или просто "Room"
-                                                    val zoneName = room.zone?.let { zoneNames[it] }
-                                                    val roomTitle = room.name + (if (!zoneName.isNullOrEmpty()) " • $zoneName" else "")
-                                                    // Формируем вторую строку: "ID: vnum"
-                                                    val roomSubtitle = "ID: ${room.id}"
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clickable {
-                                                                if (!alreadySelected) {
-                                                                    roomIds = if (roomIds.isBlank()) room.id
-                                                                              else roomIds + "\n" + room.id
-                                                                }
-                                                                showRoomPicker = false
-                                                            }
-                                                            .padding(vertical = 2.dp),
-                                                        color = if (alreadySelected) Color(0xFF3D3D3D) else Color.Transparent
-                                                    ) {
-                                                        Column(modifier = Modifier.padding(8.dp)) {
-                                                            Text(
-                                                                roomTitle,
-                                                                fontFamily = FontFamily.Monospace,
-                                                                fontSize = 12.sp,
-                                                                color = if (alreadySelected) Color.Gray else Color.White
-                                                            )
-                                                            Text(
-                                                                roomSubtitle,
-                                                                fontFamily = FontFamily.Monospace,
-                                                                fontSize = 10.sp,
-                                                                color = Color.Gray
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                                horizontalArrangement = Arrangement.End
-                                            ) {
-                                                TextButton(onClick = { showRoomPicker = false }) {
-                                                    Text("Закрыть", color = Color.Gray)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        "zone" -> {
-                            var showZonePicker by remember { mutableStateOf(false) }
-                            var zoneSearchQuery by remember { mutableStateOf("") }
-
-                            // Парсим выбранные zone IDs
-                            val selectedZoneIds = remember(zones) {
-                                zones.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                            }
-
-                            // Создаём map zone ID -> zone name для быстрого поиска
-                            val zoneIdToName = remember(availableZonesWithNames) {
-                                availableZonesWithNames.toMap()
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Зоны",
-                                    color = Color(0xFFBBBBBB),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Button(
-                                    onClick = {
-                                        zoneSearchQuery = ""
-                                        showZonePicker = true
-                                    },
-                                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF3D3D3D)),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text("+ Добавить", color = Color.White, fontSize = 11.sp)
-                                }
-                            }
-
-                            // Список выбранных зон
-                            if (selectedZoneIds.isNotEmpty()) {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = Color(0xFF1E1E1E),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(8.dp)) {
-                                        selectedZoneIds.forEach { zoneId ->
-                                            val savedZoneName = zoneIdToName[zoneId]
-                                            val displayName = if (savedZoneName != null && savedZoneName != zoneId) {
-                                                "$savedZoneName ($zoneId)"
-                                            } else {
-                                                zoneId
-                                            }
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 2.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    displayName,
-                                                    color = Color.White,
-                                                    fontSize = 11.sp,
-                                                    fontFamily = FontFamily.Monospace,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                IconButton(
-                                                    onClick = {
-                                                        zones = selectedZoneIds.filter { it != zoneId }.joinToString("\n")
-                                                    },
-                                                    modifier = Modifier.size(20.dp)
-                                                ) {
-                                                    Text("✕", color = Color.Gray, fontSize = 12.sp)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    "Нет выбранных зон",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-
-                            // Zone picker dialog
-                            if (showZonePicker) {
-                                Dialog(onDismissRequest = { showZonePicker = false }) {
-                                    Card(
-                                        modifier = Modifier.width(400.dp).heightIn(max = 400.dp),
-                                        backgroundColor = Color(0xFF2D2D2D),
-                                        elevation = 8.dp
-                                    ) {
-                                        Column(modifier = Modifier.padding(16.dp)) {
-                                            Text(
-                                                "Выбор зоны",
-                                                color = Color.White,
-                                                fontSize = 16.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                modifier = Modifier.padding(bottom = 8.dp)
-                                            )
-                                            OutlinedTextField(
-                                                value = zoneSearchQuery,
-                                                onValueChange = { zoneSearchQuery = it },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                placeholder = { Text("Поиск зоны...", color = Color.Gray, fontSize = 12.sp) },
-                                                colors = TextFieldDefaults.outlinedTextFieldColors(
-                                                    textColor = Color.White,
-                                                    backgroundColor = Color(0xFF1E1E1E),
-                                                    cursorColor = Color.White,
-                                                    focusedBorderColor = Color(0xFF4CAF50),
-                                                    unfocusedBorderColor = Color.Gray
-                                                ),
-                                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                                                singleLine = true
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-
-                                            val filteredZones = remember(zoneSearchQuery, availableZonesWithNames) {
-                                                val query = zoneSearchQuery.lowercase()
-                                                if (query.isBlank()) availableZonesWithNames
-                                                else availableZonesWithNames.filter { (zoneId, name) ->
-                                                    zoneId.lowercase().contains(query) ||
-                                                    name.lowercase().contains(query)
-                                                }
-                                            }
-
-                                            androidx.compose.foundation.lazy.LazyColumn(
-                                                modifier = Modifier.weight(1f).fillMaxWidth()
-                                            ) {
-                                                items(filteredZones.size) { index ->
-                                                    val (zoneId, name) = filteredZones[index]
-                                                    val alreadySelected = zones.lines().any { it.trim() == zoneId }
-                                                    // Показываем "ZoneName (ZoneID)" формат
-                                                    val displayText = if (name != zoneId) "$name ($zoneId)" else zoneId
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clickable {
-                                                                if (!alreadySelected) {
-                                                                    zones = if (zones.isBlank()) zoneId
-                                                                            else zones + "\n" + zoneId
-                                                                }
-                                                                showZonePicker = false
-                                                            }
-                                                            .padding(vertical = 2.dp),
-                                                        color = if (alreadySelected) Color(0xFF3D3D3D) else Color.Transparent
-                                                    ) {
-                                                        Text(
-                                                            displayText,
-                                                            fontFamily = FontFamily.Monospace,
-                                                            fontSize = 12.sp,
-                                                            color = if (alreadySelected) Color.Gray else Color.White,
-                                                            modifier = Modifier.padding(8.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                                horizontalArrangement = Arrangement.End
-                                            ) {
-                                                TextButton(onClick = { showZonePicker = false }) {
-                                                    Text("Закрыть", color = Color.Gray)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                     // TTL selector (only for Pattern trigger type)
                     if (selectedTriggerType == "pattern") {
@@ -1355,27 +904,21 @@ private fun ContextRuleDialog(
                                 return@Button
                             }
 
-                            // Build scope
-                            val actualScope: ContextScope = when (selectedScope) {
-                                "room" -> {
-                                    val ids = roomIds.lines().filter { it.isNotBlank() }.toSet()
-                                    val tags = roomPropertyKeys.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
-                                    if (ids.isEmpty() && tags.isEmpty()) {
-                                        errorMessage = "At least one room ID or tag is required"
+                            // Область берём из общего компонента; пустой выбор
+                            // бессмысленен — правило не сработает нигде
+                            val actualScope: ContextScope = scope
+                            when (actualScope) {
+                                is ContextScope.Room ->
+                                    if (actualScope.roomIds.isEmpty() && actualScope.roomPropertyKeys.isEmpty()) {
+                                        errorMessage = "Укажите хотя бы одну комнату или свойство"
                                         return@Button
                                     }
-                                    ContextScope.Room(roomIds = ids, roomPropertyKeys = tags)
-                                }
-                                "zone" -> {
-                                    val zoneList = zones.lines().filter { it.isNotBlank() }.toSet()
-                                    if (zoneList.isEmpty()) {
-                                        errorMessage = "At least one zone is required"
+                                is ContextScope.Zone ->
+                                    if (actualScope.zones.isEmpty()) {
+                                        errorMessage = "Укажите хотя бы одну зону"
                                         return@Button
                                     }
-                                    ContextScope.Zone(zoneList)
-                                }
-                                "world" -> ContextScope.World
-                                else -> ContextScope.World
+                                is ContextScope.World -> {}
                             }
 
                             // TTL only for Pattern rules

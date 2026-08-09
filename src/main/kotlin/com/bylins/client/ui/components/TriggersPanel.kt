@@ -376,6 +376,9 @@ private fun TriggerItem(
                     modifier = Modifier.weight(1f)
                 )
 
+                // Область действия: сразу видно, что триггер не глобальный
+                ScopeBadges(trigger.scope)
+
                 // Флаги как карточки
                 if (trigger.gag) {
                     Surface(
