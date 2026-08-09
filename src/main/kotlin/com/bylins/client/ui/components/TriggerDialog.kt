@@ -261,18 +261,6 @@ fun TriggerDialog(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Где триггер действует (по умолчанию — везде)
-                        ScopeSelector(
-                            scope = scope,
-                            availableZones = availableZones,
-                            currentRoomId = currentRoomId,
-                            onScopeChange = { scope = it }
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
                         // Checkbox Colorize
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
@@ -291,6 +279,19 @@ fun TriggerDialog(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Где триггер действует (по умолчанию — везде).
+                    // Отдельной строкой: внутри Row с чекбоксами он ломал их вёрстку.
+                    ScopeSelector(
+                        scope = scope,
+                        availableZones = availableZones,
+                        currentRoomId = currentRoomId,
+                        onScopeChange = { scope = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Colorize настройки
                     if (useColorize) {
