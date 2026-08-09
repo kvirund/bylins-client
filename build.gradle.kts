@@ -145,6 +145,36 @@ val prepareRunDir by tasks.registering {
     dependsOn(prepareRun, prepareScripts)
 }
 
+// === Изолированный снимок приложения (build/app) ===
+//
+// Клиент запускается ИЗ СНИМКА, а не из build/classes. Иначе пересборка во
+// время работы подменяет .class-файлы под живой JVM, и приложение падает,
+// когда доходит до ленивой загрузки изменённого класса (NoClassDefFoundError).
+// Снимок обновляется только этой задачей — обычные compileKotlin/buildPlugin
+// его не касаются.
+val stageApp by tasks.registering(Sync::class) {
+    group = "application"
+    description = "Собирает изолированный снимок приложения в build/app"
+
+    dependsOn(tasks.named("jar"), ":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+
+    into(layout.buildDirectory.dir("app"))
+
+    // Приложение и его зависимости
+    into("lib") {
+        from(tasks.named("jar"))
+        from(configurations.named("runtimeClasspath"))
+    }
+    // Плагины и скрипты — рядом со снимком, чтобы их JAR тоже не перезаписывались
+    into("plugins") {
+        from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"))
+        from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar"))
+    }
+    into("scripts") {
+        from("scripts") { exclude("*.disabled") }
+    }
+}
+
 // Обновляем run задачу чтобы зависела от prepareRun
 afterEvaluate {
     tasks.findByName("run")?.dependsOn(prepareRunDir)
