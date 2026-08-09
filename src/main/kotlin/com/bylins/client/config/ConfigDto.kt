@@ -11,6 +11,40 @@ import com.bylins.client.triggers.Trigger
 import com.bylins.client.triggers.TriggerColorize
 import kotlinx.serialization.Serializable
 
+/**
+ * Область действия правила в конфиге — общая для триггеров и хоткеев.
+ * Формат совпадает с полями ContextCommandRuleDto, чтобы не плодить схемы.
+ */
+@Serializable
+data class ScopeDto(
+    val type: String = "world",                 // "world" | "zone" | "room"
+    val zones: List<String>? = null,
+    val roomIds: List<String>? = null,
+    val roomPropertyKeys: List<String>? = null
+) {
+    fun toScope(): ContextScope = when (type) {
+        "zone" -> ContextScope.Zone(zones?.toSet() ?: emptySet())
+        "room" -> ContextScope.Room(
+            roomIds = roomIds?.toSet() ?: emptySet(),
+            roomPropertyKeys = roomPropertyKeys?.toSet() ?: emptySet()
+        )
+        else -> ContextScope.World
+    }
+
+    companion object {
+        /** null — область не задана (правило глобальное), в конфиг не пишем. */
+        fun fromScope(scope: ContextScope?): ScopeDto? = when (scope) {
+            null, is ContextScope.World -> null
+            is ContextScope.Zone -> ScopeDto("zone", zones = scope.zones.toList())
+            is ContextScope.Room -> ScopeDto(
+                "room",
+                roomIds = scope.roomIds.toList().ifEmpty { null },
+                roomPropertyKeys = scope.roomPropertyKeys.toList().ifEmpty { null }
+            )
+        }
+    }
+}
+
 @Serializable
 data class TriggerDto(
     val id: String,
@@ -21,7 +55,8 @@ data class TriggerDto(
     val priority: Int = 0,
     val colorize: TriggerColorizeDto? = null,
     val gag: Boolean = false,
-    val once: Boolean = false
+    val once: Boolean = false,
+    val scope: ScopeDto? = null
 ) {
     fun toTrigger(): Trigger {
         return Trigger(
@@ -33,7 +68,8 @@ data class TriggerDto(
             priority = priority,
             colorize = colorize?.toTriggerColorize(),
             gag = gag,
-            once = once
+            once = once,
+            scope = scope?.toScope()
         )
     }
 
@@ -48,7 +84,8 @@ data class TriggerDto(
                 priority = trigger.priority,
                 colorize = trigger.colorize?.let { TriggerColorizeDto.fromTriggerColorize(it) },
                 gag = trigger.gag,
-                once = trigger.once
+                once = trigger.once,
+                scope = ScopeDto.fromScope(trigger.scope)
             )
         }
     }
@@ -126,7 +163,8 @@ data class HotkeyDto(
     // Для обратной совместимости (не используется)
     val name: String? = null,
     // Точный код клавиши (для правильного восстановления NumPad)
-    val keyCode: Long? = null
+    val keyCode: Long? = null,
+    val scope: ScopeDto? = null
 ) {
     fun toHotkey(): Hotkey? {
         // Если есть keyCode - используем его напрямую
@@ -144,7 +182,8 @@ data class HotkeyDto(
             shift = shift,
             commands = commands,
             enabled = enabled,
-            ignoreNumLock = ignoreNumLock
+            ignoreNumLock = ignoreNumLock,
+            scope = scope?.toScope()
         )
     }
 
@@ -159,7 +198,8 @@ data class HotkeyDto(
                 commands = hotkey.commands,
                 enabled = hotkey.enabled,
                 ignoreNumLock = hotkey.ignoreNumLock,
-                keyCode = hotkey.key.keyCode // Сохраняем точный код
+                keyCode = hotkey.key.keyCode, // Сохраняем точный код
+                scope = ScopeDto.fromScope(hotkey.scope)
             )
         }
     }

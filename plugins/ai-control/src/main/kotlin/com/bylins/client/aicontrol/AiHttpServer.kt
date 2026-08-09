@@ -248,6 +248,12 @@ class AiHttpServer(
      * Управление клиентом. Требует разрешений, выданных пользователем:
      * проверку делает сам PluginAPI.client, здесь только маршрутизация.
      */
+    /** Область действия из тела запроса: {"scope": {"type":"zone","zones":[...]}}. */
+    private fun scopeOf(req: JsonObject): Map<String, Any?>? {
+        val raw = req["scope"] as? JsonObject ?: return null
+        return raw.toChanges()
+    }
+
     private fun handleClient(exchange: HttpExchange, req: JsonObject): Any {
         val session = requireSession(exchange)
         val action = exchange.requestURI.path.removePrefix("/client/").trim('/')
@@ -299,7 +305,8 @@ class AiHttpServer(
                     enabled = req.bool("enabled", true),
                     gag = req.bool("gag", false),
                     priority = req.int("priority", 0),
-                    profileId = req.str("profileId")
+                    profileId = req.str("profileId"),
+                    scope = scopeOf(req)
                 )
             ))
             "triggers/update" -> audited("изменён триггер", mapOf(
@@ -335,7 +342,8 @@ class AiHttpServer(
                     alt = req.bool("alt", false),
                     shift = req.bool("shift", false),
                     enabled = req.bool("enabled", true),
-                    profileId = req.str("profileId")
+                    profileId = req.str("profileId"),
+                    scope = scopeOf(req)
                 )
             ))
             "hotkeys/delete" -> audited("удалён хоткей", mapOf(
@@ -357,6 +365,24 @@ class AiHttpServer(
             "tabs/delete" -> audited("удалена вкладка", mapOf(
                 "ok" to client.deleteTab(req.str("id") ?: throw ApiError(400, "Нужно id"))
             ))
+
+            // Контекстные команды (предложения в панели, не автоматические)
+            "context/rules" -> mapOf("rules" to client.listContextRules())
+            "context/rules/create" -> audited("создано контекстное правило", mapOf(
+                "id" to client.createContextRule(
+                    command = req.str("command") ?: throw ApiError(400, "Нужно command"),
+                    pattern = req.str("pattern"),
+                    scope = scopeOf(req),
+                    ttl = req.str("ttl") ?: "room_change",
+                    ttlMinutes = req["ttlMinutes"]?.let { req.int("ttlMinutes", 10) },
+                    priority = req.int("priority", 0),
+                    enabled = req.bool("enabled", true)
+                )
+            ))
+            "context/rules/delete" -> audited("удалено контекстное правило", mapOf(
+                "ok" to client.deleteContextRule(req.str("id") ?: throw ApiError(400, "Нужно id"))
+            ))
+            "context/queue" -> mapOf("queue" to client.listContextQueue())
 
             // Настройки клиента
             "settings" -> mapOf("settings" to client.getSettings())

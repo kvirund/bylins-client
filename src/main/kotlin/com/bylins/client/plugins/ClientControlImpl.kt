@@ -105,6 +105,41 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         return true
     }
 
+
+    // --- Область действия (общая для триггеров, хоткеев, контекстных правил) ---
+
+    /**
+     * Разбирает область из простого Map, как её присылает плагин/ИИ:
+     * {"type":"zone","zones":[...]} / {"type":"room","roomIds":[...]} / null.
+     */
+    private fun parseScope(raw: Map<String, Any?>?): com.bylins.client.contextcommands.ContextScope? {
+        if (raw == null) return null
+        @Suppress("UNCHECKED_CAST")
+        fun strings(key: String): Set<String> =
+            (raw[key] as? Collection<*>)?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
+        return when ((raw["type"] as? String)?.lowercase()) {
+            "zone" -> com.bylins.client.contextcommands.ContextScope.Zone(strings("zones"))
+            "room" -> com.bylins.client.contextcommands.ContextScope.Room(
+                roomIds = strings("roomIds"),
+                roomPropertyKeys = strings("roomPropertyKeys")
+            )
+            else -> com.bylins.client.contextcommands.ContextScope.World
+        }
+    }
+
+    private fun scopeToMap(scope: com.bylins.client.contextcommands.ContextScope?): Map<String, Any?>? =
+        when (scope) {
+            null -> null
+            is com.bylins.client.contextcommands.ContextScope.World -> mapOf("type" to "world")
+            is com.bylins.client.contextcommands.ContextScope.Zone ->
+                mapOf("type" to "zone", "zones" to scope.zones.toList())
+            is com.bylins.client.contextcommands.ContextScope.Room -> mapOf(
+                "type" to "room",
+                "roomIds" to scope.roomIds.toList(),
+                "roomPropertyKeys" to scope.roomPropertyKeys.toList()
+            )
+        }
+
     // --- Триггеры ---
 
     /** Базовые триггеры + триггеры всех профилей персонажей (с пометкой profileId). */
@@ -117,7 +152,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             "enabled" to enabled,
             "gag" to gag,
             "priority" to priority,
-            "profileId" to profileId
+            "profileId" to profileId,
+            "scope" to scopeToMap(scope)
         )
         val base = state.triggers.value.map { it.toMap(null) }
         val fromProfiles = state.profileManager.profiles.value.flatMap { profile ->
@@ -138,7 +174,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         enabled: Boolean,
         gag: Boolean,
         priority: Int,
-        profileId: String?
+        profileId: String?,
+        scope: Map<String, Any?>?
     ): String {
         val trigger = com.bylins.client.triggers.Trigger(
             id = java.util.UUID.randomUUID().toString(),
@@ -147,7 +184,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             commands = commands,
             enabled = enabled,
             gag = gag,
-            priority = priority
+            priority = priority,
+            scope = parseScope(scope)
         )
         if (profileId != null) {
             // Триггер профиля персонажа: работает, только пока профиль в активном стеке
@@ -294,7 +332,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             "shift" to shift,
             "commands" to commands,
             "enabled" to enabled,
-            "profileId" to profileId
+            "profileId" to profileId,
+            "scope" to scopeToMap(scope)
         )
         val base = state.hotkeys.value.map { it.toMap(null) }
         val fromProfiles = state.profileManager.profiles.value.flatMap { profile ->
@@ -315,7 +354,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         alt: Boolean,
         shift: Boolean,
         enabled: Boolean,
-        profileId: String?
+        profileId: String?,
+        scope: Map<String, Any?>?
     ): String {
         val parsedKey = com.bylins.client.hotkeys.Hotkey.parseKey(key)
             ?: throw IllegalArgumentException("Неизвестная клавиша: $key")
@@ -326,7 +366,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             alt = alt,
             shift = shift,
             commands = commands,
-            enabled = enabled
+            enabled = enabled,
+            scope = parseScope(scope)
         )
         if (profileId != null) {
             require(state.profileManager.profiles.value.any { it.id == profileId }) {
@@ -428,6 +469,87 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         state.removeTab(id)
         return true
     }
+
+    // --- Контекстные команды ---
+
+    private val ctx get() = state.contextCommandManager
+
+    override fun listContextRules(): List<Map<String, Any?>> = ctx.rules.value.map { rule ->
+        mapOf(
+            "id" to rule.id,
+            "enabled" to rule.enabled,
+            // Pattern — по строке вывода, Permanent — просто «пока игрок здесь»
+            "pattern" to (rule.triggerType as? com.bylins.client.contextcommands.ContextTriggerType.Pattern)
+                ?.regex?.pattern,
+            "permanent" to (rule.triggerType is com.bylins.client.contextcommands.ContextTriggerType.Permanent),
+            "scope" to scopeToMap(rule.scope),
+            "command" to rule.command,
+            "ttl" to ttlToString(rule.ttl),
+            "priority" to rule.priority
+        )
+    }
+
+    override fun createContextRule(
+        command: String,
+        pattern: String?,
+        scope: Map<String, Any?>?,
+        ttl: String,
+        ttlMinutes: Int?,
+        priority: Int,
+        enabled: Boolean
+    ): String {
+        val rule = com.bylins.client.contextcommands.ContextCommandRule(
+            enabled = enabled,
+            triggerType = if (pattern != null) {
+                com.bylins.client.contextcommands.ContextTriggerType.Pattern(pattern.toRegex())
+            } else {
+                com.bylins.client.contextcommands.ContextTriggerType.Permanent
+            },
+            scope = parseScope(scope) ?: com.bylins.client.contextcommands.ContextScope.World,
+            command = command,
+            ttl = parseTtl(ttl, ttlMinutes),
+            priority = priority
+        )
+        ctx.addRule(rule)
+        state.saveConfig()
+        return rule.id
+    }
+
+    override fun deleteContextRule(id: String): Boolean {
+        if (ctx.rules.value.none { it.id == id }) return false
+        ctx.removeRule(id)
+        state.saveConfig()
+        return true
+    }
+
+    override fun listContextQueue(): List<Map<String, Any?>> = ctx.commandQueue.value.map { cmd ->
+        mapOf(
+            "id" to cmd.id,
+            "command" to cmd.command,
+            "addedAt" to cmd.addedAt,
+            "ttl" to ttlToString(cmd.ttl),
+            "roomId" to cmd.roomIdWhenAdded,
+            "zone" to cmd.zoneWhenAdded,
+            "zoneLabel" to state.zoneLabel(cmd.zoneWhenAdded)
+        )
+    }
+
+    private fun ttlToString(ttl: com.bylins.client.contextcommands.ContextCommandTTL): String = when (ttl) {
+        is com.bylins.client.contextcommands.ContextCommandTTL.UntilRoomChange -> "room_change"
+        is com.bylins.client.contextcommands.ContextCommandTTL.UntilZoneChange -> "zone_change"
+        is com.bylins.client.contextcommands.ContextCommandTTL.FixedTime -> "fixed_time:${ttl.minutes}"
+        is com.bylins.client.contextcommands.ContextCommandTTL.Permanent -> "permanent"
+        is com.bylins.client.contextcommands.ContextCommandTTL.OneTime -> "one_time"
+    }
+
+    private fun parseTtl(ttl: String, minutes: Int?): com.bylins.client.contextcommands.ContextCommandTTL =
+        when (ttl.lowercase()) {
+            "zone_change" -> com.bylins.client.contextcommands.ContextCommandTTL.UntilZoneChange
+            "fixed_time" -> com.bylins.client.contextcommands.ContextCommandTTL.FixedTime(minutes ?: 10)
+            "permanent" -> com.bylins.client.contextcommands.ContextCommandTTL.Permanent
+            "one_time" -> com.bylins.client.contextcommands.ContextCommandTTL.OneTime
+            else -> com.bylins.client.contextcommands.ContextCommandTTL.UntilRoomChange
+        }
 
     // --- Настройки клиента ---
 

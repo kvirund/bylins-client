@@ -61,6 +61,9 @@ interface ClientControl {
      *
      * @param profileId если задан — триггер кладётся в профиль персонажа
      *   (активен, только когда профиль в стеке), иначе в базовый набор.
+     * @param scope область действия: null или {"type":"world"} — везде,
+     *   {"type":"zone","zones":[...]} или
+     *   {"type":"room","roomIds":[...],"roomPropertyKeys":[...]} — только там.
      */
     fun createTrigger(
         name: String,
@@ -69,7 +72,8 @@ interface ClientControl {
         enabled: Boolean = true,
         gag: Boolean = false,
         priority: Int = 0,
-        profileId: String? = null
+        profileId: String? = null,
+        scope: Map<String, Any?>? = null
     ): String
 
     /** Обновляет триггер по id. */
@@ -115,7 +119,9 @@ interface ClientControl {
         alt: Boolean = false,
         shift: Boolean = false,
         enabled: Boolean = true,
-        profileId: String? = null
+        profileId: String? = null,
+        /** Область действия — формат тот же, что у [createTrigger]. */
+        scope: Map<String, Any?>? = null
     ): String
 
     fun updateHotkey(id: String, changes: Map<String, Any?>): Boolean
@@ -137,6 +143,39 @@ interface ClientControl {
     ): String
 
     fun deleteTab(id: String): Boolean
+
+    // --- Контекстные команды ---
+
+    /**
+     * Правила контекстных команд: они не выполняются сами, а предлагают команду
+     * в панели, пока игрок находится в нужном месте.
+     *
+     * Возвращает: id, enabled, pattern (или permanent), scope, command, ttl, priority.
+     */
+    fun listContextRules(): List<Map<String, Any?>>
+
+    /**
+     * Создаёт правило контекстной команды.
+     *
+     * @param pattern regex по строке вывода; null — правило постоянное
+     *   (команда доступна всё время, пока игрок в заданной области).
+     * @param scope область действия (см. [createTrigger]).
+     * @param ttl "room_change" | "zone_change" | "fixed_time" | "permanent" | "one_time".
+     */
+    fun createContextRule(
+        command: String,
+        pattern: String? = null,
+        scope: Map<String, Any?>? = null,
+        ttl: String = "room_change",
+        ttlMinutes: Int? = null,
+        priority: Int = 0,
+        enabled: Boolean = true
+    ): String
+
+    fun deleteContextRule(id: String): Boolean
+
+    /** Команды, предложенные игроку прямо сейчас (очередь в панели). */
+    fun listContextQueue(): List<Map<String, Any?>>
 
     // --- Настройки клиента ---
 

@@ -148,6 +148,7 @@ TOOLS = [
             "triggers/update, triggers/delete, aliases, aliases/create, aliases/delete, "
             "hotkeys, hotkeys/create, hotkeys/delete, tabs, tabs/create, tabs/delete, "
             "settings, settings/update, logs, logs/start, logs/stop, "
+            "context/rules, context/rules/create, context/rules/delete, context/queue, "
             "characters, characters/create, characters/push, characters/pop, characters/requires."
         ),
         "inputSchema": {
@@ -160,7 +161,10 @@ TOOLS = [
                         "Параметры действия (id, name, pattern, commands, ...). "
                         "Для triggers/create, aliases/create, hotkeys/create можно указать "
                         "profileId — тогда правило попадёт в профиль персонажа и будет "
-                        "работать, только пока этот профиль активен."
+                        "работать, только пока этот профиль активен. Там же можно задать "
+                        "область действия: scope={\"type\":\"zone\",\"zones\":[\"759\"]} "
+                        "или {\"type\":\"room\",\"roomIds\":[...]} — правило сработает "
+                        "только там."
                     ),
                 },
             },

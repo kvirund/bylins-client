@@ -50,8 +50,8 @@ internal class GuardedClientControl(
     override fun listTriggers(): List<Map<String, Any?>> = control().listTriggers()
     override fun createTrigger(
         name: String, pattern: String, commands: List<String>,
-        enabled: Boolean, gag: Boolean, priority: Int, profileId: String?
-    ): String = control().createTrigger(name, pattern, commands, enabled, gag, priority, profileId)
+        enabled: Boolean, gag: Boolean, priority: Int, profileId: String?, scope: Map<String, Any?>?
+    ): String = control().createTrigger(name, pattern, commands, enabled, gag, priority, profileId, scope)
     override fun updateTrigger(id: String, changes: Map<String, Any?>): Boolean = control().updateTrigger(id, changes)
     override fun deleteTrigger(id: String): Boolean = control().deleteTrigger(id)
 
@@ -67,8 +67,9 @@ internal class GuardedClientControl(
     override fun listHotkeys(): List<Map<String, Any?>> = control().listHotkeys()
     override fun createHotkey(
         name: String, key: String, commands: List<String>,
-        ctrl: Boolean, alt: Boolean, shift: Boolean, enabled: Boolean, profileId: String?
-    ): String = control().createHotkey(name, key, commands, ctrl, alt, shift, enabled, profileId)
+        ctrl: Boolean, alt: Boolean, shift: Boolean, enabled: Boolean,
+        profileId: String?, scope: Map<String, Any?>?
+    ): String = control().createHotkey(name, key, commands, ctrl, alt, shift, enabled, profileId, scope)
     override fun updateHotkey(id: String, changes: Map<String, Any?>): Boolean = control().updateHotkey(id, changes)
     override fun deleteHotkey(id: String): Boolean = control().deleteHotkey(id)
 
@@ -79,6 +80,15 @@ internal class GuardedClientControl(
         profileTab: Boolean, profileLog: Boolean, persistContent: Boolean
     ): String = control().createTab(name, patterns, captureMode, profileTab, profileLog, persistContent)
     override fun deleteTab(id: String): Boolean = control().deleteTab(id)
+
+    // --- Контекстные команды ---
+    override fun listContextRules(): List<Map<String, Any?>> = control().listContextRules()
+    override fun createContextRule(
+        command: String, pattern: String?, scope: Map<String, Any?>?,
+        ttl: String, ttlMinutes: Int?, priority: Int, enabled: Boolean
+    ): String = control().createContextRule(command, pattern, scope, ttl, ttlMinutes, priority, enabled)
+    override fun deleteContextRule(id: String): Boolean = control().deleteContextRule(id)
+    override fun listContextQueue(): List<Map<String, Any?>> = control().listContextQueue()
 
     // --- Настройки клиента ---
     override fun getSettings(): Map<String, Any?> = control().getSettings()
