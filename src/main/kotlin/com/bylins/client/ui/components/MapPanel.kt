@@ -960,11 +960,17 @@ private fun ZonePanel(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 100.dp),
+                    .heightIn(max = 160.dp),
                 color = colorScheme.background,
                 shape = MaterialTheme.shapes.small
             ) {
-                Box(modifier = Modifier.padding(4.dp)) {
+                // Заметки бывают длинными (по зоне — на десяток строк),
+                // поэтому превью прокручивается, а не обрезается молча
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     MarkdownText(
                         text = notes,
                         style = MaterialTheme.typography.bodySmall,

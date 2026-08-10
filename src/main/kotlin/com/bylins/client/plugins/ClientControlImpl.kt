@@ -213,7 +213,12 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             commands = (changes["commands"] as? List<String>) ?: existing.commands,
             enabled = changes["enabled"] as? Boolean ?: existing.enabled,
             gag = changes["gag"] as? Boolean ?: existing.gag,
-            priority = (changes["priority"] as? Number)?.toInt() ?: existing.priority
+            priority = (changes["priority"] as? Number)?.toInt() ?: existing.priority,
+            // Область приходит вложенным объектом, а не скаляром — без разбора
+            // она молча терялась, и проставить её существующему правилу было нельзя
+            scope = if (changes.containsKey("scope")) {
+                parseScope(changes["scope"] as? Map<String, Any?>)
+            } else existing.scope
         )
         if (profileId != null) {
             state.profileManager.updateTriggerInProfile(profileId, updated)
@@ -398,7 +403,10 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             alt = changes["alt"] as? Boolean ?: existing.alt,
             shift = changes["shift"] as? Boolean ?: existing.shift,
             commands = (changes["commands"] as? List<String>) ?: existing.commands,
-            enabled = changes["enabled"] as? Boolean ?: existing.enabled
+            enabled = changes["enabled"] as? Boolean ?: existing.enabled,
+            scope = if (changes.containsKey("scope")) {
+                parseScope(changes["scope"] as? Map<String, Any?>)
+            } else existing.scope
         )
         if (profileId != null) {
             state.profileManager.updateHotkeyInProfile(profileId, updated)
@@ -544,6 +552,50 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         ctx.removeRule(id)
         state.saveConfig()
         return true
+    }
+
+    // --- Зоны карты ---
+
+    private fun roomToMap(room: com.bylins.client.mapper.Room): Map<String, Any?> = mapOf(
+        "id" to room.id,
+        "name" to room.name,
+        "zone" to room.zone,
+        "terrain" to room.terrain,
+        "visited" to room.visited,
+        "notes" to room.notes,
+        "properties" to room.properties,
+        "exits" to room.exits.keys.map { it.name }
+    )
+
+    override fun getZone(zoneId: String): Map<String, Any?> {
+        val rooms = state.mapRooms.value.values.filter { it.zone == zoneId }
+        return mapOf(
+            "id" to zoneId,
+            "name" to state.zoneNames.value[zoneId],
+            "label" to state.zoneLabel(zoneId),
+            "note" to state.getZoneNotes(zoneId),
+            "properties" to state.getZoneProperties(zoneId),
+            "roomsCount" to rooms.size
+        )
+    }
+
+    override fun listZones(): List<Map<String, Any?>> {
+        val byZone = state.mapRooms.value.values.mapNotNull { it.zone }.groupingBy { it }.eachCount()
+        return byZone.entries.sortedBy { it.key }.map { (id, count) ->
+            mapOf(
+                "id" to id,
+                "name" to state.zoneNames.value[id],
+                "label" to state.zoneLabel(id),
+                "roomsCount" to count
+            )
+        }
+    }
+
+    override fun listZoneRooms(zoneId: String): List<Map<String, Any?>> =
+        state.mapRooms.value.values.filter { it.zone == zoneId }.sortedBy { it.id }.map { roomToMap(it) }
+
+    override fun setZoneNote(zoneId: String, note: String) {
+        state.setZoneNotes(zoneId, note)
     }
 
     /** Где игрок сейчас — чтобы зону не приходилось вычислять из id комнаты. */

@@ -102,6 +102,25 @@ class AiHttpServer(
         if (result) mapOf("ok" to true) else throw ApiError(404, notFound)
 
     /**
+     * Изменения для update-ручек: возвращаем список реально применённых полей,
+     * иначе `{"ok":true}` приходит и когда не изменилось ничего.
+     * Неизвестные ключи — ошибка: обычно это опечатка в имени поля.
+     */
+    private fun changesOf(req: JsonObject, known: Set<String>): Pair<Map<String, Any?>, List<String>> {
+        val changes = req.toChanges().filterKeys { it != "id" }
+        val unknown = changes.keys - known
+        if (unknown.isNotEmpty()) {
+            throw ApiError(400, "Неизвестные поля: ${unknown.joinToString(", ")}. Доступны: ${known.sorted().joinToString(", ")}")
+        }
+        return changes to changes.keys.toList()
+    }
+
+    private fun updated(applied: List<String>, ok: Boolean, notFound: String): Any {
+        if (!ok) throw ApiError(404, notFound)
+        return mapOf("ok" to true, "applied" to applied)
+    }
+
+    /**
      * Изменять состояние клиента может только сессия с правом записи —
      * иначе два агента незаметно перетирают настройки друг друга.
      */
@@ -299,9 +318,21 @@ class AiHttpServer(
                 "room" to api.getRoom(req.str("id") ?: throw ApiError(400, "Нужно id"))
             )
 
-            "search" -> mapOf(
-                "rooms" to api.searchRooms(req.str("query") ?: throw ApiError(400, "Нужно query"))
-            )
+            // Поиск по названию; с zoneId — все комнаты зоны, в том числе при
+            // пустом запросе (раньше пустой query просто возвращал ничего)
+            "search" -> {
+                val zoneId = req.str("zoneId")
+                val query = req.str("query").orEmpty()
+                val rooms = when {
+                    zoneId != null -> api.client.listZoneRooms(zoneId).let { list ->
+                        if (query.isBlank()) list
+                        else list.filter { (it["name"] as? String)?.contains(query, ignoreCase = true) == true }
+                    }
+                    query.isBlank() -> throw ApiError(400, "Нужно query или zoneId")
+                    else -> api.searchRooms(query)
+                }
+                mapOf("rooms" to rooms)
+            }
 
             // Путь до комнаты: направления для ходьбы и сами комнаты по порядку
             "path" -> {
@@ -336,6 +367,23 @@ class AiHttpServer(
             "properties" -> mapOf(
                 "properties" to api.getRoomProperties(req.str("roomId") ?: throw ApiError(400, "Нужно roomId"))
             )
+
+            // Зоны: метаданные, список и комнаты — раньше приходилось лезть в БД карты
+            "zones" -> mapOf("zones" to api.client.listZones())
+
+            "zone" -> api.client.getZone(req.str("zoneId") ?: throw ApiError(400, "Нужно zoneId"))
+
+            "zone/rooms" -> mapOf(
+                "rooms" to api.client.listZoneRooms(req.str("zoneId") ?: throw ApiError(400, "Нужно zoneId"))
+            )
+
+            "zone/note" -> {
+                requireControl()
+                val zoneId = req.str("zoneId") ?: throw ApiError(400, "Нужно zoneId")
+                api.client.setZoneNote(zoneId, req.str("note") ?: "")
+                audit("[${session.name}] заметка к зоне $zoneId")
+                mapOf("ok" to true)
+            }
 
             "zone/properties" -> mapOf(
                 "properties" to api.getZoneProperties(req.str("zoneId") ?: throw ApiError(400, "Нужно zoneId"))
@@ -438,13 +486,14 @@ class AiHttpServer(
                     autoReconnect = req.bool("autoReconnect", false)
                 )
             ))
-            "profiles/update" -> audited("изменён профиль", mutated(
-                client.updateConnectionProfile(
-                    req.str("id") ?: throw ApiError(400, "Нужно id"),
-                    req.toChanges()
-                ),
-                "Профиль подключения не найден: ${req.str("id")}"
-            ))
+            "profiles/update" -> {
+                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(
+                    req,
+                    setOf("name", "host", "port", "encoding", "mapFile", "autoReconnect")
+                )
+                audited("изменён профиль", updated(applied, client.updateConnectionProfile(id, changes), "Профиль подключения не найден: $id"))
+            }
             "profiles/delete" -> audited("удалён профиль", mutated(
                 client.deleteConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
                 "Профиль подключения не найден: ${req.str("id")}"
@@ -468,10 +517,14 @@ class AiHttpServer(
                     scope = scopeOf(req)
                 )
             ))
-            "triggers/update" -> audited("изменён триггер", mutated(
-                client.updateTrigger(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges()),
-                "Триггер не найден: ${req.str("id")}"
-            ))
+            "triggers/update" -> {
+                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(
+                    req,
+                    setOf("name", "pattern", "commands", "enabled", "gag", "priority", "scope")
+                )
+                audited("изменён триггер", updated(applied, client.updateTrigger(id, changes), "Триггер не найден: $id"))
+            }
             "triggers/delete" -> audited("удалён триггер", mutated(
                 client.deleteTrigger(req.str("id") ?: throw ApiError(400, "Нужно id")),
                 "Триггер не найден: ${req.str("id")}"
@@ -488,10 +541,11 @@ class AiHttpServer(
                     profileId = req.str("profileId")
                 )
             ))
-            "aliases/update" -> audited("изменён алиас", mutated(
-                client.updateAlias(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges()),
-                "Алиас не найден: ${req.str("id")}"
-            ))
+            "aliases/update" -> {
+                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(req, setOf("name", "pattern", "commands", "enabled", "priority"))
+                audited("изменён алиас", updated(applied, client.updateAlias(id, changes), "Алиас не найден: $id"))
+            }
             "aliases/delete" -> audited("удалён алиас", mutated(
                 client.deleteAlias(req.str("id") ?: throw ApiError(400, "Нужно id")),
                 "Алиас не найден: ${req.str("id")}"
@@ -512,10 +566,14 @@ class AiHttpServer(
                     scope = scopeOf(req)
                 )
             ))
-            "hotkeys/update" -> audited("изменён хоткей", mutated(
-                client.updateHotkey(req.str("id") ?: throw ApiError(400, "Нужно id"), req.toChanges()),
-                "Хоткей не найден: ${req.str("id")}"
-            ))
+            "hotkeys/update" -> {
+                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(
+                    req,
+                    setOf("key", "ctrl", "alt", "shift", "commands", "enabled", "scope")
+                )
+                audited("изменён хоткей", updated(applied, client.updateHotkey(id, changes), "Хоткей не найден: $id"))
+            }
             "hotkeys/delete" -> audited("удалён хоткей", mutated(
                 client.deleteHotkey(req.str("id") ?: throw ApiError(400, "Нужно id")),
                 "Хоткей не найден: ${req.str("id")}"

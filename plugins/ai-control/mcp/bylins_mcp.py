@@ -179,9 +179,10 @@ TOOLS = [
             "Действия чтения: room (текущая комната), get (по id), search (по названию), "
             "path (маршрут до комнаты: направления и список комнат), "
             "nearest (ближайшая комната по свойству или части названия), "
-            "properties, zone/properties. "
+            "properties, zones (список зон), zone (метаданные зоны), "
+            "zone/rooms (все комнаты зоны), zone/properties. "
             "Действия записи (требуют разрешения «Управление клиентом»): note, "
-            "property/set, property/remove, zone/property/set, highlight, highlight/clear."
+            "property/set, property/remove, zone/note, zone/property/set, highlight, highlight/clear."
         ),
         "inputSchema": {
             "type": "object",

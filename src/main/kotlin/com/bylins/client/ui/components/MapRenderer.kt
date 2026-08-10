@@ -778,6 +778,17 @@ fun findRoomAtPosition(
 }
 
 /**
+ * Укорачивает заметку для тултипа: по строкам, а не по символам — обрезка
+ * посреди `**жирного**` ломала разметку и оставляла сырые звёздочки.
+ */
+private fun shortenNote(note: String, maxLines: Int = 8, maxChars: Int = 400): String {
+    val lines = note.lines()
+    val limited = lines.take(maxLines).joinToString(System.lineSeparator())
+    val cut = if (limited.length > maxChars) limited.take(maxChars) else limited
+    return if (cut.length < note.length) "$cut…" else cut
+}
+
+/**
  * Компонент тултипа для комнаты
  */
 @Composable
@@ -892,11 +903,12 @@ fun RoomTooltip(
                 )
             }
 
-            // Заметка комнаты
+            // Заметка комнаты: тот же markdown, что в панели карты — иначе
+            // в тултипе видны сырые ** и *
             if (room.notes.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = room.notes.take(150) + if (room.notes.length > 150) "..." else "",
+                MarkdownText(
+                    text = shortenNote(room.notes),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
                     color = colorScheme.warning
                 )
@@ -984,8 +996,8 @@ fun RoomTooltip(
                         .background(colorScheme.divider.copy(alpha = 0.5f))
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Зона: " + zoneNotes.take(150) + if (zoneNotes.length > 150) "..." else "",
+                MarkdownText(
+                    text = "Зона: " + shortenNote(zoneNotes),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 9.sp),
                     color = colorScheme.onSurfaceVariant
                 )

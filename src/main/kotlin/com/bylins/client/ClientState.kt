@@ -495,6 +495,7 @@ class ClientState {
     val mapViewCenterRoomId get() = mapManager.viewCenterRoomId
 
     fun getZoneNotes(zoneName: String): String = mapManager.getZoneNotes(zoneName)
+    fun getZoneProperties(zoneId: String): Map<String, String> = mapManager.getZoneProperties(zoneId)
     fun setZoneNotes(zoneName: String, notes: String) = mapManager.setZoneNotes(zoneName, notes)
     fun getZoneName(zoneId: String): String? = mapManager.getZoneName(zoneId)
     fun setZoneName(zoneId: String, areaName: String) = mapManager.setZoneName(zoneId, areaName)
