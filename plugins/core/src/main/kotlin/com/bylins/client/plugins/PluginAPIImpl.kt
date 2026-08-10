@@ -80,6 +80,7 @@ class PluginAPIImpl(
     private val searchRoomsFunc: (String) -> List<Map<String, Any>>,
     private val findPathFunc: (String) -> List<String>?,
     private val findPathRoomIdsFunc: (String) -> List<String>?,
+    private val updateRoomFunc: (String, Map<String, Any?>) -> Boolean,
     private val setRoomNoteFunc: (String, String) -> Unit,
     private val setRoomColorFunc: (String, String?) -> Unit,
     private val setRoomZoneFunc: (String, String) -> Unit,
@@ -449,6 +450,9 @@ class PluginAPIImpl(
     // ============================================
     // Маппер - модификация
     // ============================================
+
+    override fun updateRoom(roomId: String, changes: Map<String, Any?>): Boolean =
+        updateRoomFunc(roomId, changes)
 
     override fun setRoomNote(roomId: String, note: String) = setRoomNoteFunc(roomId, note)
 

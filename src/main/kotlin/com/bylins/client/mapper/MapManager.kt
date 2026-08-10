@@ -457,6 +457,40 @@ class MapManager(
     }
 
     /**
+     * Правит поля самой комнаты — те, что маппер обычно заполняет сам.
+     *
+     * Нужно для мест, куда заходить нельзя (ДТ и прочие ловушки) и для
+     * комнат-заготовок, известных только по выходу соседа: пометить
+     * посещённой, дать имя и зону, не входя внутрь.
+     *
+     * Меняются только переданные поля; пустая строка в zone/terrain/color
+     * очищает поле.
+     *
+     * @return false, если комнаты нет на карте
+     */
+    fun updateRoom(
+        roomId: String,
+        name: String? = null,
+        zone: String? = null,
+        terrain: String? = null,
+        visited: Boolean? = null,
+        notes: String? = null,
+        color: String? = null
+    ): Boolean {
+        val room = _rooms.value[roomId] ?: return false
+        val updated = room.copy(
+            name = name ?: room.name,
+            zone = if (zone == null) room.zone else zone.ifBlank { null },
+            terrain = if (terrain == null) room.terrain else terrain.ifBlank { null },
+            visited = visited ?: room.visited,
+            notes = notes ?: room.notes,
+            color = if (color == null) room.color else color.ifBlank { null }
+        )
+        addRoom(updated)
+        return true
+    }
+
+    /**
      * Устанавливает заметку для комнаты
      */
     fun setRoomNote(roomId: String, note: String) {

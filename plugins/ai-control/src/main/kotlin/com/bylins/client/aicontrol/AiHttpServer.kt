@@ -18,6 +18,9 @@ import java.util.concurrent.Executors
 
 private val logger = KotlinLogging.logger("AiHttpServer")
 
+/** Поля комнаты, доступные через /map/room/set. */
+private val ROOM_FIELDS = setOf("name", "zone", "terrain", "visited", "notes", "color")
+
 /**
  * Локальный HTTP+JSON сервер для ИИ-агентов.
  *
@@ -107,7 +110,8 @@ class AiHttpServer(
      * Неизвестные ключи — ошибка: обычно это опечатка в имени поля.
      */
     private fun changesOf(req: JsonObject, known: Set<String>): Pair<Map<String, Any?>, List<String>> {
-        val changes = req.toChanges().filterKeys { it != "id" }
+        // id/roomId — адрес сущности, а не изменяемое поле
+        val changes = req.toChanges().filterKeys { it != "id" && it != "roomId" }
         val unknown = changes.keys - known
         if (unknown.isNotEmpty()) {
             throw ApiError(400, "Неизвестные поля: ${unknown.joinToString(", ")}. Доступны: ${known.sorted().joinToString(", ")}")
@@ -390,6 +394,21 @@ class AiHttpServer(
             )
 
             // --- Изменение (требует разрешения) ---
+
+            // Поля самой комнаты. Отдельная ручка нужна потому, что
+            // property/set пишет только произвольные key/value, а на отрисовку
+            // карты влияют именно поля: в комнату-ловушку (ДТ) не зайти, но
+            // пометить её посещённой и подписать надо.
+            "room/set" -> {
+                requireControl()
+                val roomId = req.str("roomId") ?: throw ApiError(400, "Нужно roomId")
+                val (changes, applied) = changesOf(req, ROOM_FIELDS)
+                if (changes.isEmpty()) throw ApiError(400, "Нечего менять: укажите ${ROOM_FIELDS.sorted().joinToString(", ")}")
+                val result = updated(applied, api.updateRoom(roomId, changes), "Комната $roomId не найдена на карте")
+                audit("[${session.name}] комната $roomId: ${applied.joinToString(", ")}")
+                result
+            }
+
             "note" -> {
                 requireControl()
                 api.setRoomNote(

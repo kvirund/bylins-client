@@ -2085,6 +2085,31 @@ class ClientState {
         mapManager.setRoomNote(roomId, note)
     }
 
+    /** Поля комнаты, доступные для правки снаружи (плагины, ИИ). */
+    val editableRoomFields = setOf("name", "zone", "terrain", "visited", "notes", "color")
+
+    /**
+     * Правит поля комнаты по набору изменений.
+     * Неизвестные ключи отсеивает вызывающий (ему же их и показывать).
+     */
+    fun updateRoom(roomId: String, changes: Map<String, Any?>): Boolean {
+        fun text(key: String): String? = if (changes.containsKey(key)) changes[key]?.toString() ?: "" else null
+        val visited = when (val raw = changes["visited"]) {
+            null -> null
+            is Boolean -> raw
+            else -> raw.toString().equals("true", ignoreCase = true)
+        }
+        return mapManager.updateRoom(
+            roomId = roomId,
+            name = text("name"),
+            zone = text("zone"),
+            terrain = text("terrain"),
+            visited = visited,
+            notes = text("notes"),
+            color = text("color")
+        )
+    }
+
     fun setRoomColor(roomId: String, color: String?) {
         mapManager.setRoomColor(roomId, color)
     }
@@ -2567,6 +2592,7 @@ class ClientState {
             findPathFunc = { targetId -> mapManager.findPathFromCurrent(targetId)?.map { it.shortName } },
             findPathRoomIdsFunc = { targetId -> mapManager.findPathRoomIds(targetId) },
             // Маппер - модификация
+            updateRoomFunc = { roomId, changes -> updateRoom(roomId, changes) },
             setRoomNoteFunc = { roomId, note -> mapManager.setRoomNote(roomId, note) },
             setRoomColorFunc = { roomId, color -> mapManager.setRoomColor(roomId, color) },
             setRoomZoneFunc = { roomId, zone -> mapManager.setRoomZone(roomId, zone) },

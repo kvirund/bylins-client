@@ -293,6 +293,60 @@ class MapManagerTest {
         assertTrue(shops.any { it.id == "200" })
     }
 
+    // --- Правка полей комнаты ---
+
+    @Test
+    fun `updateRoom помечает комнату посещённой, не заходя в неё`() {
+        val mapManager = createTestMapManager()
+        mapManager.addRoom(Room(id = "4344", name = "", visited = false))
+
+        val ok = mapManager.updateRoom("4344", name = "Дыра-ловушка", zone = "53", visited = true)
+
+        assertTrue(ok)
+        val room = mapManager.getRoom("4344")!!
+        assertTrue(room.visited)
+        assertEquals("Дыра-ловушка", room.name)
+        assertEquals("53", room.zone)
+    }
+
+    @Test
+    fun `updateRoom меняет только переданные поля`() {
+        val mapManager = createTestMapManager()
+        mapManager.addRoom(
+            Room(id = "100", name = "Изба", zone = "12", terrain = "город", notes = "тут кузнец", visited = true)
+        )
+
+        mapManager.updateRoom("100", name = "Кузница")
+
+        val room = mapManager.getRoom("100")!!
+        assertEquals("Кузница", room.name)
+        assertEquals("12", room.zone)
+        assertEquals("город", room.terrain)
+        assertEquals("тут кузнец", room.notes)
+        assertTrue(room.visited)
+    }
+
+    @Test
+    fun `updateRoom очищает поле пустой строкой`() {
+        val mapManager = createTestMapManager()
+        mapManager.addRoom(Room(id = "100", name = "Изба", zone = "12", terrain = "город", color = "#FF0000"))
+
+        mapManager.updateRoom("100", zone = "", terrain = "", color = "")
+
+        val room = mapManager.getRoom("100")!!
+        assertNull(room.zone)
+        assertNull(room.terrain)
+        assertNull(room.color)
+        assertEquals("Изба", room.name)
+    }
+
+    @Test
+    fun `updateRoom возвращает false для неизвестной комнаты`() {
+        val mapManager = createTestMapManager()
+
+        assertFalse(mapManager.updateRoom("нет-такой", visited = true))
+    }
+
     // --- Подсветка маршрута ---
 
     /** Цепочка комнат 100 → 200 → 300 → 400 на восток. */

@@ -183,7 +183,10 @@ TOOLS = [
             "nearest (ближайшая комната по свойству или части названия), "
             "properties, zones (список зон), zone (метаданные зоны), "
             "zone/rooms (все комнаты зоны), zone/properties. "
-            "Действия записи (требуют разрешения «Управление клиентом»): note, "
+            "Действия записи (требуют разрешения «Управление клиентом»): "
+            "room/set (поля комнаты: name, zone, terrain, visited, notes, color — "
+            "так помечают посещённой комнату, куда заходить нельзя, и подписывают "
+            "комнаты-заготовки; пустая строка очищает поле), note, "
             "property/set, property/remove, zone/note, zone/property/set, highlight, highlight/clear."
         ),
         "inputSchema": {
@@ -192,7 +195,11 @@ TOOLS = [
                 "action": {"type": "string", "description": "Действие из списка выше"},
                 "params": {
                     "type": "object",
-                    "description": "Параметры: id, roomId, query, targetRoomId, property, nameContains, key, value",
+                    "description": (
+                        "Параметры: id, roomId, query, targetRoomId, property, nameContains, key, value. "
+                        "Для room/set — roomId и меняемые поля, например "
+                        "{\"roomId\":\"4344\",\"visited\":true,\"name\":\"ДТ\"}"
+                    ),
                 },
             },
             "required": ["action"],
@@ -309,6 +316,12 @@ def handle(request):
 
 
 def main():
+    # На Windows труба по умолчанию получает кодировку локали (cp1252), в
+    # которой нет кириллицы: без этого мост падает на первом же русском тексте
+    # — хоть в описании инструмента, хоть в выводе игры.
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
+
     for raw in sys.stdin:
         raw = raw.strip()
         if not raw:

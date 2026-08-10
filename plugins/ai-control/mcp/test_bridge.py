@@ -102,6 +102,11 @@ check("ошибка инструмента не рвёт связь", r["result"
 r = rpc({"jsonrpc":"2.0","id":70,"method":"tools/call","params":{"name":"mud_map","arguments":{"action":"room"}}})
 check("mud_map", "Дом десятника" in r["result"]["content"][0]["text"], r)
 
+rpc({"jsonrpc":"2.0","id":71,"method":"tools/call","params":{
+    "name":"mud_map","arguments":{"action":"room/set","params":{"roomId":"4344","visited":True,"name":"ДТ"}}}})
+room_set = [c for c in calls if c[0] == "/map/room/set"]
+check("mud_map room/set шлёт поля", room_set and room_set[0][2] == {"roomId":"4344","visited":True,"name":"ДТ"}, room_set)
+
 r = rpc({"jsonrpc":"2.0","id":75,"method":"tools/call","params":{"name":"mud_take_lease","arguments":{}}})
 check("mud_take_lease", "получено" in r["result"]["content"][0]["text"], r)
 
