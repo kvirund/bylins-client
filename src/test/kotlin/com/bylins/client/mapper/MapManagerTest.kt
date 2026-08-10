@@ -1,5 +1,6 @@
 package com.bylins.client.mapper
 
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -9,13 +10,27 @@ import kotlin.test.assertFalse
 
 class MapManagerTest {
 
+    private val tempDbs = mutableListOf<java.io.File>()
+
+    /**
+     * Каждому тесту — своя временная база.
+     *
+     * По умолчанию MapManager открывает ~/.bylins-client/maps/maps.db — карту
+     * живого клиента, и clearMap() ниже стирал её при каждом прогоне тестов.
+     */
     private fun createTestMapManager(): MapManager {
-        val manager = MapManager()
-        // Clear any rooms loaded from autosave
+        val file = java.io.File.createTempFile("bylins-map-test", ".db").also { tempDbs.add(it) }
+        val manager = MapManager(dbFileName = file.absolutePath)
         manager.clearMap()
         // Enable mapping for tests
         manager.setMapEnabled(true)
         return manager
+    }
+
+    @AfterTest
+    fun cleanUp() {
+        tempDbs.forEach { it.delete() }
+        tempDbs.clear()
     }
 
     @Test
