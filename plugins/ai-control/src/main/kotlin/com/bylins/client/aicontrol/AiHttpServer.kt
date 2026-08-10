@@ -619,6 +619,10 @@ class AiHttpServer(
             // Где игрок сейчас: комната и зона с человекочитаемой подписью
             "where" -> client.getLocation()
 
+            // Снимок MSDP: структурированные данные вместо парсинга текста.
+            // vars — выборочно, иначе всё, что прислал сервер.
+            "msdp" -> client.getMsdp(req.strList("vars").ifEmpty { null })
+
             // Настройки клиента
             "settings" -> mapOf("settings" to client.getSettings())
             "settings/update" -> audited("изменены настройки", mapOf(

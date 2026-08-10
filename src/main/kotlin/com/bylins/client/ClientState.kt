@@ -1166,7 +1166,16 @@ class ClientState {
         return room.toMap()
     }
 
+    /** Когда каждая MSDP-переменная обновлялась последний раз (epoch ms). */
+    private val _msdpUpdatedAt = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val msdpUpdatedAt: StateFlow<Map<String, Long>> = _msdpUpdatedAt
+
     fun updateMsdpData(data: Map<String, Any>) {
+        // Свежесть важна потребителям: по снимку не видно, пришло значение
+        // секунду назад или полчаса назад
+        val now = System.currentTimeMillis()
+        _msdpUpdatedAt.value = _msdpUpdatedAt.value + data.keys.associateWith { now }
+
         _msdpData.value = _msdpData.value + data
 
         // Проверяем специальные переменные (ответы на LIST)

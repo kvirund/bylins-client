@@ -554,6 +554,22 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         return true
     }
 
+    // --- MSDP ---
+
+    override fun getMsdp(vars: List<String>?): Map<String, Any?> {
+        val all = state.msdpData.value
+        val updated = state.msdpUpdatedAt.value
+        val selected = if (vars.isNullOrEmpty()) all else all.filterKeys { it in vars.toSet() }
+        return mapOf(
+            "enabled" to state.msdpEnabled.value,
+            "variables" to selected,
+            "updatedAt" to updated.filterKeys { it in selected.keys },
+            // Что сервер вообще умеет присылать — чтобы не гадать, почему
+            // запрошенной переменной нет в снимке
+            "reportable" to state.msdpReportableVariables.value
+        )
+    }
+
     // --- Зоны карты ---
 
     private fun roomToMap(room: com.bylins.client.mapper.Room): Map<String, Any?> = mapOf(

@@ -149,6 +149,8 @@ TOOLS = [
             "hotkeys, hotkeys/create, hotkeys/update, hotkeys/delete, aliases/update, "
             "tabs, tabs/create, tabs/delete, where (текущая комната и зона), "
             "settings, settings/update, logs, logs/start, logs/stop, "
+            "msdp (структурированные данные сервера: ROOM, LEVEL, STATE и прочее; "
+            "params.vars — выбрать конкретные), "
             "context/rules, context/rules/create, context/rules/delete, context/queue, "
             "characters, characters/create, characters/push, characters/pop, characters/requires."
         ),

@@ -90,6 +90,7 @@ internal class GuardedClientControl(
     override fun deleteContextRule(id: String): Boolean = control().deleteContextRule(id)
     override fun listContextQueue(): List<Map<String, Any?>> = control().listContextQueue()
     override fun getLocation(): Map<String, Any?> = control().getLocation()
+    override fun getMsdp(vars: List<String>?): Map<String, Any?> = control().getMsdp(vars)
     override fun getZone(zoneId: String): Map<String, Any?> = control().getZone(zoneId)
     override fun listZones(): List<Map<String, Any?>> = control().listZones()
     override fun listZoneRooms(zoneId: String): List<Map<String, Any?>> = control().listZoneRooms(zoneId)
