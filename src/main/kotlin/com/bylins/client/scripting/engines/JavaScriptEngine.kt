@@ -334,6 +334,24 @@ class JavaScriptEngine : ScriptEngine {
         }
     }
 
+    /**
+     * Вызов с пробросом ошибок — для явного вызова игроком.
+     *
+     * [callFunctionInContext] глушит всё подряд, и это правильно для событий:
+     * у скрипта может не быть on_line, и молчать тут нормально. Но когда
+     * функцию зовут с клавиши, «ничего не произошло» неотличимо от опечатки
+     * в имени, поэтому здесь ошибки должны долетать до вызывающего.
+     */
+    fun callFunctionInContextStrict(
+        context: ScriptContextWrapper,
+        functionName: String,
+        vararg args: Any?
+    ): Any? {
+        val invocable = context.engine as? Invocable
+            ?: throw IllegalStateException("движок не поддерживает вызов функций")
+        return invocable.invokeFunction(functionName, *args)
+    }
+
     override fun shutdown() {
         scriptContexts.clear()
         engineManager = null

@@ -79,6 +79,23 @@ data class Script(
     }
 
     /**
+     * Вызывает функцию, не пряча ошибки.
+     *
+     * В отличие от [call], нужна там, где вызов инициировал игрок: пропавшую
+     * функцию и падение внутри неё он должен увидеть, а не гадать, почему
+     * клавиша молчит.
+     */
+    fun callStrict(functionName: String, vararg args: Any?): Any? {
+        if (!enabled) throw IllegalStateException("скрипт отключён")
+        if (loadError != null) throw IllegalStateException("скрипт загружен с ошибкой: $loadError")
+
+        if (context != null && engine is JavaScriptEngine) {
+            return engine.callFunctionInContextStrict(context, functionName, *args)
+        }
+        return engine.callFunction(functionName, *args)
+    }
+
+    /**
      * Скрипт загружен с ошибкой
      */
     val hasFailed: Boolean get() = loadError != null

@@ -52,6 +52,21 @@ class CommandProcessor(
     private val getPluginManager: () -> PluginManager?
 ) {
     /**
+     * Ищет скрипт по имени, как его набирает игрок.
+     *
+     * Имя хранится без расширения, а набирают и «first-attack» и
+     * «first-attack.js» — раньше второй вариант не находился, хотя подсказка
+     * обещала оба.
+     */
+    private fun findScript(scripts: List<Script>, name: String): Script? {
+        val withoutExtension = name.substringBeforeLast(".")
+        return scripts.find {
+            it.name.equals(name, ignoreCase = true) ||
+                it.name.equals(withoutExtension, ignoreCase = true)
+        }
+    }
+
+    /**
      * Обрабатывает команды навигации по карте
      * Возвращает true если команда была обработана
      */
@@ -230,8 +245,8 @@ class CommandProcessor(
                 return true
             }
 
-            command.startsWith("#script") -> {
-                val args = command.substring(7).trim()
+            command == "#script" || command.startsWith("#script ") -> {
+                val args = command.removePrefix("#script").trim()
                 val parts = args.split(" ", limit = 2)
                 val action = parts.getOrNull(0) ?: ""
                 val scriptName = parts.getOrNull(1)?.trim() ?: ""
@@ -270,11 +285,7 @@ class CommandProcessor(
                             return true
                         }
                         // Ищем скрипт по имени (без расширения или с расширением)
-                        val scripts = scriptManager.scripts.value
-                        val script = scripts.find {
-                            it.name.equals(scriptName, ignoreCase = true) ||
-                            it.name.substringBeforeLast(".").equals(scriptName, ignoreCase = true)
-                        }
+                        val script = findScript(scriptManager.scripts.value, scriptName)
                         if (script == null) {
                             context.addLocalOutput("\u001B[1;31m[#script] Скрипт '$scriptName' не найден\u001B[0m")
                             return true
@@ -297,11 +308,7 @@ class CommandProcessor(
                             context.addLocalOutput("\u001B[1;31m[#script] ScriptManager не инициализирован\u001B[0m")
                             return true
                         }
-                        val scripts = scriptManager.scripts.value
-                        val script = scripts.find {
-                            it.name.equals(scriptName, ignoreCase = true) ||
-                            it.name.substringBeforeLast(".").equals(scriptName, ignoreCase = true)
-                        }
+                        val script = findScript(scriptManager.scripts.value, scriptName)
                         if (script == null) {
                             context.addLocalOutput("\u001B[1;31m[#script] Скрипт '$scriptName' не найден\u001B[0m")
                             return true
@@ -314,12 +321,58 @@ class CommandProcessor(
                         }
                     }
 
+                    // #script call <имя> <функция> [аргументы] — вызвать функцию скрипта.
+                    //
+                    // Единственный способ повесить скриптовую логику на клавишу:
+                    // хоткей умеет только слать строки, а скрипт до сих пор мог
+                    // реагировать лишь на вывод сервера. Команда гасится локально
+                    // (возвращаем true до sendRaw), поэтому серверу ничего не уходит
+                    // и «Чаво?» в ответ не прилетает.
+                    action == "call" -> {
+                        val callArgs = scriptName.split(" ").filter { it.isNotEmpty() }
+                        if (callArgs.size < 2) {
+                            context.addLocalOutput("\u001B[1;33m[#script] Использование: #script call <имя> <функция> [аргументы...]\u001B[0m")
+                            return true
+                        }
+                        if (scriptManager == null) {
+                            context.addLocalOutput("\u001B[1;31m[#script] ScriptManager не инициализирован\u001B[0m")
+                            return true
+                        }
+                        val targetName = callArgs[0]
+                        val functionName = callArgs[1]
+                        val functionArgs = callArgs.drop(2)
+
+                        val script = findScript(scriptManager.scripts.value, targetName)
+                        if (script == null) {
+                            context.addLocalOutput("\u001B[1;31m[#script] Скрипт '$targetName' не найден\u001B[0m")
+                            return true
+                        }
+                        if (!script.enabled || script.hasFailed) {
+                            context.addLocalOutput("\u001B[1;31m[#script] Скрипт '${script.name}' отключён или загружен с ошибкой\u001B[0m")
+                            return true
+                        }
+                        try {
+                            val result = script.callStrict(functionName, *functionArgs.toTypedArray())
+                            logger.info { "Script call: ${script.name}.$functionName -> $result" }
+                        } catch (e: NoSuchMethodException) {
+                            // Чаще всего это опечатка в хоткее — молчать нельзя
+                            context.addLocalOutput(
+                                "[1;31m[#script] В скрипте '${script.name}' нет функции '$functionName'[0m"
+                            )
+                        } catch (e: Exception) {
+                            context.addLocalOutput(
+                                "[1;31m[#script] Ошибка вызова ${script.name}.$functionName: ${e.message}[0m"
+                            )
+                        }
+                    }
+
                     else -> {
                         val sb = StringBuilder()
                         sb.append("\u001B[1;33m[#script] Использование:\u001B[0m\n")
                         sb.append("  #script list - список загруженных скриптов\n")
                         sb.append("  #script reload <имя> - перезагрузить скрипт\n")
-                        sb.append("  #script unload <имя> - выгрузить скрипт")
+                        sb.append("  #script unload <имя> - выгрузить скрипт\n")
+                        sb.append("  #script call <имя> <функция> [аргументы...] - вызвать функцию скрипта")
                         context.addLocalOutput(sb.toString())
                     }
                 }
@@ -468,6 +521,7 @@ class CommandProcessor(
             |  #script               - Список загруженных скриптов
             |  #script reload <имя>  - Перезагрузить скрипт
             |  #script unload <имя>  - Выгрузить скрипт
+            |  #script call <имя> <функция> [аргументы...] - Вызвать функцию скрипта (можно повесить на хоткей)
             |  Поддержка JavaScript, Python (Jython), Lua (LuaJ)
             |  Размещайте скрипты в директории: scripts/
             |
