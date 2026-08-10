@@ -38,14 +38,18 @@ jobs:
         run: python plugins/ai-control/mcp/test_bridge.py
 
   bundle:
-    name: Дистрибутив (${{ matrix.os }})
+    name: Дистрибутив (${{ matrix.platform }})
     needs: tests
     runs-on: ${{ matrix.os }}
     strategy:
       # Одна платформа упала — вторую всё равно доводим до конца
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-latest
+            platform: linux
 
     steps:
       - uses: actions/checkout@v4
@@ -58,13 +62,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # Compose тянет платформозависимый Skiko и пакует свою JRE, поэтому
-      # архив собирается на каждой ОС свой — кроссплатформенного тут не бывает
-      - name: Собрать архив
-        run: ./gradlew releaseBundle
+      # комплект собирается на каждой ОС свой — кроссплатформенного тут не бывает
+      - name: Собрать дистрибутив
+        run: ./gradlew releaseDist
 
+      # Каталогом, а не архивом: upload-artifact пакует сам, и готовый zip
+      # внутри давал бы архив в архиве
       - uses: actions/upload-artifact@v4
         with:
-          name: bylins-client-${{ matrix.os }}
-          path: build/distributions/*.zip
+          name: bylins-client-${{ matrix.platform }}
+          path: build/release/*/
           retention-days: 30
           if-no-files-found: error

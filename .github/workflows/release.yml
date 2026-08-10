@@ -34,12 +34,19 @@ jobs:
           # Нужна вся история: тег вешаем на коммит, из которого собран артефакт
           fetch-depth: 0
 
-      - name: Скачать артефакты сборки
+      # Артефакты лежат каталогами: архив собираем здесь, чтобы у скачавшего
+      # был один zip, а не архив в архиве
+      - name: Скачать артефакты сборки и упаковать
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh run download "${{ inputs.run_id }}" --dir artifacts
-          find artifacts -name '*.zip' -print
+          mkdir -p release
+          for dir in artifacts/*/; do
+            name=$(basename "$dir")
+            (cd "$dir" && zip -qr "$GITHUB_WORKSPACE/release/$name.zip" .)
+          done
+          ls -lh release/
 
       - name: Определить коммит сборки
         id: source
@@ -55,7 +62,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ inputs.tag }}" \
-            $(find artifacts -name '*.zip') \
+            release/*.zip \
             --target "${{ steps.source.outputs.sha }}" \
             --title "${{ inputs.tag }}" \
             --generate-notes \

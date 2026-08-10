@@ -95,6 +95,21 @@ compose.desktop {
             packageName = "Bylins Client"
             packageVersion = "1.0.0"
 
+            // JRE собирается через jlink и по умолчанию урезана до минимума:
+            // распакованный дистрибутив падал с «java/sql/Driver» ещё до окна.
+            // Список получен jdeps по runtime-classpath, а не подобран на глаз:
+            //   jdeps --print-module-deps --ignore-missing-deps -cp "build/app/deps/*" build/libs/*.jar
+            modules(
+                "java.sql",         // SQLite: карта мира
+                "java.scripting",   // движки скриптов: JS, Python, Lua
+                "java.naming",      // тянет logback и JDBC
+                "java.management",  // статистика сессии
+                "java.instrument",
+                "jdk.unsupported",  // sun.misc.Unsafe, нужен библиотекам
+                "jdk.xml.dom",      // Jython
+                "jdk.crypto.ec"     // TLS: без него не открыть https
+            )
+
             // Icons (optional - uncomment when files exist)
             // windows { iconFile.set(project.file("src/main/resources/icon.ico")) }
             // linux { iconFile.set(project.file("src/main/resources/icon.png")) }
@@ -509,15 +524,17 @@ val osTag: String = System.getProperty("os.name").lowercase().let { name ->
  * Отдельно от packageApp, потому что тот не кладёт плагины — а без ассистента и
  * ai-control клиент неполон. Собирается на каждой платформе своя: Compose тянет
  * платформозависимый Skiko, кроссплатформенного архива тут не бывает.
+ *
+ * Каталогом, а не архивом: GitHub Actions упаковывает артефакт сам, и готовый
+ * zip внутри давал бы архив в архиве.
  */
-val releaseBundle by tasks.registering(Zip::class) {
+val releaseDist by tasks.registering(Sync::class) {
     group = "distribution"
-    description = "Архив для релиза: приложение, плагины и скрипты"
+    description = "Каталог для релиза: приложение, плагины и скрипты"
 
     dependsOn("createDistributable", ":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
 
-    archiveFileName.set("bylins-client-$version-$osTag.zip")
-    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    into(layout.buildDirectory.dir("release/bylins-client-$version-$osTag"))
 
     from(layout.buildDirectory.dir("compose/binaries/main/app/Bylins Client"))
 
@@ -538,6 +555,18 @@ val releaseBundle by tasks.registering(Zip::class) {
         into("mcp")
         include("bylins_mcp.py")
     }
+}
+
+/** Тот же комплект архивом — для раздачи вручную, вне CI. */
+val releaseBundle by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Архив для релиза: приложение, плагины и скрипты"
+
+    dependsOn(releaseDist)
+
+    archiveFileName.set("bylins-client-$version-$osTag.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+    from(releaseDist.map { it.destinationDir })
 
     doLast {
         val file = archiveFile.get().asFile
