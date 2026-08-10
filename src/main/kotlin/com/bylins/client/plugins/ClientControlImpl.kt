@@ -519,6 +519,30 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         return tab.id
     }
 
+    override fun updateTab(id: String, changes: Map<String, Any?>): Boolean {
+        val existing = state.tabs.value.find { it.id == id } ?: return false
+        @Suppress("UNCHECKED_CAST")
+        val patterns = (changes["patterns"] as? List<String>)?.map {
+            com.bylins.client.tabs.TabFilter(pattern = it.toRegex())
+        } ?: existing.filters
+        val mode = (changes["captureMode"] as? String)?.let {
+            runCatching { com.bylins.client.tabs.CaptureMode.valueOf(it.uppercase()) }
+                .getOrDefault(existing.captureMode)
+        } ?: existing.captureMode
+        val profileTab = changes["profileTab"] as? Boolean ?: existing.profileTab
+        state.updateTab(
+            id = id,
+            name = changes["name"] as? String ?: existing.name,
+            filters = patterns,
+            captureMode = mode,
+            profileTab = profileTab,
+            profileLog = changes["profileLog"] as? Boolean ?: existing.profileLog,
+            persistContent = changes["persistContent"] as? Boolean ?: existing.persistContent,
+            timestamps = changes["timestamps"] as? Boolean ?: existing.timestamps
+        )
+        return true
+    }
+
     override fun deleteTab(id: String): Boolean {
         if (state.tabs.value.none { it.id == id }) return false
         state.removeTab(id)

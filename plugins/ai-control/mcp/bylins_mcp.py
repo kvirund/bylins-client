@@ -147,7 +147,7 @@ TOOLS = [
             "profiles/update, profiles/delete, profiles/select, triggers, triggers/create, "
             "triggers/update, triggers/delete, aliases, aliases/create, aliases/delete, "
             "hotkeys, hotkeys/create, hotkeys/update, hotkeys/delete, aliases/update, "
-            "tabs, tabs/create, tabs/delete, where (текущая комната и зона), "
+            "tabs, tabs/create, tabs/update, tabs/delete, where (текущая комната и зона), "
             "settings, settings/update, logs, logs/start, logs/stop, "
             "msdp (структурированные данные сервера: ROOM, LEVEL, STATE и прочее; "
             "params.vars — выбрать конкретные), "

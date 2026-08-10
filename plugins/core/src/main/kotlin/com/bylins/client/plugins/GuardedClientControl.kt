@@ -79,6 +79,8 @@ internal class GuardedClientControl(
         name: String, patterns: List<String>, captureMode: String,
         profileTab: Boolean, profileLog: Boolean, persistContent: Boolean, timestamps: Boolean
     ): String = control().createTab(name, patterns, captureMode, profileTab, profileLog, persistContent, timestamps)
+    override fun updateTab(id: String, changes: Map<String, Any?>): Boolean =
+        control().updateTab(id, changes)
     override fun deleteTab(id: String): Boolean = control().deleteTab(id)
 
     // --- Контекстные команды ---

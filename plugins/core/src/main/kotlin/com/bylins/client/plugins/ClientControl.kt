@@ -144,6 +144,17 @@ interface ClientControl {
         timestamps: Boolean = false
     ): String
 
+    /**
+     * Правит вкладку: name, patterns, captureMode, profileTab, profileLog,
+     * persistContent, timestamps. Меняются только переданные поля.
+     *
+     * Без этого поправить вкладку снаружи можно было лишь пересозданием — с
+     * новым id и потерей накопленного лога.
+     *
+     * @return false, если вкладки с таким id нет
+     */
+    fun updateTab(id: String, changes: Map<String, Any?>): Boolean
+
     fun deleteTab(id: String): Boolean
 
     // --- Контекстные команды ---

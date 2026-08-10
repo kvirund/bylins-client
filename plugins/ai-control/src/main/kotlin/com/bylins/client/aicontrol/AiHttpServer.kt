@@ -32,6 +32,8 @@ private val ALIAS_FIELDS =
     setOf("name", "pattern", "commands", "enabled", "priority", "profileId")
 private val HOTKEY_FIELDS =
     setOf("key", "ctrl", "alt", "shift", "commands", "enabled", "scope", "profileId")
+private val TAB_FIELDS =
+    setOf("name", "patterns", "captureMode", "profileTab", "profileLog", "persistContent", "timestamps")
 private val CONTEXT_RULE_FIELDS =
     setOf("command", "pattern", "scope", "ttl", "ttlMinutes", "priority", "enabled", "profileId")
 
@@ -700,6 +702,11 @@ class AiHttpServer(
                     timestamps = req.bool("timestamps", false)
                 )
             ))
+            "tabs/update" -> audited("изменены вкладки", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(item, TAB_FIELDS)
+                asMap(updated(applied, client.updateTab(id, changes), "Вкладка не найдена: $id"))
+            })
             "tabs/delete" -> audited("удалена вкладка", mutated(
                 client.deleteTab(req.str("id") ?: throw ApiError(400, "Нужно id")),
                 "Вкладка не найдена: ${req.str("id")}"
