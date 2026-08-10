@@ -1,0 +1,70 @@
+name: Сборка
+
+# Артефакты собираются на каждый push и живут 30 дней. Любой из них можно
+# превратить в релиз workflow-ом «Релиз», указав номер этой сборки.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Тесты
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Прогнать тесты
+        run: ./gradlew test
+
+      # Отчёты нужны именно когда упало — иначе по логу не понять, что сломалось
+      - name: Отчёты тестов
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/**'
+          retention-days: 7
+
+      - name: Проверить MCP-мост
+        run: python plugins/ai-control/mcp/test_bridge.py
+
+  bundle:
+    name: Дистрибутив (${{ matrix.os }})
+    needs: tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Одна платформа упала — вторую всё равно доводим до конца
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Compose тянет платформозависимый Skiko и пакует свою JRE, поэтому
+      # архив собирается на каждой ОС свой — кроссплатформенного тут не бывает
+      - name: Собрать архив
+        run: ./gradlew releaseBundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bylins-client-${{ matrix.os }}
+          path: build/distributions/*.zip
+          retention-days: 30
+          if-no-files-found: error

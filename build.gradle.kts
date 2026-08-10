@@ -491,3 +491,56 @@ val packageJar by tasks.registering(Zip::class) {
         println("Note: Requires Java 17+ installed")
     }
 }
+
+// --- Сборка для релиза ---
+
+/** Метка платформы в имени архива: сборка Compose всегда под ОС, где её делали. */
+val osTag: String = System.getProperty("os.name").lowercase().let { name ->
+    when {
+        name.contains("win") -> "windows"
+        name.contains("mac") -> "macos"
+        else -> "linux"
+    }
+}
+
+/**
+ * Готовый к запуску комплект: приложение с собственной JRE, плагины и скрипты.
+ *
+ * Отдельно от packageApp, потому что тот не кладёт плагины — а без ассистента и
+ * ai-control клиент неполон. Собирается на каждой платформе своя: Compose тянет
+ * платформозависимый Skiko, кроссплатформенного архива тут не бывает.
+ */
+val releaseBundle by tasks.registering(Zip::class) {
+    group = "distribution"
+    description = "Архив для релиза: приложение, плагины и скрипты"
+
+    dependsOn("createDistributable", ":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+
+    archiveFileName.set("bylins-client-$version-$osTag.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+
+    from(layout.buildDirectory.dir("compose/binaries/main/app/Bylins Client"))
+
+    from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar")) {
+        into("plugins")
+    }
+    from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar")) {
+        into("plugins")
+    }
+
+    from(scriptsDir) {
+        into("scripts")
+        exclude("*.disabled")
+    }
+
+    // Мост для ИИ-агентов: чистый Python без зависимостей, полезен рядом с клиентом
+    from("plugins/ai-control/mcp") {
+        into("mcp")
+        include("bylins_mcp.py")
+    }
+
+    doLast {
+        val file = archiveFile.get().asFile
+        println("Архив: ${file.absolutePath} (${file.length() / 1024 / 1024} МБ)")
+    }
+}

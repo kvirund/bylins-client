@@ -1,0 +1,62 @@
+name: Релиз
+
+# Релиз делается из уже собранной сборки, а не пересборкой: выкладывается
+# ровно то, что проверено, и артефакт не меняется между проверкой и релизом.
+#
+# Как пользоваться:
+#   1. Открыть нужную сборку во вкладке Actions, взять её номер из адреса
+#      (.../actions/runs/ЧИСЛО).
+#   2. Запустить этот workflow, указав номер и тег.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Номер сборки (Actions → нужный запуск → число в адресе)'
+        required: true
+      tag:
+        description: 'Тег релиза, например v1.0.0'
+        required: true
+      prerelease:
+        description: 'Пометить как предварительный'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Выложить релиз
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Нужна вся история: тег вешаем на коммит, из которого собран артефакт
+          fetch-depth: 0
+
+      - name: Скачать артефакты сборки
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ inputs.run_id }}" --dir artifacts
+          find artifacts -name '*.zip' -print
+
+      - name: Определить коммит сборки
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh run view "${{ inputs.run_id }}" --json headSha --jq .headSha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Сборка сделана из коммита $sha"
+
+      - name: Создать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.tag }}" \
+            $(find artifacts -name '*.zip') \
+            --target "${{ steps.source.outputs.sha }}" \
+            --title "${{ inputs.tag }}" \
+            --generate-notes \
+            ${{ inputs.prerelease && '--prerelease' || '' }}
