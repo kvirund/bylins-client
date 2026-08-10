@@ -292,4 +292,73 @@ class MapManagerTest {
         assertTrue(shops.any { it.id == "100" })
         assertTrue(shops.any { it.id == "200" })
     }
+
+    // --- Подсветка маршрута ---
+
+    /** Цепочка комнат 100 → 200 → 300 → 400 на восток. */
+    private fun createCorridor(mapManager: MapManager) {
+        val ids = listOf("100", "200", "300", "400")
+        ids.forEach { mapManager.addRoom(Room(id = it, name = "Room $it", visited = true)) }
+        ids.zipWithNext().forEach { (from, to) ->
+            mapManager.getRoom(from)!!.exits[Direction.EAST] = Exit(targetRoomId = to)
+            mapManager.getRoom(to)!!.exits[Direction.WEST] = Exit(targetRoomId = from)
+        }
+    }
+
+    @Test
+    fun `подсветка маршрута сокращается по мере движения`() {
+        val mapManager = createTestMapManager()
+        createCorridor(mapManager)
+        mapManager.setCurrentRoom("100")
+        mapManager.setPathHighlight(setOf("200", "300", "400"), "400")
+
+        mapManager.setCurrentRoom("200")
+
+        assertEquals(setOf("300", "400"), mapManager.pathHighlightRoomIds.value)
+        assertEquals("400", mapManager.pathHighlightTargetId.value)
+    }
+
+    @Test
+    fun `подсветка снимается по приходу в цель`() {
+        val mapManager = createTestMapManager()
+        createCorridor(mapManager)
+        mapManager.setCurrentRoom("100")
+        mapManager.setPathHighlight(setOf("200", "300", "400"), "400")
+
+        mapManager.setCurrentRoom("200")
+        mapManager.setCurrentRoom("300")
+        mapManager.setCurrentRoom("400")
+
+        assertTrue(mapManager.pathHighlightRoomIds.value.isEmpty())
+        assertNull(mapManager.pathHighlightTargetId.value)
+    }
+
+    @Test
+    fun `сойдя с маршрута игрок видит путь от новой комнаты`() {
+        val mapManager = createTestMapManager()
+        createCorridor(mapManager)
+        // Ответвление от 100 на север
+        mapManager.addRoom(Room(id = "500", name = "Room 500", visited = true))
+        mapManager.getRoom("100")!!.exits[Direction.NORTH] = Exit(targetRoomId = "500")
+        mapManager.getRoom("500")!!.exits[Direction.SOUTH] = Exit(targetRoomId = "100")
+
+        mapManager.setCurrentRoom("100")
+        mapManager.setPathHighlight(setOf("200", "300", "400"), "400")
+
+        mapManager.setCurrentRoom("500")
+
+        assertEquals(setOf("100", "200", "300", "400"), mapManager.pathHighlightRoomIds.value)
+    }
+
+    @Test
+    fun `подсветка без цели не трогается`() {
+        val mapManager = createTestMapManager()
+        createCorridor(mapManager)
+        mapManager.setCurrentRoom("100")
+        mapManager.setPathHighlight(setOf("300"), null)
+
+        mapManager.setCurrentRoom("200")
+
+        assertEquals(setOf("300"), mapManager.pathHighlightRoomIds.value)
+    }
 }

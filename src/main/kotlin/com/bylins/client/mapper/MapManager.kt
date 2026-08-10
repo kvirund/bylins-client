@@ -163,6 +163,38 @@ class MapManager(
 
             // Update active path
             updateActivePath(previousRoomId, roomId)
+
+            // Подсветка маршрута на карте тоже должна догонять игрока.
+            // Только при смене комнаты: MSDP шлёт комнату на каждый промпт,
+            // а поиск пути гонять на каждое сообщение сервера незачем.
+            if (previousRoomId != roomId) {
+                updatePathHighlight(roomId)
+            }
+        }
+    }
+
+    /**
+     * Пересчитывает подсветку маршрута от текущей комнаты.
+     *
+     * Подсветку ставят снаружи (speedwalk, «найти путь», плагины) один раз —
+     * без пересчёта на карте так и остаётся путь от той клетки, где его
+     * построили, хотя игрок уже ушёл вперёд.
+     */
+    private fun updatePathHighlight(currentRoomId: String) {
+        val targetId = _pathHighlightTargetId.value ?: return
+
+        // Дошли — подсветка больше не нужна
+        if (currentRoomId == targetId) {
+            clearPathHighlight()
+            return
+        }
+
+        val roomIds = getPathRoomIds(currentRoomId, targetId)
+        if (roomIds.isNullOrEmpty()) {
+            // Отсюда до цели дороги нет — лучше убрать подсветку, чем врать старой
+            clearPathHighlight()
+        } else {
+            _pathHighlightRoomIds.value = roomIds.toSet()
         }
     }
 
