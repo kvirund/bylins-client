@@ -86,8 +86,7 @@ compose.desktop {
             "-Dstderr.encoding=UTF-8",
             "-Dsun.stdout.encoding=UTF-8",
             "-Dsun.stderr.encoding=UTF-8",
-            "-DCONSOLE_CHARSET=UTF-8",
-            "-Dbylins.plugins.dir=build/run/plugins"
+            "-DCONSOLE_CHARSET=UTF-8"
         )
 
         nativeDistributions {
@@ -95,31 +94,35 @@ compose.desktop {
             packageName = "Bylins Client"
             packageVersion = "1.0.0"
 
-            // JRE собирается через jlink и по умолчанию урезана до минимума:
-            // распакованный дистрибутив падал с «java/sql/Driver» ещё до окна.
-            // Список получен jdeps по runtime-classpath, а не подобран на глаз:
-            //   jdeps --print-module-deps --ignore-missing-deps -cp "build/app/deps/*" build/libs/*.jar
-            modules(
-                "java.sql",         // SQLite: карта мира
-                "java.scripting",   // движки скриптов: JS, Python, Lua
-                "java.naming",      // тянет logback и JDBC
-                "java.management",  // статистика сессии
-                "java.instrument",
-                "jdk.unsupported",  // sun.misc.Unsafe, нужен библиотекам
-                "jdk.xml.dom",      // Jython
-                "jdk.crypto.ec"     // TLS: без него не открыть https
-            )
+            // JRE собирается через jlink, и по умолчанию в неё попадает голый
+            // минимум — дистрибутив падал ещё до окна: сначала «java/sql/Driver»,
+            // затем «jdk/dynalink/RelinkableCallSite».
+            //
+            // Список модулей тут не помогает: jdeps видит только статические
+            // ссылки, а движки скриптов (Nashorn, Jython, LuaJ) и JDBC-драйверы
+            // грузятся рефлексией и через ServiceLoader. Каждый такой модуль
+            // всплывал бы у игрока по одному, причём не при запуске, а когда
+            // он впервые полезет в скрипты. Полсотни мегабайт дешевле.
+            includeAllModules = true
 
-            // Icons (optional - uncomment when files exist)
-            // windows { iconFile.set(project.file("src/main/resources/icon.ico")) }
-            // linux { iconFile.set(project.file("src/main/resources/icon.png")) }
-            // macOS { iconFile.set(project.file("src/main/resources/icon.icns")) }
+            windows {
+                iconFile.set(project.file("src/main/resources/icon.ico"))
+            }
+            linux {
+                iconFile.set(project.file("src/main/resources/icon.png"))
+            }
         }
     }
 }
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// Только для запуска из Gradle: в дистрибутиве плагины лежат рядом с приложением,
+// и зашитый сюда путь увёл бы установленный клиент искать их в build/run/plugins
+tasks.matching { it.name == "run" }.configureEach {
+    (this as? JavaExec)?.systemProperty("bylins.plugins.dir", "build/run/plugins")
 }
 
 // === Prepare Run Directory ===

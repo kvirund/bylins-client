@@ -55,14 +55,17 @@ class TabManager {
             logger.info { "Tab with id ${tab.id} already exists" }
             return
         }
-        // Вставляем перед logsTab (который всегда последний)
+        // Порядок: главная, свои вкладки, вкладки плагинов, логи.
+        // Свои вкладки создаются позже плагинных (плагины поднимаются раньше
+        // конфига), поэтому просто «в конец» уводило чат за «ИИ» и «Ассистент».
         val current = _tabs.value.toMutableList()
-        val logsIndex = current.indexOfFirst { it.id == "logs" }
-        if (logsIndex >= 0) {
-            current.add(logsIndex, tab)
+        val insertAt = if (tab.isPluginTab) {
+            current.indexOfFirst { it.id == "logs" }.takeIf { it >= 0 } ?: current.size
         } else {
-            current.add(tab)
+            current.indexOfFirst { it.isPluginTab || it.id == "logs" }
+                .takeIf { it >= 0 } ?: current.size
         }
+        current.add(insertAt, tab)
         _tabs.value = current
         logger.info { "Tab added: ${tab.id} (${tab.name}), total tabs: ${_tabs.value.size}, ids: ${_tabs.value.map { it.id }}" }
     }
