@@ -2,6 +2,8 @@ package com.bylins.client.ui.components
 
 import mu.KotlinLogging
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -139,12 +141,33 @@ fun MapPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Карта", color = Color.White)
-
-                Switch(
-                    checked = mapEnabled,
-                    onCheckedChange = { clientState.setMapEnabled(it) }
-                )
+                // Тумблер управляет автомаппингом, а не показом карты:
+                // прежняя подпись «Карта» читалась как «показать/скрыть»
+                TooltipArea(
+                    tooltip = {
+                        Surface(color = colorScheme.surface, tonalElevation = 4.dp) {
+                            Text(
+                                text = "Записывать новые комнаты и связи при перемещении. " +
+                                    "Выключено — карта не пополняется, но клиент " +
+                                    "по-прежнему знает, где вы находитесь.",
+                                modifier = Modifier.padding(8.dp),
+                                color = colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Автомаппинг",
+                            color = if (mapEnabled) Color.White else colorScheme.onSurfaceVariant
+                        )
+                        Switch(
+                            checked = mapEnabled,
+                            onCheckedChange = { clientState.setMapEnabled(it) }
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.width(8.dp))
 

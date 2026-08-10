@@ -246,12 +246,15 @@ class MapManager(
         logger.info { "handleMovement: dir=$direction name='$newRoomName' exits=$exits roomId=$roomId" }
         val currentRoom = getCurrentRoom()
 
-        if (!_mapEnabled.value) {
-            return null
-        }
-
         // Проверяем есть ли уже комната с таким ID
         val existingRoom = roomId?.let { _rooms.value[it] }
+
+        // Автомаппинг выключен — новые комнаты не создаём, но позицию держим
+        // актуальной: от неё зависят контекстные команды и правила с областью
+        if (!_mapEnabled.value) {
+            if (existingRoom != null) setCurrentRoom(existingRoom.id)
+            return existingRoom
+        }
 
         val targetRoom = if (existingRoom != null) {
             // Комната уже существует, обновляем информацию

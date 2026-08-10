@@ -1082,9 +1082,16 @@ class ClientState {
      */
     @Suppress("UNCHECKED_CAST")
     private fun handleMsdpRoom(value: Any) {
-        if (!mapManager.mapEnabled.value) return
         val roomData = value as? Map<String, Any> ?: return
         val vnum = roomData["VNUM"]?.toString() ?: return
+
+        // Автомаппинг выключен — карту не дополняем, но если комната уже
+        // известна, отмечаем, что игрок в ней: иначе «где я» замирает,
+        // и правила с областью действия перестают срабатывать
+        if (!mapManager.mapEnabled.value) {
+            if (mapManager.getRoom(vnum) != null) mapManager.setCurrentRoom(vnum)
+            return
+        }
 
         val exits = mutableMapOf<String, String>()
         (roomData["EXITS"] as? Map<*, *>)?.forEach { (dir, target) ->
