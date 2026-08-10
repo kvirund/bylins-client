@@ -2,6 +2,7 @@ package com.bylins.client.network
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -59,6 +60,22 @@ class TelnetClientBufferTest {
         val text = client.receivedData.value
         assertEquals(count, Regex("cmd-\\d+").findAll(text).count())
         assertEquals(count, Regex("out-\\d+").findAll(text).count())
+    }
+
+    @Test
+    fun `команда клиента печатается выше своего вывода`() {
+        val client = TelnetClient()
+        client.addToOutputRaw("Вы стоите на площади.")
+
+        // Порядок как при нажатии хоткея: сперва эхо команды, затем её вывод
+        client.addLocalOutput("#script call cycle")
+        client.addLocalOutput("[атака] пнуть")
+
+        val text = client.receivedData.value
+        val commandAt = text.indexOf("#script call cycle")
+        val resultAt = text.indexOf("[атака] пнуть")
+        assertTrue(commandAt >= 0 && resultAt >= 0, "нет строк в буфере: $text")
+        assertTrue(commandAt < resultAt, "вывод команды оказался выше самой команды")
     }
 
     @Test

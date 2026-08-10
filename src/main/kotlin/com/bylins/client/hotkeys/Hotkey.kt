@@ -223,8 +223,8 @@ data class Hotkey(
                     35 -> "Num1"  // VK_END
                     33 -> "Num9"  // VK_PAGE_UP
                     34 -> "Num3"  // VK_PAGE_DOWN
-                    45 -> "Num0"  // VK_INSERT
-                    46 -> "Num."  // VK_DELETE
+                    155 -> "Num0"  // VK_INSERT
+                    127 -> "Num."  // VK_DELETE
                     12 -> "Num5"  // VK_CLEAR
                     else -> "Num?"
                 }
@@ -272,8 +272,8 @@ data class Hotkey(
                 34 -> "PgDown"
                 36 -> "Home"
                 35 -> "End"
-                45 -> "Insert"
-                46 -> "Delete"
+                155 -> "Insert"   // KeyEvent.VK_INSERT
+                127 -> "Delete"   // KeyEvent.VK_DELETE
 
                 // Специальные
                 27 -> "Esc"
@@ -325,18 +325,18 @@ data class Hotkey(
                 56 -> "8"
                 57 -> "9"
 
-                // Знаки препинания
-                192 -> "`"
-                189 -> "-"
-                187 -> "="
-                219 -> "["
-                221 -> "]"
-                220 -> "\\"
-                186 -> ";"
-                222 -> "'"
-                188 -> ","
-                190 -> "."
-                191 -> "/"
+                // Знаки препинания (коды AWT, не Windows VK)
+                192 -> "`"   // VK_BACK_QUOTE
+                45 -> "-"    // VK_MINUS
+                61 -> "="    // VK_EQUALS
+                91 -> "["    // VK_OPEN_BRACKET
+                93 -> "]"    // VK_CLOSE_BRACKET
+                92 -> "\\"   // VK_BACK_SLASH
+                59 -> ";"    // VK_SEMICOLON
+                222 -> "'"   // VK_QUOTE
+                44 -> ","    // VK_COMMA
+                46 -> "."    // VK_PERIOD
+                47 -> "/"    // VK_SLASH
 
                 else -> "Key($code)"
             }

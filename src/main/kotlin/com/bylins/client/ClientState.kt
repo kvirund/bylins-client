@@ -915,24 +915,36 @@ class ClientState {
     }
 
     private fun sendSingleCommand(command: String) {
+        // Команду, которую обработает сам клиент, эхаем заранее и перед
+        // промптом. Раньше эхо шло после обработки и в конец буфера: вывод
+        // команды оказывался выше самой команды, а эхо вставало на место
+        // промпта — и следующие строки шли уже без него.
+        val localCommand = command.startsWith("#")
+        if (localCommand) {
+            telnetClient.addLocalOutput("[1;36m$command[0m")
+            logManager.log(command)
+        }
+
         // Сначала проверяем команды управления переменными
         val varHandled = variableManager.processCommand(command) { message ->
             // Выводим сообщения от VariableManager с сохранением промпта
             telnetClient.addLocalOutput(message)
         }
         if (varHandled) {
-            // Логируем локальную команду
-            telnetClient.echoCommand(command)
-            logManager.log(command)
+            if (!localCommand) {
+                telnetClient.echoCommand(command)
+                logManager.log(command)
+            }
             return
         }
 
         // Проверяем команды навигации по карте
         val navHandled = commandProcessor.processNavigationCommand(command)
         if (navHandled) {
-            // Логируем локальную команду
-            telnetClient.echoCommand(command)
-            logManager.log(command)
+            if (!localCommand) {
+                telnetClient.echoCommand(command)
+                logManager.log(command)
+            }
             return
         }
 
@@ -989,11 +1001,14 @@ class ClientState {
             return // Команда отменена плагином
         }
 
-        // Эхо команды в лог (через TelnetClient для правильной работы с промптом)
-        telnetClient.echoCommand(command)
-
-        // Логируем команду (без ANSI кодов)
-        logManager.log(command)
+        // Эхо команды в лог (через TelnetClient для правильной работы с промптом).
+        // Команды клиента (#...) уже эхнуты в sendSingleCommand до обработки —
+        // сюда они попадают, только если ни один локальный обработчик их не взял
+        // и они уходят на сервер как есть.
+        if (!command.startsWith("#")) {
+            telnetClient.echoCommand(command)
+            logManager.log(command)
+        }
 
         // Увеличиваем счетчик отправленных команд
         sessionStats.incrementCommandsSent()
