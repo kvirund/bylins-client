@@ -1,9 +1,12 @@
 package com.bylins.client.ui.theme
 
+import androidx.compose.material.darkColors
+import androidx.compose.material.lightColors
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.Colors as Material2Colors
 import androidx.compose.material3.ColorScheme as MaterialColorScheme
 
 /**
@@ -217,6 +220,32 @@ object AppTheme {
     /**
      * Конвертирует нашу ColorScheme в Material Design ColorScheme
      */
+    /**
+     * Палитра для Material 2.
+     *
+     * Панели и диалоги написаны на Material 2, а тема ставилась только для
+     * Material 3 — поэтому кнопки, поля и меню брали дефолтную светлую
+     * палитру M2 (белый surface, фиолетовый primary) и на тёмном фоне
+     * выглядели чужеродно: белый текст на белой кнопке, сиреневые подписи.
+     */
+    fun toMaterial2Colors(colorScheme: ColorScheme, isDark: Boolean = true): Material2Colors {
+        val base = if (isDark) darkColors() else lightColors()
+        return base.copy(
+            primary = colorScheme.primary,
+            primaryVariant = colorScheme.primaryVariant,
+            secondary = colorScheme.secondary,
+            secondaryVariant = colorScheme.secondary,
+            background = colorScheme.background,
+            surface = colorScheme.surface,
+            error = colorScheme.error,
+            onPrimary = Color.White,
+            onSecondary = Color.White,
+            onBackground = colorScheme.onBackground,
+            onSurface = colorScheme.onSurface,
+            onError = Color.White
+        )
+    }
+
     fun toMaterialColorScheme(colorScheme: ColorScheme, isDark: Boolean = true): MaterialColorScheme {
         return if (isDark) {
             darkColorScheme(

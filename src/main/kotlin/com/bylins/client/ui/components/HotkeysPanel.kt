@@ -37,14 +37,7 @@ fun HotkeysPanel(
     val mapRoomsForScope by clientState.mapRooms.collectAsState()
     val zoneNamesForScope by clientState.zoneNames.collectAsState()
     val availableZones = remember(mapRoomsForScope, zoneNamesForScope) {
-        mapRoomsForScope.values
-            .mapNotNull { it.zone }
-            .distinct()
-            .sorted()
-            .map { id ->
-                val name = zoneNamesForScope[id]
-                id to if (name.isNullOrBlank()) "Зона $id" else "$name ($id)"
-            }
+        clientState.zonesForScope()
     }
     val currentRoomIdForScope by clientState.currentRoomId.collectAsState()
     val activeStack by clientState.profileManager.activeStack.collectAsState()
@@ -168,6 +161,7 @@ fun HotkeysPanel(
                 initialTargetProfileId = lastTargetProfileId,
                 availableZones = availableZones,
                 currentRoomId = currentRoomIdForScope,
+                searchRooms = { q -> clientState.searchRoomsForScope(q) },
                 onDismiss = { showAddDialog = false },
                 onSave = { hotkey, targetProfileId ->
                     // Новый хоткей - добавляем в выбранную цель
@@ -188,6 +182,7 @@ fun HotkeysPanel(
                 hotkey = editingHotkey,
                 availableZones = availableZones,
                 currentRoomId = currentRoomIdForScope,
+                searchRooms = { q -> clientState.searchRoomsForScope(q) },
                 onDismiss = {
                     editingHotkey = null
                     editingHotkeySource = null

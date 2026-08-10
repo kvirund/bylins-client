@@ -13,8 +13,26 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.BorderStroke
 import com.bylins.client.contextcommands.ContextScope
 import com.bylins.client.ui.theme.LocalAppColorScheme
+
+/** Сколько строк показываем в пикере: комнат тысячи, весь список бесполезен. */
+private const val MAX_PICKER_ITEMS = 100
+
+/**
+ * Как подписывать зоны и комнаты: «Название (53)» и «Название [4341]».
+ *
+ * Через CompositionLocal, потому что подписи нужны и в диалогах, и в плашках
+ * внутри строк списков — тащить их параметром через каждый элемент значило бы
+ * менять сигнатуры половины панелей ради двух функций.
+ */
+class ScopeLabels(
+    val zone: (String) -> String = { "Зона $it" },
+    val room: (String) -> String = { "Комната $it" }
+)
+
+val LocalScopeLabels = compositionLocalOf { ScopeLabels() }
 
 /**
  * Выбор области действия правила — общий для триггеров, хоткеев и контекстных
@@ -27,24 +45,29 @@ import com.bylins.client.ui.theme.LocalAppColorScheme
  *
  * @param availableZones пары (id зоны, подпись «Название (53)»)
  * @param currentRoomId комната, где игрок сейчас — чтобы добавить её одним кликом
+ * @param searchRooms поиск комнат по запросу; комнат тысячи, готовым списком их
+ *   не передать — пикер спрашивает по мере ввода
  */
 @Composable
 fun ScopeSelector(
     scope: ContextScope?,
     availableZones: List<Pair<String, String>> = emptyList(),
     currentRoomId: String? = null,
+    searchRooms: ((String) -> List<Pair<String, String>>)? = null,
     onScopeChange: (ContextScope?) -> Unit
 ) {
     val colorScheme = LocalAppColorScheme.current
+    val labels = LocalScopeLabels.current
     val selectedZones = (scope as? ContextScope.Zone)?.zones ?: emptySet()
     val selectedRooms = (scope as? ContextScope.Room)?.roomIds ?: emptySet()
     val selectedProps = (scope as? ContextScope.Room)?.roomPropertyKeys ?: emptySet()
     var showZonePicker by remember { mutableStateOf(false) }
+    var showRoomPicker by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = "Область действия",
-            color = Color(0xFFBBBBBB),
+            color = colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace
         )
@@ -60,30 +83,29 @@ fun ScopeSelector(
         when (scope) {
             is ContextScope.Zone -> {
                 ScopeChipRow(
-                    items = selectedZones.map { id -> id to zoneLabelOf(id, availableZones) },
+                    items = selectedZones.map { id -> id to labels.zone(id) },
                     emptyText = "Зоны не выбраны",
                     onRemove = { id -> onScopeChange(ContextScope.Zone(selectedZones - id)) }
                 )
-                OutlinedButton(
-                    onClick = { showZonePicker = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Выбрать зону...", color = colorScheme.onSurface, fontSize = 12.sp)
-                }
+                ScopeButton("Выбрать зону…") { showZonePicker = true }
             }
 
             is ContextScope.Room -> {
                 ScopeChipRow(
-                    items = selectedRooms.map { it to it },
+                    items = selectedRooms.map { id -> id to labels.room(id) },
                     emptyText = "Комнаты не выбраны",
                     onRemove = { id -> onScopeChange(ContextScope.Room(selectedRooms - id, selectedProps)) }
                 )
-                if (currentRoomId != null && currentRoomId !in selectedRooms) {
-                    OutlinedButton(
-                        onClick = { onScopeChange(ContextScope.Room(selectedRooms + currentRoomId, selectedProps)) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("+ текущая комната ($currentRoomId)", color = colorScheme.onSurface, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        ScopeButton("Выбрать комнату…") { showRoomPicker = true }
+                    }
+                    if (currentRoomId != null && currentRoomId !in selectedRooms) {
+                        Box(Modifier.weight(1f)) {
+                            ScopeButton("+ текущая: ${labels.room(currentRoomId)}") {
+                                onScopeChange(ContextScope.Room(selectedRooms + currentRoomId, selectedProps))
+                            }
+                        }
                     }
                 }
                 // Комнат тысячи, списком их не выбрать — зато можно указать
@@ -108,11 +130,28 @@ fun ScopeSelector(
     }
 
     if (showZonePicker) {
-        ZonePickerDialog(
-            availableZones = availableZones,
+        ScopePickerDialog(
+            title = "Выбор зоны",
+            searchLabel = "Поиск зоны по названию или номеру",
             selected = selectedZones,
+            search = { query ->
+                val q = query.lowercase()
+                if (q.isBlank()) availableZones
+                else availableZones.filter { (id, name) -> id.lowercase().contains(q) || name.lowercase().contains(q) }
+            },
             onDismiss = { showZonePicker = false },
             onPick = { id -> onScopeChange(ContextScope.Zone(selectedZones + id)) }
+        )
+    }
+
+    if (showRoomPicker && searchRooms != null) {
+        ScopePickerDialog(
+            title = "Выбор комнаты",
+            searchLabel = "Поиск комнаты по названию или номеру",
+            selected = selectedRooms,
+            search = searchRooms,
+            onDismiss = { showRoomPicker = false },
+            onPick = { id -> onScopeChange(ContextScope.Room(selectedRooms + id, selectedProps)) }
         )
     }
 }
@@ -125,18 +164,30 @@ fun ScopeSelector(
 fun ScopeBadges(scope: ContextScope?) {
     if (scope == null || scope is ContextScope.World) return
     val colorScheme = LocalAppColorScheme.current
+    val labels = LocalScopeLabels.current
 
     val (text, color) = when (scope) {
         is ContextScope.Zone -> {
             val zones = scope.zones
-            (if (zones.size == 1) "Зона ${zones.first()}" else "Зоны: ${zones.size}") to colorScheme.warning
+            // Одна зона — пишем её целиком: по голому номеру в списке правил
+            // не понять, о какой зоне речь
+            val text = when {
+                zones.isEmpty() -> "Зона не выбрана"
+                zones.size == 1 -> labels.zone(zones.first())
+                else -> "Зоны: ${zones.size}"
+            }
+            text to colorScheme.warning
         }
         is ContextScope.Room -> {
+            val rooms = scope.roomIds
             val parts = buildList {
-                if (scope.roomIds.isNotEmpty()) add("комнат: ${scope.roomIds.size}")
+                when {
+                    rooms.size == 1 -> add(labels.room(rooms.first()))
+                    rooms.size > 1 -> add("комнат: ${rooms.size}")
+                }
                 if (scope.roomPropertyKeys.isNotEmpty()) add(scope.roomPropertyKeys.joinToString(","))
             }
-            ("Комната" + if (parts.isEmpty()) "" else " (${parts.joinToString("; ")})") to colorScheme.secondary
+            (if (parts.isEmpty()) "Комната" else parts.joinToString("; ")) to colorScheme.secondary
         }
         else -> return
     }
@@ -151,18 +202,36 @@ fun ScopeBadges(scope: ContextScope?) {
     }
 }
 
-private fun zoneLabelOf(id: String, available: List<Pair<String, String>>): String =
-    available.find { it.first == id }?.second ?: "Зона $id"
-
 @Composable
 private fun ScopeRadio(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colorScheme = LocalAppColorScheme.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         RadioButton(
             selected = selected,
             onClick = onClick,
-            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF4CAF50))
+            colors = RadioButtonDefaults.colors(
+                selectedColor = colorScheme.success,
+                unselectedColor = colorScheme.onSurfaceVariant
+            )
         )
-        Text(label, color = Color.White, fontSize = 12.sp)
+        Text(label, color = colorScheme.onSurface, fontSize = 12.sp)
+    }
+}
+
+/** Кнопка выбора — одна на все области, чтобы вид не расходился. */
+@Composable
+private fun ScopeButton(label: String, onClick: () -> Unit) {
+    val colorScheme = LocalAppColorScheme.current
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        border = BorderStroke(1.dp, colorScheme.border),
+        colors = ButtonDefaults.outlinedButtonColors(
+            backgroundColor = colorScheme.surfaceVariant,
+            contentColor = colorScheme.onSurface
+        )
+    ) {
+        Text(label, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
     }
 }
 
@@ -200,66 +269,82 @@ private fun ScopeChipRow(
 
 @Composable
 private fun ScopeTextField(value: String, label: String, onValueChange: (String) -> Unit) {
+    val colorScheme = LocalAppColorScheme.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label, fontSize = 11.sp) },
+        label = { Text(label, fontSize = 11.sp, color = colorScheme.onSurfaceVariant) },
         singleLine = true,
         colors = TextFieldDefaults.outlinedTextFieldColors(
-            textColor = Color.White,
-            backgroundColor = Color(0xFF1E1E1E),
-            cursorColor = Color.White,
-            focusedBorderColor = Color(0xFF4CAF50),
-            unfocusedBorderColor = Color.Gray
+            textColor = colorScheme.onSurface,
+            backgroundColor = colorScheme.background,
+            cursorColor = colorScheme.onSurface,
+            focusedBorderColor = colorScheme.primary,
+            unfocusedBorderColor = colorScheme.border
         ),
         textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
         modifier = Modifier.fillMaxWidth()
     )
 }
 
-/** Список зон с поиском — как в панели контекстных команд. */
+/**
+ * Список с поиском — один и тот же для зон и для комнат, чтобы выбор области
+ * выглядел одинаково независимо от того, что выбирают.
+ *
+ * @param search выдаёт пары (id, подпись) по запросу; для зон это фильтр по
+ *   готовому списку, для комнат — поиск по карте (их тысячи, списком не отдать)
+ */
 @Composable
-private fun ZonePickerDialog(
-    availableZones: List<Pair<String, String>>,
+private fun ScopePickerDialog(
+    title: String,
+    searchLabel: String,
     selected: Set<String>,
+    search: (String) -> List<Pair<String, String>>,
     onDismiss: () -> Unit,
     onPick: (String) -> Unit
 ) {
+    val colorScheme = LocalAppColorScheme.current
     var query by remember { mutableStateOf("") }
     var manualId by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.width(420.dp).heightIn(max = 520.dp),
-            backgroundColor = Color(0xFF2D2D2D)
+            backgroundColor = colorScheme.surface
         ) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Выбор зоны", color = Color.White, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+                Text(title, color = colorScheme.onSurface, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
 
-                ScopeTextField(value = query, label = "Поиск зоны", onValueChange = { query = it })
+                ScopeTextField(value = query, label = searchLabel, onValueChange = { query = it })
 
-                val filtered = remember(query, availableZones) {
-                    val q = query.lowercase()
-                    if (q.isBlank()) availableZones
-                    else availableZones.filter { (id, name) ->
-                        id.lowercase().contains(q) || name.lowercase().contains(q)
-                    }
+                // Показываем ограниченное число: по пустому запросу комнат
+                // могут быть тысячи, и список превращается в бесполезную кашу
+                val found = remember(query) { search(query) }
+                val shown = found.take(MAX_PICKER_ITEMS)
+
+                if (found.isEmpty()) {
+                    Text(
+                        "Ничего не найдено",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
 
                 LazyColumn(modifier = Modifier.weight(1f, fill = false).fillMaxWidth()) {
-                    items(filtered.size) { index ->
-                        val (id, label) = filtered[index]
+                    items(shown.size) { index ->
+                        val (id, label) = shown[index]
                         val already = id in selected
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = !already) { onPick(id); onDismiss() }
                                 .padding(vertical = 2.dp),
-                            color = if (already) Color(0xFF3D3D3D) else Color.Transparent
+                            color = if (already) colorScheme.surfaceVariant else Color.Transparent
                         ) {
                             Text(
                                 text = label,
-                                color = if (already) Color.Gray else Color.White,
+                                color = if (already) colorScheme.onSurfaceVariant else colorScheme.onSurface,
                                 fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace,
                                 modifier = Modifier.padding(8.dp)
@@ -268,9 +353,18 @@ private fun ZonePickerDialog(
                     }
                 }
 
-                Divider(color = Color(0xFF444444))
+                if (found.size > shown.size) {
+                    Text(
+                        "Показаны первые ${shown.size} из ${found.size} — уточните запрос",
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
 
-                // Зона может быть известна по номеру, но отсутствовать в карте
+                Divider(color = colorScheme.divider)
+
+                // Зона или комната может быть известна по номеру, но отсутствовать в карте
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(modifier = Modifier.weight(1f)) {
                         ScopeTextField(
@@ -281,14 +375,17 @@ private fun ZonePickerDialog(
                     }
                     Button(
                         onClick = { if (manualId.isNotBlank()) { onPick(manualId.trim()); onDismiss() } },
-                        colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF4CAF50))
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = colorScheme.primary,
+                            contentColor = Color.White
+                        )
                     ) {
-                        Text("Добавить", color = Color.White, fontSize = 12.sp)
+                        Text("Добавить", fontSize = 12.sp)
                     }
                 }
 
                 Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = onDismiss) { Text("Закрыть", color = Color.White) }
+                    TextButton(onClick = onDismiss) { Text("Закрыть", color = colorScheme.onSurface) }
                 }
             }
         }

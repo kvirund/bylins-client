@@ -92,8 +92,25 @@ fun MainWindow() {
     val materialColorScheme = remember(appColorScheme, currentThemeName) {
         AppTheme.toMaterialColorScheme(appColorScheme, isDark = currentThemeName != "LIGHT")
     }
+    // Панели и диалоги — на Material 2, и без своей палитры он подставлял
+    // дефолтную светлую: белые кнопки и сиреневые подписи на тёмном фоне
+    val material2Colors = remember(appColorScheme, currentThemeName) {
+        AppTheme.toMaterial2Colors(appColorScheme, isDark = currentThemeName != "LIGHT")
+    }
 
-    CompositionLocalProvider(LocalAppColorScheme provides appColorScheme) {
+    // Подписи зон и комнат — один формат на все панели и диалоги
+    val scopeLabels = remember(clientState) {
+        com.bylins.client.ui.components.ScopeLabels(
+            zone = { id -> clientState.zoneLabel(id) },
+            room = { id -> clientState.roomLabelForScope(id) }
+        )
+    }
+
+    CompositionLocalProvider(
+        LocalAppColorScheme provides appColorScheme,
+        com.bylins.client.ui.components.LocalScopeLabels provides scopeLabels
+    ) {
+        androidx.compose.material.MaterialTheme(colors = material2Colors) {
         MaterialTheme(
             colorScheme = materialColorScheme
         ) {
@@ -464,6 +481,7 @@ fun MainWindow() {
                     )
                 }
             }
+        }
         }
         }
     }

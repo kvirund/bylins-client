@@ -23,6 +23,7 @@ fun TriggerDialog(
     initialTargetProfileId: String? = null, // Последний использованный профиль
     availableZones: List<Pair<String, String>> = emptyList(), // (id зоны, «Название (id)»)
     currentRoomId: String? = null,
+    searchRooms: ((String) -> List<Pair<String, String>>)? = null,
     onDismiss: () -> Unit,
     onSave: (Trigger, String?) -> Unit // Trigger + targetProfileId
 ) {
@@ -288,6 +289,7 @@ fun TriggerDialog(
                         scope = scope,
                         availableZones = availableZones,
                         currentRoomId = currentRoomId,
+                        searchRooms = searchRooms,
                         onScopeChange = { scope = it }
                     )
 

@@ -40,14 +40,7 @@ fun TriggersPanel(
     val mapRoomsForScope by clientState.mapRooms.collectAsState()
     val zoneNamesForScope by clientState.zoneNames.collectAsState()
     val availableZones = remember(mapRoomsForScope, zoneNamesForScope) {
-        mapRoomsForScope.values
-            .mapNotNull { it.zone }
-            .distinct()
-            .sorted()
-            .map { id ->
-                val name = zoneNamesForScope[id]
-                id to if (name.isNullOrBlank()) "Зона $id" else "$name ($id)"
-            }
+        clientState.zonesForScope()
     }
     val currentRoomIdForScope by clientState.currentRoomId.collectAsState()
 
@@ -219,6 +212,7 @@ fun TriggersPanel(
             initialTargetProfileId = lastTargetProfileId,
             availableZones = availableZones,
             currentRoomId = currentRoomIdForScope,
+            searchRooms = { q -> clientState.searchRoomsForScope(q) },
             onDismiss = {
                 showDialog = false
                 editingTrigger = null

@@ -67,14 +67,14 @@ fun ContextCommandsPanel(
         ) {
             Column {
                 Text(
-                    text = "Context Commands",
+                    text = "Контекстные команды",
                     color = colorScheme.onBackground,
                     fontSize = 16.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Queue: ${queue.size}/$maxQueueSize commands",
+                    text = "В очереди: ${queue.size} из $maxQueueSize",
                     color = colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
@@ -95,7 +95,7 @@ fun ContextCommandsPanel(
                     enabled = queue.isNotEmpty()
                 ) {
                     Text(
-                        "Clear Queue",
+                        "Очистить очередь",
                         color = if (queue.isNotEmpty()) Color.White else colorScheme.onSurfaceVariant
                     )
                 }
@@ -111,7 +111,7 @@ fun ContextCommandsPanel(
                         backgroundColor = colorScheme.success
                     )
                 ) {
-                    Text("+ Add Rule", color = Color.White)
+                    Text("+ Правило", color = Color.White)
                 }
             }
         }
@@ -125,7 +125,7 @@ fun ContextCommandsPanel(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No context command rules defined.\nClick \"+ Add Rule\" to create one.",
+                    text = "Контекстных правил пока нет.\nНажмите «+ Правило», чтобы создать.",
                     color = colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     fontFamily = FontFamily.Monospace
@@ -343,10 +343,11 @@ private fun ContextRuleItem(
                 // Показываем паттерн или информацию о scope
                 val triggerType = rule.triggerType
                 val scope = rule.scope
+                val labels = LocalScopeLabels.current
 
                 if (triggerType is ContextTriggerType.Pattern) {
                     Text(
-                        text = "Pattern: ${triggerType.regex.pattern}",
+                        text = "Шаблон: ${triggerType.regex.pattern}",
                         color = colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -363,8 +364,11 @@ private fun ContextRuleItem(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (scope.roomIds.isNotEmpty()) {
+                                // Названия, а не голые номера: по «IDs: 5102» не
+                                // вспомнить, что это за место
+                                val shown = scope.roomIds.take(2).joinToString { labels.room(it) }
                                 Text(
-                                    text = "IDs: ${scope.roomIds.take(2).joinToString()}${if (scope.roomIds.size > 2) "..." else ""}",
+                                    text = shown + if (scope.roomIds.size > 2) " +${scope.roomIds.size - 2}" else "",
                                     color = colorScheme.onSurfaceVariant,
                                     fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace
@@ -399,7 +403,7 @@ private fun ContextRuleItem(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Zones:",
+                                text = "Зоны:",
                                 color = colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace
@@ -410,7 +414,7 @@ private fun ContextRuleItem(
                                     shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
-                                        text = zone,
+                                        text = labels.zone(zone),
                                         color = colorScheme.secondary,
                                         fontSize = 10.sp,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -470,8 +474,8 @@ private fun RuleTypeBadge(
     ) {
         // Показываем тип триггера
         val (triggerText, triggerColor) = when (triggerType) {
-            is ContextTriggerType.Pattern -> "Pattern" to colorScheme.primary
-            is ContextTriggerType.Permanent -> "Permanent" to colorScheme.success
+            is ContextTriggerType.Pattern -> "По шаблону" to colorScheme.primary
+            is ContextTriggerType.Permanent -> "Всегда" to colorScheme.success
         }
 
         Surface(
@@ -486,37 +490,20 @@ private fun RuleTypeBadge(
             )
         }
 
-        // Показываем scope если не World
-        if (scope !is ContextScope.World) {
-            val (scopeText, scopeColor) = when (scope) {
-                is ContextScope.Room -> "Room" to colorScheme.secondary
-                is ContextScope.Zone -> "Zone" to colorScheme.warning
-                is ContextScope.World -> "" to colorScheme.onSurfaceVariant // never reached
-            }
-
-            Surface(
-                color = scopeColor.copy(alpha = 0.2f),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
-            ) {
-                Text(
-                    text = scopeText,
-                    color = scopeColor,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-        }
+        // Область действия — той же плашкой, что в триггерах и хоткеях:
+        // здесь была своя, показывавшая одно слово «Зона» без самой зоны
+        ScopeBadges(scope)
     }
 }
 
 @Composable
 private fun TtlBadge(ttl: ContextCommandTTL, colorScheme: com.bylins.client.ui.theme.ColorScheme) {
     val text = when (ttl) {
-        is ContextCommandTTL.UntilRoomChange -> "Room"
-        is ContextCommandTTL.UntilZoneChange -> "Zone"
+        is ContextCommandTTL.UntilRoomChange -> "до смены комнаты"
+        is ContextCommandTTL.UntilZoneChange -> "до смены зоны"
         is ContextCommandTTL.FixedTime -> "${ttl.minutes}m"
-        is ContextCommandTTL.Permanent -> "Perm"
-        is ContextCommandTTL.OneTime -> "1x"
+        is ContextCommandTTL.Permanent -> "постоянно"
+        is ContextCommandTTL.OneTime -> "один раз"
     }
 
     Surface(
@@ -524,7 +511,7 @@ private fun TtlBadge(ttl: ContextCommandTTL, colorScheme: com.bylins.client.ui.t
         shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
     ) {
         Text(
-            text = "TTL: $text",
+            text = "Живёт: $text",
             color = colorScheme.onSurfaceVariant,
             fontSize = 10.sp,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -551,17 +538,7 @@ private fun ContextRuleDialog(
     val currentRoomId by clientState.currentRoomId.collectAsState()
     // Собираем уникальные пары (zoneId, zoneName) для отображения
     val availableZonesWithNames = remember(mapRooms, zoneNames) {
-        mapRooms.values
-            .filter { !it.zone.isNullOrEmpty() }
-            .map { room ->
-                val id = room.zone!!
-                val name = zoneNames[id]
-                // Имя есть не у всех зон: комнаты ссылаются на любой номер,
-                // а в карту зона попадает только когда её завели/назвали
-                id to if (name.isNullOrBlank()) "Зона $id" else "$name ($id)"
-            }
-            .distinct()
-            .sortedBy { it.second }
+        clientState.zonesForScope()
     }
     val visitedRooms = remember(mapRooms) {
         mapRooms.values.filter { it.visited }.sortedBy { it.name }
@@ -649,7 +626,7 @@ private fun ContextRuleDialog(
                     .fillMaxWidth()
             ) {
                 Text(
-                    text = if (isNew) "New Context Rule" else "Edit Context Rule",
+                    text = if (isNew) "Новое контекстное правило" else "Правка контекстного правила",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontFamily = FontFamily.Monospace,
@@ -729,7 +706,7 @@ private fun ContextRuleDialog(
                 ) {
                     // Command
                     FormField(
-                        label = "Command" + if (selectedTriggerType == "pattern") " (use \$1, \$2 for pattern groups)" else "",
+                        label = "Команда" + if (selectedTriggerType == "pattern") " (\$1, \$2 — группы из шаблона)" else "",
                         value = command,
                         onValueChange = { command = it },
                         placeholder = if (selectedTriggerType == "pattern") "look \$1" else "look mob"
@@ -737,13 +714,13 @@ private fun ContextRuleDialog(
 
                     // Trigger type selector: Pattern vs Permanent
                     Text(
-                        text = "Trigger Type",
+                        text = "Когда предлагать",
                         color = Color(0xFFBBBBBB),
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("pattern" to "Pattern", "permanent" to "Permanent").forEach { (value, label) ->
+                        listOf("pattern" to "По шаблону", "permanent" to "Всегда").forEach { (value, label) ->
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(
                                     selected = selectedTriggerType == value,
@@ -760,7 +737,7 @@ private fun ContextRuleDialog(
                     // Pattern field (only for Pattern trigger type)
                     if (selectedTriggerType == "pattern") {
                         FormField(
-                            label = "Regex Pattern",
+                            label = "Регулярное выражение",
                             value = pattern,
                             onValueChange = { pattern = it },
                             placeholder = "You see (.+) here"
@@ -773,13 +750,14 @@ private fun ContextRuleDialog(
                         scope = scope,
                         availableZones = availableZonesWithNames,
                         currentRoomId = currentRoomId,
+                        searchRooms = { q -> clientState.searchRoomsForScope(q) },
                         onScopeChange = { scope = it ?: ContextScope.World }
                     )
 
                     // TTL selector (only for Pattern trigger type)
                     if (selectedTriggerType == "pattern") {
                         Text(
-                            text = "Time To Live (TTL)",
+                            text = "Сколько жить предложению",
                             color = Color(0xFFBBBBBB),
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace
@@ -807,7 +785,7 @@ private fun ContextRuleDialog(
 
                         if (selectedTtl == "fixed_time") {
                             FormField(
-                                label = "TTL Minutes",
+                                label = "Минут",
                                 value = ttlMinutes,
                                 onValueChange = { ttlMinutes = it.filter { c -> c.isDigit() } },
                                 placeholder = "5"
@@ -823,7 +801,7 @@ private fun ContextRuleDialog(
                     ) {
                         Column(modifier = Modifier.width(100.dp)) {
                             Text(
-                                text = "Priority",
+                                text = "Приоритет",
                                 color = Color(0xFFBBBBBB),
                                 fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace
@@ -858,7 +836,7 @@ private fun ContextRuleDialog(
                                     checkedColor = Color(0xFF4CAF50)
                                 )
                             )
-                            Text("Enabled", color = Color.White, fontSize = 12.sp)
+                            Text("Включено", color = colorScheme.onSurface, fontSize = 12.sp)
                         }
                     }
 
@@ -872,14 +850,14 @@ private fun ContextRuleDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel", color = Color.Gray)
+                        Text("Отмена", color = colorScheme.onSurfaceVariant)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
                             // Validate
                             if (command.isBlank()) {
-                                errorMessage = "Command is required"
+                                errorMessage = "Нужна команда"
                                 return@Button
                             }
 
@@ -888,7 +866,7 @@ private fun ContextRuleDialog(
                                 when (selectedTriggerType) {
                                     "pattern" -> {
                                         if (pattern.isBlank()) {
-                                            errorMessage = "Pattern is required"
+                                            errorMessage = "Нужен шаблон"
                                             return@Button
                                         }
                                         ContextTriggerType.Pattern(pattern.toRegex())
@@ -956,7 +934,7 @@ private fun ContextRuleDialog(
                             backgroundColor = Color(0xFF4CAF50)
                         )
                     ) {
-                        Text(if (isNew) "Create" else "Save", color = Color.White)
+                        Text(if (isNew) "Создать" else "Сохранить", color = Color.White)
                     }
                 }
             }

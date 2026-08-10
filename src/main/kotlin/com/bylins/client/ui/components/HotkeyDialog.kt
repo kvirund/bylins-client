@@ -35,6 +35,7 @@ fun HotkeyDialog(
     initialTargetProfileId: String? = null, // Последний использованный профиль
     availableZones: List<Pair<String, String>> = emptyList(), // (id зоны, «Название (id)»)
     currentRoomId: String? = null,
+    searchRooms: ((String) -> List<Pair<String, String>>)? = null,
     onDismiss: () -> Unit,
     onSave: (Hotkey, String?) -> Unit // Hotkey + targetProfileId
 ) {
@@ -291,6 +292,7 @@ fun HotkeyDialog(
                     scope = scope,
                     availableZones = availableZones,
                     currentRoomId = currentRoomId,
+                    searchRooms = searchRooms,
                     onScopeChange = { scope = it }
                 )
 
