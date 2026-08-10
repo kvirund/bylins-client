@@ -164,6 +164,9 @@ fun ScrollbackOutputView(
             // Максимум скролла скроллбэка = обычный (как у одного окна). На нём низ верхней
             // панели стыкуется с верхом хвоста → виды непрерывны (выглядит как одно окно).
             val maxScroll = maxScrollOf(contentHeight, fullViewportPx)
+            // Актуальный предел прокрутки для долгоживущих обработчиков:
+            // пока пользователь читает старое, конец лога уезжает вниз
+            val maxScrollRef by rememberUpdatedState(maxScroll)
 
             // Применяем целевую позицию скроллбэка при ЛЮБОМ изменении контента/вьюпорта.
             // Если следуем за низом — прижимаем к концу; иначе держим заякоренный символ
@@ -222,7 +225,9 @@ fun ScrollbackOutputView(
             }
             val collapse: () -> Unit = {
                 controller.jumpToBottom()
-                holder.scrollbackScrollPx = maxScroll
+                // maxScroll берём текущий: пока пользователь читал старый вывод,
+                // пришли новые строки и конец лога уехал вниз
+                holder.scrollbackScrollPx = maxScrollRef
             }
             // Прокрутить к текущему совпадению (через якорь, с парой строк контекста сверху)
             val jumpToMatch: () -> Unit = {
@@ -304,6 +309,9 @@ fun ScrollbackOutputView(
             // устаревшая доля и разделитель «дёргается», а не двигается)
             val splitFractionRef by rememberUpdatedState(splitFraction)
             val fullViewportRef by rememberUpdatedState(fullViewportPx.coerceAtLeast(1f))
+            // Кнопка «вниз» живёт в pointerInput(Unit) и иначе захватила бы
+            // обработчик на момент начала чтения, а не на момент клика
+            val collapseRef by rememberUpdatedState(collapse)
 
             // Область контента + ввод (колесо/клавиши/drag), сужена под полосу скроллбара.
             // Скроллбар — отдельный сосед справа (вне этой области), чтобы его перетаскивание
@@ -456,7 +464,7 @@ fun ScrollbackOutputView(
                         .size(30.dp)
                         .background(Color(0xCC2E2E2E), CircleShape)
                         .pointerHoverIcon(PointerIcon.Hand)
-                        .pointerInput(Unit) { detectTapGestures(onTap = { collapse() }) },
+                        .pointerInput(Unit) { detectTapGestures(onTap = { collapseRef() }) },
                     contentAlignment = Alignment.Center
                 ) {
                     BasicText(
