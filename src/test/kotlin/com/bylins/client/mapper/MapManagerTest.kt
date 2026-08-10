@@ -362,6 +362,41 @@ class MapManagerTest {
         assertFalse(mapManager.updateRoom("нет-такой", visited = true))
     }
 
+    // --- Проход по маршруту ---
+
+    @Test
+    fun `к моменту onPathAdvanced пройденный шаг уже вычеркнут`() {
+        val mapManager = createTestMapManager()
+        createCorridor(mapManager)
+        mapManager.setCurrentRoom("100")
+        assertTrue(mapManager.setPathTo("400"))
+
+        // Ходок читает следующий шаг именно в этом колбэке. Раньше он висел на
+        // onRoomEnter — а тот срабатывает до вычёркивания шага, и ходок повторял
+        // направление, которым только что пришёл: сервер отвечал «не пройти».
+        val seen = mutableListOf<List<Direction>>()
+        mapManager.onPathAdvanced = { seen.add(mapManager.activePath.value) }
+
+        mapManager.setCurrentRoom("200")
+
+        assertEquals(listOf(listOf(Direction.EAST, Direction.EAST)), seen)
+    }
+
+    @Test
+    fun `onPathAdvanced молчит, когда комната не сменилась`() {
+        val mapManager = createTestMapManager()
+        createCorridor(mapManager)
+        mapManager.setCurrentRoom("100")
+
+        var calls = 0
+        mapManager.onPathAdvanced = { calls++ }
+        // MSDP шлёт комнату на каждый промпт — это не повод шагать дальше
+        mapManager.setCurrentRoom("100")
+        mapManager.setCurrentRoom("100")
+
+        assertEquals(0, calls)
+    }
+
     // --- Подсветка маршрута ---
 
     /** Цепочка комнат 100 → 200 → 300 → 400 на восток. */

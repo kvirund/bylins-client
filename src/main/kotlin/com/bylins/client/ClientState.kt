@@ -177,10 +177,6 @@ class ClientState {
 
     // Callback для MapManager
     private val mapManagerOnRoomEnter: (com.bylins.client.mapper.Room) -> Unit = { room ->
-        // Шаг маршрута подтверждён сменой комнаты — можно делать следующий.
-        // Синхронно: иначе следующий шаг уедет позже пересчёта пути.
-        if (pathWalker.isWalking) pathWalker.onRoomChanged()
-
         // Запускаем уведомления асинхронно чтобы избежать deadlock при вызове из API
         scope.launch {
             // Уведомляем скрипты о входе в комнату
@@ -211,9 +207,12 @@ class ClientState {
     }
 
     // MapManager - может быть пересоздан при смене профиля
-    private var mapManager = com.bylins.client.mapper.MapManager(
+    private var mapManager: com.bylins.client.mapper.MapManager = com.bylins.client.mapper.MapManager(
         onRoomEnter = mapManagerOnRoomEnter
-    )
+    ).also { manager ->
+        // Ходок узнаёт о смене комнаты последним — когда маршрут уже пересчитан
+        manager.onPathAdvanced = { pathWalker.onRoomChanged() }
+    }
 
     // Менеджер контекстных команд (инициализируется в init)
     var contextCommandManager: com.bylins.client.contextcommands.ContextCommandManager =
@@ -542,6 +541,10 @@ class ClientState {
             dbFileName = mapFile,
             onRoomEnter = mapManagerOnRoomEnter
         )
+        // Ходок ходит по новой карте: без перевешивания он остался бы слушать
+        // закрытый MapManager и молча перестал делать шаги
+        mapManager.onPathAdvanced = { pathWalker.onRoomChanged() }
+        if (pathWalker.isWalking) pathWalker.stop("Сменилась карта")
 
         // Обновляем ссылку на getCurrentRoom в contextCommandManager
         contextCommandManager.updateGetCurrentRoom { mapManager.getCurrentRoom() }
@@ -2266,7 +2269,7 @@ class ClientState {
     /** Сколько ждать смены комнаты, прежде чем признать шаг непрошедшим. */
     private val walkStepTimeoutMs = 4000L
 
-    private val pathWalker by lazy {
+    private val pathWalker: com.bylins.client.mapper.PathWalker by lazy {
         com.bylins.client.mapper.PathWalker(
             currentRoomId = { mapManager.getCurrentRoom()?.id },
             send = { command ->
