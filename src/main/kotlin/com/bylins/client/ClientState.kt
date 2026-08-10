@@ -177,6 +177,10 @@ class ClientState {
 
     // Callback для MapManager
     private val mapManagerOnRoomEnter: (com.bylins.client.mapper.Room) -> Unit = { room ->
+        // Шаг маршрута подтверждён сменой комнаты — можно делать следующий.
+        // Синхронно: иначе следующий шаг уедет позже пересчёта пути.
+        if (pathWalker.isWalking) pathWalker.onRoomChanged()
+
         // Запускаем уведомления асинхронно чтобы избежать deadlock при вызове из API
         scope.launch {
             // Уведомляем скрипты о входе в комнату
@@ -227,6 +231,12 @@ class ClientState {
         override fun sendRaw(command: String) {
             this@ClientState.sendRaw(command)
         }
+        override fun startWalk(targetRoomId: String): Boolean = this@ClientState.startWalk(targetRoomId)
+        override fun walkDirections(
+            directions: List<com.bylins.client.mapper.Direction>,
+            label: String
+        ): Boolean = this@ClientState.walkDirections(directions, label)
+        override fun stopWalk() = this@ClientState.stopWalk()
         override fun getAllZones(): List<String> = this@ClientState.getAllZones()
         override fun getZoneStatistics(): Map<String, Int> = this@ClientState.getZoneStatistics()
         override fun detectAndAssignZones() = this@ClientState.detectAndAssignZones()
@@ -490,7 +500,12 @@ class ClientState {
     fun zoneLabel(zoneId: String?): String {
         if (zoneId.isNullOrEmpty()) return "неизвестная зона"
         val name = mapManager.zoneNames.value[zoneId]
-        return if (name.isNullOrBlank()) "Зона $zoneId" else "$name ($zoneId)"
+        // Имя «Зона 1022» номер уже содержит — «Зона 1022 (1022)» ни к чему
+        return when {
+            name.isNullOrBlank() -> "Зона $zoneId"
+            name == "Зона $zoneId" -> name
+            else -> "$name ($zoneId)"
+        }
     }
     val mapViewCenterRoomId get() = mapManager.viewCenterRoomId
 
@@ -2085,6 +2100,46 @@ class ClientState {
         mapManager.setRoomNote(roomId, note)
     }
 
+    /**
+     * Зоны карты для выбора области действия: пары (id, «Название (53)»).
+     *
+     * Комнаты без зоны (zone пустой) зоной не считаются — иначе в списке
+     * появляется безымянная строка «Зона» без номера, выбрать которую нельзя
+     * осмысленно. Имя вида «Зона 1022» не дублируем номером второй раз.
+     */
+    fun zonesForScope(): List<Pair<String, String>> =
+        mapManager.rooms.value.values
+            .mapNotNull { it.zone }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE }
+            .map { id -> id to zoneLabel(id) }
+
+    /**
+     * Подпись комнаты для UI: «Название [4341]», а без имени — «Комната 4341».
+     * Один голый номер ни о чём не говорит, а имя без номера неоднозначно —
+     * одинаковых названий на карте полно.
+     */
+    fun roomLabelForScope(roomId: String): String {
+        val room = mapManager.getRoom(roomId)
+        return if (room == null || room.name.isBlank()) "Комната $roomId" else "${room.name} [$roomId]"
+    }
+
+    /**
+     * Комнаты для выбора области действия правила: пары (id, «Название [id]»).
+     * Ищет и по названию, и по номеру — номер часто единственное, что известно.
+     */
+    fun searchRoomsForScope(query: String): List<Pair<String, String>> {
+        val q = query.trim()
+        val rooms = mapManager.rooms.value.values
+        val matched = if (q.isEmpty()) rooms
+            else rooms.filter { it.id.contains(q) || it.name.contains(q, ignoreCase = true) }
+        // Безымянные заготовки — в конец: они мало о чём говорят
+        return matched
+            .sortedWith(compareBy({ it.name.isBlank() }, { it.name }, { it.id }))
+            .map { room -> room.id to roomLabelForScope(room.id) }
+    }
+
     /** Поля комнаты, доступные для правки снаружи (плагины, ИИ). */
     val editableRoomFields = setOf("name", "zone", "terrain", "visited", "notes", "color")
 
@@ -2198,6 +2253,100 @@ class ClientState {
 
     fun executeMapCommand(name: String, room: com.bylins.client.mapper.Room) {
         mapContextCommands[name]?.invoke(room)
+    }
+
+    // --- Проход по маршруту ---
+
+    private val _walking = MutableStateFlow(false)
+    /** Идёт ли сейчас автоматический проход по маршруту. */
+    val walking: StateFlow<Boolean> = _walking
+
+    private var walkWatchdog: kotlinx.coroutines.Job? = null
+
+    /** Сколько ждать смены комнаты, прежде чем признать шаг непрошедшим. */
+    private val walkStepTimeoutMs = 4000L
+
+    private val pathWalker by lazy {
+        com.bylins.client.mapper.PathWalker(
+            currentRoomId = { mapManager.getCurrentRoom()?.id },
+            send = { command ->
+                // Через send(), а не sendRaw(): шаг должен вести себя как
+                // обычная команда игрока — попасть в лог и в эхо
+                send(command)
+                armWalkWatchdog()
+            },
+            notify = { message -> telnetClient.addLocalOutput(message) }
+        ).also { walker ->
+            walker.onStopped = {
+                walkWatchdog?.cancel()
+                walkWatchdog = null
+                _walking.value = false
+                mapManager.clearPath()
+            }
+        }
+    }
+
+    private fun armWalkWatchdog() {
+        walkWatchdog?.cancel()
+        walkWatchdog = scope.launch {
+            kotlinx.coroutines.delay(walkStepTimeoutMs)
+            pathWalker.onTimeout()
+        }
+    }
+
+    /**
+     * Идёт к комнате: строит маршрут и шагает по нему, подтверждая каждый шаг
+     * сменой комнаты. Возвращает false, если идти некуда.
+     */
+    fun startWalk(targetRoomId: String): Boolean {
+        if (pathWalker.isWalking) pathWalker.stop("Прерван прежний маршрут")
+        if (!mapManager.setPathTo(targetRoomId)) {
+            telnetClient.addLocalOutput("[Маршрут] Путь к комнате $targetRoomId не найден")
+            return false
+        }
+        val steps = mapManager.activePath.value.size
+        val name = mapManager.getRoom(targetRoomId)?.name?.takeIf { it.isNotBlank() } ?: targetRoomId
+        telnetClient.addLocalOutput("[Маршрут] Иду к «$name», шагов: $steps")
+        // Подсветка живёт вместе с маршрутом и сама сокращается по дороге
+        mapManager.setPathHighlight(
+            mapManager.getPathRoomIds(mapManager.getCurrentRoom()?.id ?: "", targetRoomId)?.toSet() ?: emptySet(),
+            targetRoomId
+        )
+        _walking.value = true
+        return pathWalker.start(
+            next = { mapManager.getNextPathDirection() },
+            arrived = { mapManager.getCurrentRoom()?.id == targetRoomId }
+        )
+    }
+
+    /**
+     * Идёт по готовому списку направлений (speedwalk-строка, «к ближайшей
+     * непосещённой»). Цель как комната неизвестна, поэтому пересчёта нет —
+     * но подтверждение каждого шага работает так же.
+     */
+    fun walkDirections(directions: List<com.bylins.client.mapper.Direction>, label: String): Boolean {
+        if (directions.isEmpty()) {
+            telnetClient.addLocalOutput("[Маршрут] Идти некуда")
+            return false
+        }
+        if (pathWalker.isWalking) pathWalker.stop("Прерван прежний маршрут")
+        telnetClient.addLocalOutput("[Маршрут] $label, шагов: ${directions.size}")
+        val queue = ArrayDeque(directions)
+        _walking.value = true
+        return pathWalker.start(
+            next = { queue.removeFirstOrNull() },
+            arrived = { queue.isEmpty() }
+        )
+    }
+
+    /** Останавливает проход по маршруту (например, по команде игрока). */
+    fun stopWalk() {
+        if (!pathWalker.isWalking) {
+            telnetClient.addLocalOutput("[Маршрут] Никуда не идём")
+            return
+        }
+        pathWalker.stop("Остановлено")
+        clearPathHighlight()
     }
 
     fun findPathTo(roomId: String) {
@@ -2591,6 +2740,9 @@ class ClientState {
             searchRoomsFunc = { query -> mapManager.searchRooms(query).map { it.toMap() } },
             findPathFunc = { targetId -> mapManager.findPathFromCurrent(targetId)?.map { it.shortName } },
             findPathRoomIdsFunc = { targetId -> mapManager.findPathRoomIds(targetId) },
+            startWalkFunc = { targetId -> startWalk(targetId) },
+            stopWalkFunc = { stopWalk() },
+            isWalkingFunc = { walking.value },
             // Маппер - модификация
             updateRoomFunc = { roomId, changes -> updateRoom(roomId, changes) },
             setRoomNoteFunc = { roomId, note -> mapManager.setRoomNote(roomId, note) },

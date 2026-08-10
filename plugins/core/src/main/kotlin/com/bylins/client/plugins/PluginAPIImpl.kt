@@ -80,6 +80,9 @@ class PluginAPIImpl(
     private val searchRoomsFunc: (String) -> List<Map<String, Any>>,
     private val findPathFunc: (String) -> List<String>?,
     private val findPathRoomIdsFunc: (String) -> List<String>?,
+    private val startWalkFunc: (String) -> Boolean,
+    private val stopWalkFunc: () -> Unit,
+    private val isWalkingFunc: () -> Boolean,
     private val updateRoomFunc: (String, Map<String, Any?>) -> Boolean,
     private val setRoomNoteFunc: (String, String) -> Unit,
     private val setRoomColorFunc: (String, String?) -> Unit,
@@ -446,6 +449,12 @@ class PluginAPIImpl(
     override fun findPath(targetRoomId: String): List<String>? = findPathFunc(targetRoomId)
 
     override fun findPathRoomIds(targetRoomId: String): List<String>? = findPathRoomIdsFunc(targetRoomId)
+
+    override fun startWalk(targetRoomId: String): Boolean = startWalkFunc(targetRoomId)
+
+    override fun stopWalk() = stopWalkFunc()
+
+    override fun isWalking(): Boolean = isWalkingFunc()
 
     // ============================================
     // Маппер - модификация

@@ -470,6 +470,26 @@ class AiHttpServer(
                 mapOf("ok" to true)
             }
 
+            // Проход по маршруту. Слать направления самому через /exec —
+            // верный способ разъехаться: клиент ведёт путь по шагам и сам
+            // пересчитывает его, если персонажа унесло
+            "walk" -> {
+                requireControl()
+                val target = req.str("targetRoomId") ?: throw ApiError(400, "Нужно targetRoomId")
+                val started = api.startWalk(target)
+                audit("[${session.name}] маршрут к $target")
+                mapOf("walking" to started)
+            }
+
+            "walk/stop" -> {
+                requireControl()
+                api.stopWalk()
+                audit("[${session.name}] маршрут остановлен")
+                mapOf("ok" to true)
+            }
+
+            "walk/status" -> mapOf("walking" to api.isWalking())
+
             // Подсветка маршрута на карте — чтобы игрок видел, куда ведёт агент
             "highlight" -> {
                 requireControl()

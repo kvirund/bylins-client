@@ -1737,18 +1737,10 @@ Absorb=50 может поглотить до 25 физ. урона.""") }
         api.registerMapCommand("Speedwalk") { roomData ->
             val roomId = roomData["id"] as? String ?: return@registerMapCommand
             val roomName = roomData["name"] as? String ?: roomId
-            val directions = api.findPath(roomId)
-            val roomIds = api.findPathRoomIds(roomId)
-            if (directions != null && directions.isNotEmpty()) {
-                // Подсвечиваем путь (если roomIds доступны)
-                if (roomIds != null) {
-                    api.setPathHighlight(roomIds, roomId)
-                }
-                // Отправляем все команды направления
-                val speedwalk = directions.joinToString(";")
-                api.send(speedwalk)
-                api.echo("[Speedwalk] Иду к '$roomName': $speedwalk")
-            } else {
+            // Маршрут ведёт клиент: он шлёт по шагу и ждёт подтверждения.
+            // Раньше здесь уходил залп «север;север;...», и любая заминка по
+            // дороге превращала остаток пути в пачку «туда не пройти».
+            if (!api.startWalk(roomId)) {
                 api.echo("[Speedwalk] Путь к '$roomName' не найден")
             }
         }

@@ -27,6 +27,11 @@ private val logger = KotlinLogging.logger("CommandProcessor")
 interface CommandContext {
     fun addLocalOutput(text: String)
     fun sendRaw(command: String)
+    /** Идти к комнате с подтверждением каждого шага. */
+    fun startWalk(targetRoomId: String): Boolean
+    /** Идти по готовому списку направлений — тоже пошагово. */
+    fun walkDirections(directions: List<Direction>, label: String): Boolean
+    fun stopWalk()
     fun getAllZones(): List<String>
     fun getZoneStatistics(): Map<String, Int>
     fun detectAndAssignZones()
@@ -87,48 +92,25 @@ class CommandProcessor(
                     return true
                 }
 
-                // Находим путь к комнате
-                val path = mapManager.findPathFromCurrent(roomId)
-                if (path == null) {
-                    context.addLocalOutput("\u001B[1;31m[#goto] Путь к комнате '$roomId' не найден\u001B[0m")
-                    return true
-                }
+                // Маршрут ведёт ходок: следующий шаг уходит только после
+                // подтверждения предыдущего сменой комнаты
+                context.startWalk(roomId)
+                return true
+            }
 
-                if (path.isEmpty()) {
-                    context.addLocalOutput("\u001B[1;33m[#goto] Вы уже в этой комнате\u001B[0m")
-                    return true
-                }
-
-                // Запускаем автоматическое перемещение
-                val directions = path.joinToString(", ") { it.shortName }
-                context.addLocalOutput("\u001B[1;32m[#goto] Путь найден (${path.size} шагов): $directions\u001B[0m")
-
-                scope.launch {
-                    walkPath(path)
-                }
+            command == "#stop" || command == "#стоп" -> {
+                context.stopWalk()
                 return true
             }
 
             command == "#run" -> {
-                // Находим путь к ближайшей непосещенной комнате
+                // Ближайшая непосещённая комната — тем же ходоком
                 val path = mapManager.findNearestUnvisited()
-                if (path == null) {
-                    context.addLocalOutput("\u001B[1;33m[#run] Не найдено непосещенных комнат\u001B[0m")
+                if (path.isNullOrEmpty()) {
+                    context.addLocalOutput("[#run] Не найдено непосещенных комнат")
                     return true
                 }
-
-                if (path.isEmpty()) {
-                    context.addLocalOutput("\u001B[1;33m[#run] Уже в непосещенной комнате\u001B[0m")
-                    return true
-                }
-
-                // Запускаем автоматическое перемещение
-                val directions = path.joinToString(", ") { it.shortName }
-                context.addLocalOutput("\u001B[1;32m[#run] Путь к непосещенной комнате (${path.size} шагов): $directions\u001B[0m")
-
-                scope.launch {
-                    walkPath(path)
-                }
+                context.walkDirections(path, "К ближайшей непосещённой комнате")
                 return true
             }
 
@@ -165,9 +147,7 @@ class CommandProcessor(
                     val directions = path.joinToString(", ") { it.shortName }
                     context.addLocalOutput("\u001B[1;32m[#find] Путь к '${room.name}' (${path.size} шагов): $directions\u001B[0m")
 
-                    scope.launch {
-                        walkPath(path)
-                    }
+                    context.startWalk(room.id)
                 } else {
                     // Если найдено несколько комнат, показываем список
                     val sb = StringBuilder()
@@ -381,9 +361,7 @@ class CommandProcessor(
 
                 context.addLocalOutput("\u001B[1;32m[Speedwalk] ${directions.size} шагов: ${directions.joinToString(", ")}\u001B[0m")
 
-                scope.launch {
-                    walkPath(directions)
-                }
+                context.walkDirections(directions, "Speedwalk")
                 return true
             }
 
@@ -664,18 +642,4 @@ class CommandProcessor(
         }
     }
 
-    /**
-     * Выполняет автоматическое перемещение по пути
-     */
-    suspend fun walkPath(path: List<Direction>) {
-        for (direction in path) {
-            if (!coroutineContext.isActive) break
-
-            // Отправляем команду движения
-            context.sendRaw(direction.shortName)
-
-            // Задержка между командами (можно сделать настраиваемой)
-            delay(500)
-        }
-    }
 }
