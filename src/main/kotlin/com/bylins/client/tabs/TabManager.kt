@@ -77,7 +77,8 @@ class TabManager {
         captureMode: CaptureMode,
         profileTab: Boolean = false,
         profileLog: Boolean = false,
-        persistContent: Boolean = false
+        persistContent: Boolean = false,
+        timestamps: Boolean = false
     ) {
         if (id == "main") {
             logger.info { "Cannot update main tab" }
@@ -94,7 +95,8 @@ class TabManager {
                     maxLines = tab.maxLines,
                     profileTab = profileTab,
                     profileLog = profileLog || profileTab,
-                    persistContent = persistContent
+                    persistContent = persistContent,
+                    timestamps = timestamps
                 )
                 // Копируем старое содержимое
                 val oldContent = tab.content.value
@@ -231,7 +233,7 @@ class TabManager {
                     // Добавляем трансформированную строку в эту вкладку
                     // Помечаем как непрочитанную если вкладка не активна
                     val isActive = tab.id == currentActiveTabId
-                    tab.appendText(transformedLine, markUnread = !isActive)
+                    tab.appendText(tab.stamp(transformedLine), markUnread = !isActive)
 
                     // Если режим MOVE, помечаем что не нужно добавлять в main
                     if (tab.captureMode == CaptureMode.MOVE) {

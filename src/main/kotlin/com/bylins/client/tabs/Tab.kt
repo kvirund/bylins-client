@@ -17,7 +17,11 @@ data class Tab(
     val isPluginTab: Boolean = false,  // Вкладка создана плагином (не редактируется пользователем)
     val profileTab: Boolean = false,   // Видна только на своём сервере (определение в профиле)
     val profileLog: Boolean = false,   // Лог свой на каждый сервер (profileTab ⟹ profileLog)
-    val persistContent: Boolean = false // Сохранять лог вкладки между запусками (по умолчанию нет)
+    val persistContent: Boolean = false, // Сохранять лог вкладки между запусками (по умолчанию нет)
+    // Помечать каждую пойманную строку временем. Для чата и торговли это
+    // единственный способ понять, когда сообщение пришло: в самом выводе
+    // сервера времени нет
+    val timestamps: Boolean = false
 ) {
     private val _content = MutableStateFlow("")
     val content: StateFlow<String> = _content
@@ -120,6 +124,20 @@ data class Tab(
     }
 
     /**
+     * Приписывает время к строке, если вкладка этого просит.
+     *
+     * Метка ставится при захвате, а не при выводе: сохранённый лог должен
+     * помнить, когда сообщение пришло, а не когда его показали.
+     */
+    fun stamp(line: String): String {
+        if (!timestamps) return line
+        val now = java.time.LocalTime.now()
+        val time = "%02d:%02d:%02d".format(now.hour, now.minute, now.second)
+        // Серым, чтобы метка не спорила с цветами самого сообщения
+        return "\u001B[90m[$time]\u001B[0m $line"
+    }
+
+    /**
      * Проверяет, должна ли строка попасть в эту вкладку
      * @param cleanLine строка без ANSI-кодов
      * @param rawLine оригинальная строка с ANSI-кодами
@@ -200,7 +218,8 @@ data class TabDto(
     val perProfile: Boolean = false,   // legacy: старое поле, мигрируется в profileTab
     val profileTab: Boolean = false,
     val profileLog: Boolean = false,
-    val persistContent: Boolean = false
+    val persistContent: Boolean = false,
+    val timestamps: Boolean = false
 ) {
     fun toTab(): Tab {
         // ONLY был удалён, старые конфиги с ONLY будут использовать COPY
@@ -220,7 +239,8 @@ data class TabDto(
             maxLines = maxLines,
             profileTab = pt,
             profileLog = pl,
-            persistContent = persistContent
+            persistContent = persistContent,
+            timestamps = timestamps
         )
         // Восстанавливаем содержимое
         if (!content.isNullOrEmpty()) {
@@ -245,7 +265,8 @@ data class TabDto(
                     tab.content.value.takeIf { it.isNotEmpty() } else null,
                 profileTab = tab.profileTab,
                 profileLog = tab.profileLog,
-                persistContent = tab.persistContent
+                persistContent = tab.persistContent,
+                timestamps = tab.timestamps
             )
         }
     }

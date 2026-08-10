@@ -696,7 +696,8 @@ class AiHttpServer(
                     captureMode = req.str("captureMode") ?: "COPY",
                     profileTab = req.bool("profileTab", false),
                     profileLog = req.bool("profileLog", false),
-                    persistContent = req.bool("persistContent", false)
+                    persistContent = req.bool("persistContent", false),
+                    timestamps = req.bool("timestamps", false)
                 )
             ))
             "tabs/delete" -> audited("удалена вкладка", mutated(

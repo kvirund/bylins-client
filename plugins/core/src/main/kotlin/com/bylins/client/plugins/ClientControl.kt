@@ -139,7 +139,9 @@ interface ClientControl {
         captureMode: String = "COPY",
         profileTab: Boolean = false,
         profileLog: Boolean = false,
-        persistContent: Boolean = false
+        persistContent: Boolean = false,
+        /** Помечать пойманные строки временем — в выводе сервера его нет. */
+        timestamps: Boolean = false
     ): String
 
     fun deleteTab(id: String): Boolean

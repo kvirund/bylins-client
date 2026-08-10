@@ -483,6 +483,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             "profileTab" to it.profileTab,
             "profileLog" to it.profileLog,
             "persistContent" to it.persistContent,
+            "timestamps" to it.timestamps,
             "isPluginTab" to it.isPluginTab
         )
     }
@@ -493,7 +494,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         captureMode: String,
         profileTab: Boolean,
         profileLog: Boolean,
-        persistContent: Boolean
+        persistContent: Boolean,
+        timestamps: Boolean
     ): String {
         val filters = patterns.map {
             com.bylins.client.tabs.TabFilter(pattern = it.toRegex())
@@ -510,7 +512,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             captureMode = mode,
             profileTab = profileTab,
             profileLog = profileLog || profileTab,
-            persistContent = persistContent
+            persistContent = persistContent,
+            timestamps = timestamps
         )
         state.addTab(tab)
         return tab.id

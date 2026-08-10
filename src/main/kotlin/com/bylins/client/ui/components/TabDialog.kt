@@ -33,7 +33,7 @@ private data class PatternEntry(
 fun TabDialog(
     tab: com.bylins.client.tabs.Tab? = null,
     onDismiss: () -> Unit,
-    onSave: (String, List<TabFilter>, CaptureMode, Boolean, Boolean, Boolean) -> Unit
+    onSave: (String, List<TabFilter>, CaptureMode, Boolean, Boolean, Boolean, Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(tab?.name ?: "") }
     var nameError by remember { mutableStateOf<String?>(null) }
@@ -41,6 +41,7 @@ fun TabDialog(
     var profileTab by remember { mutableStateOf(tab?.profileTab ?: false) }
     var profileLog by remember { mutableStateOf(tab?.profileLog ?: false) }
     var persistContent by remember { mutableStateOf(tab?.persistContent ?: false) }
+    var timestamps by remember { mutableStateOf(tab?.timestamps ?: false) }
 
     val patterns = remember {
         mutableStateListOf<PatternEntry>().apply {
@@ -205,6 +206,21 @@ fun TabDialog(
                                     profileTab || profileLog -> "Лог сохраняется в профиль сервера"
                                     else -> "Лог сохраняется глобально"
                                 },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { timestamps = !timestamps },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = timestamps, onCheckedChange = { timestamps = it })
+                        Column {
+                            Text("Отмечать время")
+                            Text(
+                                "Перед каждой пойманной строкой — время, когда она пришла",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -378,7 +394,7 @@ fun TabDialog(
                                         matchWithColors = entry.matchWithColors
                                     )
                                 }
-                                onSave(name.trim(), filters, captureMode, profileTab, profileLog, persistContent)
+                                onSave(name.trim(), filters, captureMode, profileTab, profileLog, persistContent, timestamps)
                             }
                         }
                     ) {

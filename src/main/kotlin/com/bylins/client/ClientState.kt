@@ -1689,7 +1689,8 @@ class ClientState {
         captureMode: com.bylins.client.tabs.CaptureMode,
         profileTab: Boolean = false,
         profileLog: Boolean = false,
-        persistContent: Boolean = false
+        persistContent: Boolean = false,
+        timestamps: Boolean = false
     ) {
         val tab = com.bylins.client.tabs.Tab(
             id = java.util.UUID.randomUUID().toString(),
@@ -1698,7 +1699,8 @@ class ClientState {
             captureMode = captureMode,
             profileTab = profileTab,
             profileLog = profileLog || profileTab,
-            persistContent = persistContent
+            persistContent = persistContent,
+            timestamps = timestamps
         )
         addTab(tab)
     }
@@ -1710,9 +1712,10 @@ class ClientState {
         captureMode: com.bylins.client.tabs.CaptureMode,
         profileTab: Boolean = false,
         profileLog: Boolean = false,
-        persistContent: Boolean = false
+        persistContent: Boolean = false,
+        timestamps: Boolean = false
     ) {
-        tabManager.updateTab(id, name, filters, captureMode, profileTab, profileLog, persistContent)
+        tabManager.updateTab(id, name, filters, captureMode, profileTab, profileLog, persistContent, timestamps)
         saveConfigNow()
     }
 
