@@ -35,11 +35,11 @@ class PathWalkerTest {
         val walker = walker(mutableListOf(Direction.NORTH, Direction.EAST), target = "3")
 
         // Первый шаг ушёл сразу, второго ещё нет
-        assertEquals(listOf("север"), sent)
+        assertEquals(listOf("с"), sent)
 
         room = "2"
         walker.onRoomChanged()
-        assertEquals(listOf("север", "восток"), sent)
+        assertEquals(listOf("с", "в"), sent)
 
         room = "3"
         walker.onRoomChanged()
@@ -65,7 +65,7 @@ class PathWalkerTest {
         walker.onRoomChanged()
         walker.onRoomChanged()
 
-        assertEquals(listOf("север"), sent)
+        assertEquals(listOf("с"), sent)
         assertTrue(walker.isWalking)
     }
 
@@ -119,7 +119,7 @@ class PathWalkerTest {
         room = "2"
         walker.onRoomChanged()
 
-        assertEquals(listOf("север"), sent)
+        assertEquals(listOf("с"), sent)
         assertFalse(walker.isWalking)
     }
 }

@@ -110,8 +110,8 @@ class PathWalker(
         }
         steppedFrom = currentRoomId()
         lastDirection = direction
-        logger.debug { "Walk step ${direction.russianName} from $steppedFrom" }
-        send(direction.russianName)
+        logger.debug { "Walk step ${direction.russianShort} from $steppedFrom" }
+        send(direction.russianShort)
         return true
     }
 }

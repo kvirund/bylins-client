@@ -86,4 +86,20 @@ class DirectionTest {
         assertEquals(0, Direction.DOWN.dy)
         assertEquals(-1, Direction.DOWN.dz)
     }
+
+    @Test
+    fun `короткая русская команда — последняя в списке синонимов`() {
+        // Ею ходит PathWalker, поэтому порядок в commands важен
+        assertEquals("с", Direction.NORTH.russianShort)
+        assertEquals("ю", Direction.SOUTH.russianShort)
+        assertEquals("в", Direction.EAST.russianShort)
+        assertEquals("з", Direction.WEST.russianShort)
+        assertEquals("вв", Direction.UP.russianShort)
+        assertEquals("вн", Direction.DOWN.russianShort)
+        assertEquals("юз", Direction.SOUTHWEST.russianShort)
+        // Сокращение должно оставаться распознаваемым парсером
+        Direction.values().forEach { direction ->
+            assertEquals(direction, Direction.fromCommand(direction.russianShort))
+        }
+    }
 }
