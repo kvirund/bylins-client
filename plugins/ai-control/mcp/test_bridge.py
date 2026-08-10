@@ -56,7 +56,8 @@ env = dict(os.environ,
            BYLINS_AI_URL=f"http://127.0.0.1:{PORT}",
            BYLINS_AI_MASTER_TOKEN="MASTER",
            BYLINS_AI_NAME="claude")
-bridge = os.path.join(r"C:\dev\games\bylins-client\plugins\ai-control\mcp", "bylins_mcp.py")
+# Рядом с тестом, а не по абсолютному пути: тест гоняется и на CI под Linux
+bridge = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bylins_mcp.py")
 proc = subprocess.Popen([sys.executable, bridge], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE, env=env, text=True, encoding="utf-8", bufsize=1)
 
