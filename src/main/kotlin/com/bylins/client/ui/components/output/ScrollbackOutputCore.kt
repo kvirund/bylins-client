@@ -180,6 +180,7 @@ internal fun OutputScrollbar(
     // pointerInput(Unit) захватит устаревший onScrollTo (со старым maxScroll) → скачки.
     val onScrollToRef = rememberUpdatedState(onScrollTo)
     val scrollProviderRef = rememberUpdatedState(scrollProvider)
+    val onActiveRef = rememberUpdatedState(onActive)
 
     Canvas(
         modifier.pointerInput(Unit) {
@@ -187,6 +188,9 @@ internal fun OutputScrollbar(
             // ползунок точно следует за мышью, без накопления дельт и скачков.
             awaitEachGesture {
                 val down = awaitFirstDown()
+                // Геометрию ползунка фиксируем на время жеста СОЗНАТЕЛЬНО: если
+                // пересчитывать её при росте лога, ползунок будет уползать
+                // из-под курсора. Позиция и предел при этом берутся свежие.
                 val track = size.height.toFloat()
                 val thumb = (track * viewportRef.value / contentRef.value).coerceIn(30f, track)
                 val denom = (track - thumb).coerceAtLeast(1f)
@@ -194,7 +198,7 @@ internal fun OutputScrollbar(
                 // Смещение точки захвата внутри ползунка (если кликнули мимо — по центру)
                 val grab = (down.position.y - curThumbY).let { if (it in 0f..thumb) it else thumb / 2f }
                 down.consume()
-                onActive(true)
+                onActiveRef.value(true)
                 try {
                     while (true) {
                         val ev = awaitPointerEvent()
@@ -205,7 +209,7 @@ internal fun OutputScrollbar(
                         ch.consume()
                     }
                 } finally {
-                    onActive(false)
+                    onActiveRef.value(false)
                 }
             }
         }

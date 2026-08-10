@@ -312,6 +312,11 @@ fun ScrollbackOutputView(
             // Кнопка «вниз» живёт в pointerInput(Unit) и иначе захватила бы
             // обработчик на момент начала чтения, а не на момент клика
             val collapseRef by rememberUpdatedState(collapse)
+            // Высота строки меняется вместе с размером шрифта: без этого
+            // автопрокрутка при выделении шагала бы старым шагом
+            val lineHeightRef by rememberUpdatedState(lineHeightPx)
+            // Колбэк доли разделителя приходит извне и замыкает id вкладки
+            val onSplitFractionChangeRef by rememberUpdatedState(onSplitFractionChange)
 
             // Область контента + ввод (колесо/клавиши/drag), сужена под полосу скроллбара.
             // Скроллбар — отдельный сосед справа (вне этой области), чтобы его перетаскивание
@@ -354,10 +359,10 @@ fun ScrollbackOutputView(
                                     }
                                     if (moved) {
                                         val pos = change.position
-                                        val edge = lineHeightPx
-                                        if (pos.y < edge) userScrollToRef(scrollbackRef - lineHeightPx)
+                                        val edge = lineHeightRef
+                                        if (pos.y < edge) userScrollToRef(scrollbackRef - lineHeightRef)
                                         else if (pos.y < topPaneHeightRef && pos.y > topPaneHeightRef - edge)
-                                            userScrollToRef(scrollbackRef + lineHeightPx)
+                                            userScrollToRef(scrollbackRef + lineHeightRef)
                                         selection.extendTo(pointToSelRef(pos))
                                         holder.bumpSelection()
                                         change.consume()
@@ -437,7 +442,7 @@ fun ScrollbackOutputView(
                                 onVerticalDrag = { change, dragAmount ->
                                     change.consume()
                                     accum += dragAmount
-                                    onSplitFractionChange(startFrac - accum / fullViewportRef)
+                                    onSplitFractionChangeRef(startFrac - accum / fullViewportRef)
                                 }
                             )
                         }
