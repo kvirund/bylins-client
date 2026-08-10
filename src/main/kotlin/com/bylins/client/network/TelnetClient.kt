@@ -33,6 +33,12 @@ class TelnetClient(
     val snapshot: StateFlow<ContentSnapshot> = _snapshot
     private var firstSeq: Long = 0L
 
+    // Буфер правят три разных потока: читающий сокет, UI (эхо команды игрока)
+    // и потоки плагинов (команды ИИ через ai-control). Все правки — это
+    // read-modify-write целой строки буфера, поэтому без замка одна запись
+    // затирает другую: пропадает то эхо команды, то кусок вывода сервера.
+    private val bufferLock = Any()
+
     /** Согласованно публикует текст буфера и его снимок. */
     private fun setReceived(text: String) {
         _receivedData.value = text
@@ -140,7 +146,7 @@ class TelnetClient(
      * Используется для echo из скриптов чтобы избежать рекурсии
      * Вставляет перед незавершённой строкой (промптом/картой)
      */
-    fun addToOutputRaw(text: String) {
+    fun addToOutputRaw(text: String) = synchronized(bufferLock) {
         val currentValue = _receivedData.value
         val lastNewlineIndex = currentValue.lastIndexOf('\n')
         val incompleteLine = if (lastNewlineIndex == -1) currentValue else currentValue.substring(lastNewlineIndex + 1)
@@ -159,7 +165,7 @@ class TelnetClient(
      * Если последняя строка в буфере не заканчивается на \n (это промпт),
      * то выводит сообщение ПЕРЕД промптом
      */
-    fun addLocalOutput(text: String) {
+    fun addLocalOutput(text: String) = synchronized(bufferLock) {
         val currentValue = _receivedData.value
 
         // Находим последний перенос строки
@@ -192,7 +198,7 @@ class TelnetClient(
     /**
      * Добавляет текст в буфер с ограничением размера
      */
-    private fun appendToBuffer(text: String) {
+    private fun appendToBuffer(text: String) = synchronized(bufferLock) {
         val currentValue = _receivedData.value
         val totalLength = currentValue.length + text.length
 

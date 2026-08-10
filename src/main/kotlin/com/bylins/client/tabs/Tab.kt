@@ -32,6 +32,11 @@ data class Tab(
 
     private val lines = mutableListOf<String>()
 
+    // Во вкладку пишут разные потоки: читающий сокет раскладывает вывод сервера,
+    // плагины (в том числе команды ИИ) добавляют свой текст из своих потоков.
+    // Без замка параллельные правки списка теряют строки или ломают его.
+    private val linesLock = Any()
+
     // Сколько строк уже вытеснено из начала буфера (скользящее окно).
     // Даёт абсолютный seq первой строки буфера; монотонно растёт.
     private var evictedLines: Long = 0L
@@ -43,7 +48,7 @@ data class Tab(
      * Добавляет текст во вкладку
      * @param markUnread если true, помечает вкладку как имеющую непрочитанные сообщения
      */
-    fun appendText(text: String, markUnread: Boolean = false) {
+    fun appendText(text: String, markUnread: Boolean = false) = synchronized(linesLock) {
         // Разбиваем на строки
         val newLines = text.split("\n")
 
@@ -79,7 +84,7 @@ data class Tab(
     /**
      * Принудительно обновляет содержимое (для немедленного отображения)
      */
-    fun flush() {
+    fun flush() = synchronized(linesLock) {
         if (updateCounter > 0) {
             updateCounter = 0
             publish()
@@ -89,7 +94,7 @@ data class Tab(
     /**
      * Очищает содержимое вкладки
      */
-    fun clear() {
+    fun clear() = synchronized(linesLock) {
         // Сохраняем монотонность seq: считаем очищенные строки вытесненными
         evictedLines += lines.size
         lines.clear()
