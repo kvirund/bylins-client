@@ -13,14 +13,14 @@ jobs:
     name: Тесты
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Прогнать тесты
         run: ./gradlew test
@@ -28,7 +28,7 @@ jobs:
       # Отчёты нужны именно когда упало — иначе по логу не понять, что сломалось
       - name: Отчёты тестов
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-reports
           path: '**/build/reports/tests/**'
@@ -52,14 +52,14 @@ jobs:
             platform: linux
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       # Compose тянет платформозависимый Skiko и пакует свою JRE, поэтому
       # комплект собирается на каждой ОС свой — кроссплатформенного тут не бывает
@@ -68,7 +68,7 @@ jobs:
 
       # Каталогом, а не архивом: upload-artifact пакует сам, и готовый zip
       # внутри давал бы архив в архиве
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bylins-client-${{ matrix.platform }}
           path: build/release/*/
