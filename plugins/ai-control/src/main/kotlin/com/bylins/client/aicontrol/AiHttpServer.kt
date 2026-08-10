@@ -10,7 +10,9 @@ import com.bylins.client.plugins.PluginAPI
 import com.bylins.client.plugins.PluginPermissionDeniedException
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import mu.KotlinLogging
 import java.net.InetSocketAddress
 import java.nio.charset.StandardCharsets
@@ -20,6 +22,21 @@ private val logger = KotlinLogging.logger("AiHttpServer")
 
 /** Поля комнаты, доступные через /map/room/set. */
 private val ROOM_FIELDS = setOf("name", "zone", "terrain", "visited", "notes", "color")
+
+// Поля update-ручек. profileId переносит правило между профилями персонажей
+// (null — в базовый набор), сохраняя id: иначе перенос означал бы удалить и
+// создать заново, с новым id и ручной починкой всего, что на него ссылалось.
+private val TRIGGER_FIELDS =
+    setOf("name", "pattern", "commands", "enabled", "gag", "priority", "scope", "profileId")
+private val ALIAS_FIELDS =
+    setOf("name", "pattern", "commands", "enabled", "priority", "profileId")
+private val HOTKEY_FIELDS =
+    setOf("key", "ctrl", "alt", "shift", "commands", "enabled", "scope", "profileId")
+private val CONTEXT_RULE_FIELDS =
+    setOf("command", "pattern", "scope", "ttl", "ttlMinutes", "priority", "enabled", "profileId")
+
+/** Потолок размера пакета: массовая правка не должна вешать клиент надолго. */
+private const val MAX_BATCH = 500
 
 /**
  * Локальный HTTP+JSON сервер для ИИ-агентов.
@@ -123,6 +140,10 @@ class AiHttpServer(
         if (!ok) throw ApiError(404, notFound)
         return mapOf("ok" to true, "applied" to applied)
     }
+
+    /** mutated/updated отдают Any ради одиночных ручек; пакету нужен Map. */
+    @Suppress("UNCHECKED_CAST")
+    private fun asMap(result: Any): Map<String, Any?> = result as Map<String, Any?>
 
     /**
      * Изменять состояние клиента может только сессия с правом записи —
@@ -466,6 +487,47 @@ class AiHttpServer(
         }
     }
 
+    /**
+     * Одиночный вызов или пакет.
+     *
+     * Пакет включается массивом `items` (объекты с полями действия) или `ids`
+     * (для удаления). Поштучные ручки делали массовые правки неподъёмными:
+     * перенос восьмидесяти правил между профилями — это сто шестьдесят вызовов
+     * инструмента, и агент уходил править конфиг в обход клиента.
+     *
+     * Ошибка одного элемента не отменяет остальные: при массовой правке важнее
+     * знать, что именно не прошло, чем потерять всю партию. Поэтому пакет
+     * всегда отвечает 200, а исход каждого элемента лежит в results.
+     */
+    private fun batched(req: JsonObject, one: (JsonObject) -> Map<String, Any?>): Any {
+        val items: List<JsonObject> = when {
+            req["items"] is JsonArray -> (req["items"] as JsonArray).mapIndexed { i, element ->
+                element as? JsonObject ?: throw ApiError(400, "items[$i] должен быть объектом")
+            }
+            req["ids"] is JsonArray -> (req["ids"] as JsonArray).mapIndexed { i, element ->
+                val primitive = element as? JsonPrimitive ?: throw ApiError(400, "ids[$i] должен быть строкой")
+                JsonObject(mapOf("id" to primitive))
+            }
+            // Обычный вызов с полями в корне — как было
+            else -> return one(req)
+        }
+        if (items.isEmpty()) throw ApiError(400, "Пустой пакет: items/ids не должны быть пустыми")
+        if (items.size > MAX_BATCH) throw ApiError(400, "Слишком большой пакет: ${items.size}, максимум $MAX_BATCH")
+
+        val results = items.map { item ->
+            runCatching { one(item) }.fold(
+                onSuccess = { mapOf("ok" to true) + it },
+                onFailure = { mapOf("ok" to false, "error" to (it.message ?: it.javaClass.simpleName)) }
+            )
+        }
+        return mapOf(
+            "batch" to true,
+            "total" to results.size,
+            "failed" to results.count { it["ok"] == false },
+            "results" to results
+        )
+    }
+
     /** Область действия из тела запроса: {"scope": {"type":"zone","zones":[...]}}. */
     private fun scopeOf(req: JsonObject): Map<String, Any?>? {
         val raw = req["scope"] as? JsonObject ?: return null
@@ -483,7 +545,14 @@ class AiHttpServer(
         val client = api.client
 
         fun audited(what: String, result: Any): Any {
-            audit("[${session.name}] клиент: $what")
+            // У пакета в лог игрока идут счётчики: «изменены триггеры» без них
+            // не отличить правку одного правила от восьмидесяти
+            val batch = (result as? Map<*, *>)?.takeIf { it["batch"] == true }
+            val text = if (batch == null) what else {
+                val failed = batch["failed"] as? Int ?: 0
+                "$what: ${batch["total"]}" + if (failed > 0) ", с ошибками: $failed" else ""
+            }
+            audit("[${session.name}] клиент: $text")
             return result
         }
 
@@ -524,79 +593,79 @@ class AiHttpServer(
 
             // Триггеры
             "triggers" -> mapOf("triggers" to client.listTriggers())
-            "triggers/create" -> audited("создан триггер '${req.str("name")}'", mapOf(
-                "id" to client.createTrigger(
-                    name = req.str("name") ?: "ai-trigger",
-                    pattern = req.str("pattern") ?: throw ApiError(400, "Нужен pattern"),
-                    commands = req.strList("commands"),
-                    enabled = req.bool("enabled", true),
-                    gag = req.bool("gag", false),
-                    priority = req.int("priority", 0),
-                    profileId = req.str("profileId"),
-                    scope = scopeOf(req)
+            "triggers/create" -> audited("созданы триггеры", batched(req) { item ->
+                mapOf(
+                    "id" to client.createTrigger(
+                        name = item.str("name") ?: "ai-trigger",
+                        pattern = item.str("pattern") ?: throw ApiError(400, "Нужен pattern"),
+                        commands = item.strList("commands"),
+                        enabled = item.bool("enabled", true),
+                        gag = item.bool("gag", false),
+                        priority = item.int("priority", 0),
+                        profileId = item.str("profileId"),
+                        scope = scopeOf(item)
+                    )
                 )
-            ))
-            "triggers/update" -> {
-                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
-                val (changes, applied) = changesOf(
-                    req,
-                    setOf("name", "pattern", "commands", "enabled", "gag", "priority", "scope")
-                )
-                audited("изменён триггер", updated(applied, client.updateTrigger(id, changes), "Триггер не найден: $id"))
-            }
-            "triggers/delete" -> audited("удалён триггер", mutated(
-                client.deleteTrigger(req.str("id") ?: throw ApiError(400, "Нужно id")),
-                "Триггер не найден: ${req.str("id")}"
-            ))
+            })
+            "triggers/update" -> audited("изменены триггеры", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(item, TRIGGER_FIELDS)
+                asMap(updated(applied, client.updateTrigger(id, changes), "Триггер не найден: $id"))
+            })
+            "triggers/delete" -> audited("удалены триггеры", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                asMap(mutated(client.deleteTrigger(id), "Триггер не найден: $id"))
+            })
 
             // Алиасы
             "aliases" -> mapOf("aliases" to client.listAliases())
-            "aliases/create" -> audited("создан алиас '${req.str("name")}'", mapOf(
-                "id" to client.createAlias(
-                    name = req.str("name") ?: "ai-alias",
-                    pattern = req.str("pattern") ?: throw ApiError(400, "Нужен pattern"),
-                    commands = req.strList("commands"),
-                    enabled = req.bool("enabled", true),
-                    profileId = req.str("profileId")
+            "aliases/create" -> audited("созданы алиасы", batched(req) { item ->
+                mapOf(
+                    "id" to client.createAlias(
+                        name = item.str("name") ?: "ai-alias",
+                        pattern = item.str("pattern") ?: throw ApiError(400, "Нужен pattern"),
+                        commands = item.strList("commands"),
+                        enabled = item.bool("enabled", true),
+                        profileId = item.str("profileId")
+                    )
                 )
-            ))
-            "aliases/update" -> {
-                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
-                val (changes, applied) = changesOf(req, setOf("name", "pattern", "commands", "enabled", "priority"))
-                audited("изменён алиас", updated(applied, client.updateAlias(id, changes), "Алиас не найден: $id"))
-            }
-            "aliases/delete" -> audited("удалён алиас", mutated(
-                client.deleteAlias(req.str("id") ?: throw ApiError(400, "Нужно id")),
-                "Алиас не найден: ${req.str("id")}"
-            ))
+            })
+            "aliases/update" -> audited("изменены алиасы", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(item, ALIAS_FIELDS)
+                asMap(updated(applied, client.updateAlias(id, changes), "Алиас не найден: $id"))
+            })
+            "aliases/delete" -> audited("удалены алиасы", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                asMap(mutated(client.deleteAlias(id), "Алиас не найден: $id"))
+            })
 
             // Хоткеи
             "hotkeys" -> mapOf("hotkeys" to client.listHotkeys())
-            "hotkeys/create" -> audited("создан хоткей '${req.str("key")}'", mapOf(
-                "id" to client.createHotkey(
-                    name = req.str("name") ?: "ai-hotkey",
-                    key = req.str("key") ?: throw ApiError(400, "Нужна key"),
-                    commands = req.strList("commands"),
-                    ctrl = req.bool("ctrl", false),
-                    alt = req.bool("alt", false),
-                    shift = req.bool("shift", false),
-                    enabled = req.bool("enabled", true),
-                    profileId = req.str("profileId"),
-                    scope = scopeOf(req)
+            "hotkeys/create" -> audited("созданы хоткеи", batched(req) { item ->
+                mapOf(
+                    "id" to client.createHotkey(
+                        name = item.str("name") ?: "ai-hotkey",
+                        key = item.str("key") ?: throw ApiError(400, "Нужна key"),
+                        commands = item.strList("commands"),
+                        ctrl = item.bool("ctrl", false),
+                        alt = item.bool("alt", false),
+                        shift = item.bool("shift", false),
+                        enabled = item.bool("enabled", true),
+                        profileId = item.str("profileId"),
+                        scope = scopeOf(item)
+                    )
                 )
-            ))
-            "hotkeys/update" -> {
-                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
-                val (changes, applied) = changesOf(
-                    req,
-                    setOf("key", "ctrl", "alt", "shift", "commands", "enabled", "scope")
-                )
-                audited("изменён хоткей", updated(applied, client.updateHotkey(id, changes), "Хоткей не найден: $id"))
-            }
-            "hotkeys/delete" -> audited("удалён хоткей", mutated(
-                client.deleteHotkey(req.str("id") ?: throw ApiError(400, "Нужно id")),
-                "Хоткей не найден: ${req.str("id")}"
-            ))
+            })
+            "hotkeys/update" -> audited("изменены хоткеи", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(item, HOTKEY_FIELDS)
+                asMap(updated(applied, client.updateHotkey(id, changes), "Хоткей не найден: $id"))
+            })
+            "hotkeys/delete" -> audited("удалены хоткеи", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                asMap(mutated(client.deleteHotkey(id), "Хоткей не найден: $id"))
+            })
 
             // Вкладки вывода
             "tabs" -> mapOf("tabs" to client.listTabs())
@@ -617,22 +686,30 @@ class AiHttpServer(
 
             // Контекстные команды (предложения в панели, не автоматические)
             "context/rules" -> mapOf("rules" to client.listContextRules())
-            "context/rules/create" -> audited("создано контекстное правило", mapOf(
-                "id" to client.createContextRule(
-                    command = req.str("command") ?: throw ApiError(400, "Нужно command"),
-                    pattern = req.str("pattern"),
-                    scope = scopeOf(req),
-                    ttl = req.str("ttl") ?: "room_change",
-                    ttlMinutes = req["ttlMinutes"]?.let { req.int("ttlMinutes", 10) },
-                    priority = req.int("priority", 0),
-                    enabled = req.bool("enabled", true),
-                    profileId = req.str("profileId")
+            "context/rules/create" -> audited("созданы контекстные правила", batched(req) { item ->
+                mapOf(
+                    "id" to client.createContextRule(
+                        command = item.str("command") ?: throw ApiError(400, "Нужно command"),
+                        pattern = item.str("pattern"),
+                        scope = scopeOf(item),
+                        ttl = item.str("ttl") ?: "room_change",
+                        ttlMinutes = item["ttlMinutes"]?.let { item.int("ttlMinutes", 10) },
+                        priority = item.int("priority", 0),
+                        enabled = item.bool("enabled", true),
+                        profileId = item.str("profileId")
+                    )
                 )
-            ))
-            "context/rules/delete" -> audited("удалено контекстное правило", mutated(
-                client.deleteContextRule(req.str("id") ?: throw ApiError(400, "Нужно id")),
-                "Контекстное правило не найдено: ${req.str("id")}"
-            ))
+            })
+            // profileId здесь переносит правило между профилями, сохраняя id
+            "context/rules/update" -> audited("изменены контекстные правила", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(item, CONTEXT_RULE_FIELDS)
+                asMap(updated(applied, client.updateContextRule(id, changes), "Контекстное правило не найдено: $id"))
+            })
+            "context/rules/delete" -> audited("удалены контекстные правила", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                asMap(mutated(client.deleteContextRule(id), "Контекстное правило не найдено: $id"))
+            })
             "context/queue" -> mapOf("queue" to client.listContextQueue())
 
             // Где игрок сейчас: комната и зона с человекочитаемой подписью

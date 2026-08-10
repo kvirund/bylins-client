@@ -174,6 +174,18 @@ interface ClientControl {
         profileId: String? = null
     ): String
 
+    /**
+     * Правит контекстное правило: command, pattern, scope, ttl, ttlMinutes,
+     * priority, enabled, profileId.
+     *
+     * profileId переносит правило между профилями персонажей (и в базовый
+     * набор по null), сохраняя id — иначе массовый перенос сводился к
+     * «удалить и создать заново».
+     *
+     * @return false, если правила с таким id нет
+     */
+    fun updateContextRule(id: String, changes: Map<String, Any?>): Boolean
+
     fun deleteContextRule(id: String): Boolean
 
     /** Команды, предложенные игроку прямо сейчас (очередь в панели). */

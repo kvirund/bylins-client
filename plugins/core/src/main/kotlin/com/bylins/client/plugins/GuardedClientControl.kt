@@ -87,6 +87,8 @@ internal class GuardedClientControl(
         command: String, pattern: String?, scope: Map<String, Any?>?,
         ttl: String, ttlMinutes: Int?, priority: Int, enabled: Boolean, profileId: String?
     ): String = control().createContextRule(command, pattern, scope, ttl, ttlMinutes, priority, enabled, profileId)
+    override fun updateContextRule(id: String, changes: Map<String, Any?>): Boolean =
+        control().updateContextRule(id, changes)
     override fun deleteContextRule(id: String): Boolean = control().deleteContextRule(id)
     override fun listContextQueue(): List<Map<String, Any?>> = control().listContextQueue()
     override fun getLocation(): Map<String, Any?> = control().getLocation()

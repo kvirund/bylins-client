@@ -151,8 +151,15 @@ TOOLS = [
             "settings, settings/update, logs, logs/start, logs/stop, "
             "msdp (структурированные данные сервера: ROOM, LEVEL, STATE и прочее; "
             "params.vars — выбрать конкретные), "
-            "context/rules, context/rules/create, context/rules/delete, context/queue, "
-            "characters, characters/create, characters/push, characters/pop, characters/requires."
+            "context/rules, context/rules/create, context/rules/update, "
+            "context/rules/delete, context/queue, "
+            "characters, characters/create, characters/push, characters/pop, characters/requires.\n"
+            "Массовые правки: create/update/delete у триггеров, алиасов, хоткеев и "
+            "контекстных правил принимают пакет — params.items (массив объектов) "
+            "или params.ids (массив id для удаления). Пакет отвечает "
+            "{batch, total, failed, results}; ошибка одного элемента не отменяет "
+            "остальные. Перенос правил между профилями — это update с profileId "
+            "(id сохраняется), а не удаление и создание заново."
         ),
         "inputSchema": {
             "type": "object",
@@ -167,7 +174,10 @@ TOOLS = [
                         "работать, только пока этот профиль активен. Там же можно задать "
                         "область действия: scope={\"type\":\"zone\",\"zones\":[\"759\"]} "
                         "или {\"type\":\"room\",\"roomIds\":[...]} — правило сработает "
-                        "только там."
+                        "только там. Те же поля принимает update, в том числе "
+                        "profileId (null — перенести в базовый набор).\n"
+                        "Пакет: {\"items\":[{...},{...}]} или {\"ids\":[\"a\",\"b\"]}, "
+                        "до 500 элементов за вызов."
                     ),
                 },
             },

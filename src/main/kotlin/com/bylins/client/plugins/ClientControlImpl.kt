@@ -106,6 +106,32 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
     }
 
 
+    // --- Перенос между профилями ---
+
+    /** Куда переносим правило; null в поле to означает базовый набор. */
+    private class MoveTarget(val to: String?)
+
+    /**
+     * Разбирает `profileId` в изменениях: правило остаётся тем же (тот же id),
+     * но переезжает в другой профиль или в базовый набор.
+     *
+     * Без этого перенос сводился к «удалить и создать заново» — правило меняло
+     * id, и всё, что на него ссылалось, приходилось чинить руками.
+     *
+     * @return null, если переносить не надо (ключа нет или профиль тот же)
+     */
+    private fun moveTarget(changes: Map<String, Any?>, currentProfileId: String?): MoveTarget? {
+        if (!changes.containsKey("profileId")) return null
+        val target = changes["profileId"] as? String
+        if (target == currentProfileId) return null
+        if (target != null) {
+            require(state.profileManager.profiles.value.any { it.id == target }) {
+                "Профиль персонажа не найден: $target"
+            }
+        }
+        return MoveTarget(target)
+    }
+
     // --- Область действия (общая для триггеров, хоткеев, контекстных правил) ---
 
     /**
@@ -220,7 +246,13 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
                 parseScope(changes["scope"] as? Map<String, Any?>)
             } else existing.scope
         )
-        if (profileId != null) {
+        val move = moveTarget(changes, profileId)
+        if (move != null) {
+            if (profileId != null) state.profileManager.removeTriggerFromProfile(profileId, id)
+            else state.removeTrigger(id)
+            if (move.to != null) state.profileManager.addTriggerToProfile(move.to, updated)
+            else state.addTrigger(updated)
+        } else if (profileId != null) {
             state.profileManager.updateTriggerInProfile(profileId, updated)
         } else {
             state.updateTrigger(updated)
@@ -304,7 +336,13 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             enabled = changes["enabled"] as? Boolean ?: existing.enabled,
             priority = (changes["priority"] as? Number)?.toInt() ?: existing.priority
         )
-        if (profileId != null) {
+        val move = moveTarget(changes, profileId)
+        if (move != null) {
+            if (profileId != null) state.profileManager.removeAliasFromProfile(profileId, id)
+            else state.removeAlias(id)
+            if (move.to != null) state.profileManager.addAliasToProfile(move.to, updated)
+            else state.addAlias(updated)
+        } else if (profileId != null) {
             state.profileManager.updateAliasInProfile(profileId, updated)
         } else {
             // Замена по тому же id: отдельного updateAlias в ClientState нет
@@ -408,7 +446,13 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
                 parseScope(changes["scope"] as? Map<String, Any?>)
             } else existing.scope
         )
-        if (profileId != null) {
+        val move = moveTarget(changes, profileId)
+        if (move != null) {
+            if (profileId != null) state.profileManager.removeHotkeyFromProfile(profileId, id)
+            else state.removeHotkey(id)
+            if (move.to != null) state.profileManager.addHotkeyToProfile(move.to, updated)
+            else state.addHotkey(updated)
+        } else if (profileId != null) {
             state.profileManager.updateHotkeyInProfile(profileId, updated)
         } else {
             state.removeHotkey(id)
@@ -539,6 +583,47 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         }
         state.saveConfig()
         return rule.id
+    }
+
+    override fun updateContextRule(id: String, changes: Map<String, Any?>): Boolean {
+        val profileId = profileOfContextRule(id)
+        val existing = if (profileId != null) {
+            state.profileManager.profiles.value.first { it.id == profileId }
+                .contextCommandRules.first { it.id == id }
+        } else {
+            ctx.rules.value.find { it.id == id } ?: return false
+        }
+        val updated = existing.copy(
+            command = changes["command"] as? String ?: existing.command,
+            enabled = changes["enabled"] as? Boolean ?: existing.enabled,
+            priority = (changes["priority"] as? Number)?.toInt() ?: existing.priority,
+            triggerType = if (changes.containsKey("pattern")) {
+                (changes["pattern"] as? String)?.let {
+                    com.bylins.client.contextcommands.ContextTriggerType.Pattern(it.toRegex())
+                } ?: com.bylins.client.contextcommands.ContextTriggerType.Permanent
+            } else existing.triggerType,
+            scope = if (changes.containsKey("scope")) {
+                parseScope(changes["scope"] as? Map<String, Any?>)
+                    ?: com.bylins.client.contextcommands.ContextScope.World
+            } else existing.scope,
+            ttl = if (changes.containsKey("ttl")) {
+                parseTtl(changes["ttl"] as? String ?: "room", (changes["ttlMinutes"] as? Number)?.toInt())
+            } else existing.ttl
+        )
+
+        val move = moveTarget(changes, profileId)
+        if (move != null) {
+            if (profileId != null) state.profileManager.removeContextRuleFromProfile(profileId, id)
+            else ctx.removeRule(id)
+            if (move.to != null) state.profileManager.addContextRuleToProfile(move.to, updated)
+            else ctx.addRule(updated)
+        } else if (profileId != null) {
+            state.profileManager.updateContextRuleInProfile(profileId, updated)
+        } else {
+            ctx.updateRule(id) { updated }
+        }
+        state.saveConfig()
+        return true
     }
 
     override fun deleteContextRule(id: String): Boolean {
