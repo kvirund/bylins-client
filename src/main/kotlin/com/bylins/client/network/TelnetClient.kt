@@ -241,14 +241,19 @@ class TelnetClient(
                     val data = buffer.copyOf(bytesRead)
                     val (text, telnetCommands) = telnetParser.parse(data)
 
+                    // Telnet-команды разбираем ПЕРЕД текстом: в одном пакете
+                    // сервер шлёт и MSDP с новой комнатой, и её описание.
+                    // Разбери мы текст первым — триггеры и контекстные правила
+                    // с областью действия проверялись бы против ещё старой
+                    // комнаты и молча не срабатывали при входе, оживая только
+                    // после «смотреть», когда позиция уже обновилась.
+                    telnetCommands.forEach { handleTelnetCommand(it) }
+
                     if (text.isNotEmpty()) {
                         // Обрабатываем текст триггерами и получаем модифицированную версию с colorize
                         val modifiedText = clientState?.processIncomingText(text) ?: text
                         appendToBuffer(modifiedText)
                     }
-
-                    // Обработка telnet команд
-                    telnetCommands.forEach { handleTelnetCommand(it) }
                 }
             } catch (e: IOException) {
                 // Ошибка чтения - разрываем соединение
