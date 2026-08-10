@@ -116,6 +116,15 @@ class ClientState {
     }
 
     init {
+        // Без физического кода клавиши хоткеи привязаны к раскладке, в которой
+        // их назначили. Это надо видеть в логе, а не выяснять наощупь.
+        if (!com.bylins.client.hotkeys.PhysicalKey.available) {
+            logger.warn {
+                "Физический код клавиши недоступен: хоткеи будут зависеть от раскладки. " +
+                    "Нужен параметр запуска --add-opens=java.desktop/java.awt.event=ALL-UNNAMED"
+            }
+        }
+
         // Триггеры и хоткеи с областью действия должны знать, где игрок сейчас
         triggerManager.getCurrentRoom = { mapManager.getCurrentRoom() }
         hotkeyManager.getCurrentRoom = { mapManager.getCurrentRoom() }

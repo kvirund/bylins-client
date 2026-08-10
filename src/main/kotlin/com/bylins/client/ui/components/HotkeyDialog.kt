@@ -194,7 +194,9 @@ fun HotkeyDialog(
                         .onPreviewKeyEvent { event ->
                             // onPreviewKeyEvent перехватывает события ДО того как диалог их обработает
                             if (event.type == KeyEventType.KeyDown && isCapturing) {
-                                val key = event.key
+                                // Тем же способом, что и при срабатывании: сохранить
+                                // нужно физическую клавишу, а не символ раскладки
+                                val key = com.bylins.client.hotkeys.PhysicalKey.of(event)
 
                                 // Игнорируем чистые модификаторы
                                 if (key == Key.CtrlLeft || key == Key.CtrlRight ||

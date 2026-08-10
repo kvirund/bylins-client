@@ -213,7 +213,7 @@ data class Hotkey(
                     110 -> "Num."
                     111 -> "Num/"
                     // NumPad Enter
-                    10 -> "NumEnter"
+                    13 -> "NumEnter"  // VK_RETURN на нумпаде
                     // NumPad навигация (NumLock OFF)
                     38 -> "Num8"  // VK_UP
                     40 -> "Num2"  // VK_DOWN
@@ -223,8 +223,8 @@ data class Hotkey(
                     35 -> "Num1"  // VK_END
                     33 -> "Num9"  // VK_PAGE_UP
                     34 -> "Num3"  // VK_PAGE_DOWN
-                    155 -> "Num0"  // VK_INSERT
-                    127 -> "Num."  // VK_DELETE
+                    45 -> "Num0"  // VK_INSERT
+                    46 -> "Num."  // VK_DELETE
                     12 -> "Num5"  // VK_CLEAR
                     else -> "Num?"
                 }
@@ -272,16 +272,16 @@ data class Hotkey(
                 34 -> "PgDown"
                 36 -> "Home"
                 35 -> "End"
-                155 -> "Insert"   // KeyEvent.VK_INSERT
-                127 -> "Delete"   // KeyEvent.VK_DELETE
+                45 -> "Insert"
+                46 -> "Delete"
 
                 // Специальные
                 27 -> "Esc"
                 9 -> "Tab"
                 32 -> "Space"
-                10 -> "Enter"
+                13 -> "Enter"   // VK_RETURN
                 8 -> "Backspace"
-                154 -> "PrtSc"
+                44 -> "PrtSc"   // VK_SNAPSHOT
                 145 -> "ScrLk"
                 12 -> "Clear"
 
@@ -325,18 +325,20 @@ data class Hotkey(
                 56 -> "8"
                 57 -> "9"
 
-                // Знаки препинания (коды AWT, не Windows VK)
-                192 -> "`"   // VK_BACK_QUOTE
-                45 -> "-"    // VK_MINUS
-                61 -> "="    // VK_EQUALS
-                91 -> "["    // VK_OPEN_BRACKET
-                93 -> "]"    // VK_CLOSE_BRACKET
-                92 -> "\\"   // VK_BACK_SLASH
-                59 -> ";"    // VK_SEMICOLON
-                222 -> "'"   // VK_QUOTE
-                44 -> ","    // VK_COMMA
-                46 -> "."    // VK_PERIOD
-                47 -> "/"    // VK_SLASH
+                // Знаки препинания. Коды Windows (VK_OEM_*), потому что клавиша
+                // определяется по rawCode — он одинаков в любой раскладке,
+                // в отличие от кода AWT
+                192 -> "`"   // VK_OEM_3
+                189 -> "-"   // VK_OEM_MINUS
+                187 -> "="   // VK_OEM_PLUS
+                219 -> "["   // VK_OEM_4
+                221 -> "]"   // VK_OEM_6
+                220 -> "\\"   // VK_OEM_5
+                186 -> ";"   // VK_OEM_1
+                222 -> "'"   // VK_OEM_7
+                188 -> ","   // VK_OEM_COMMA
+                190 -> "."   // VK_OEM_PERIOD
+                191 -> "/"   // VK_OEM_2
 
                 else -> "Key($code)"
             }
@@ -345,6 +347,9 @@ data class Hotkey(
         /**
          * Парсит имя клавиши в Key
          */
+        /** Клавиша по коду Windows — тому же, что кладёт [PhysicalKey]. */
+        private fun windowsKey(vk: Int): Key = Key(vk.toLong() shl 32)
+
         fun parseKey(keyName: String): Key? {
             return when (keyName.uppercase()) {
                 // Функциональные клавиши
@@ -388,16 +393,16 @@ data class Hotkey(
                 "PGDOWN", "PAGEDOWN" -> Key.PageDown
                 "HOME" -> Key.MoveHome
                 "END" -> Key.MoveEnd
-                "INSERT", "INS" -> Key.Insert
-                "DELETE", "DEL" -> Key.Delete
+                "INSERT", "INS" -> windowsKey(45)
+                "DELETE", "DEL" -> windowsKey(46)
 
                 // Специальные
                 "ESC", "ESCAPE" -> Key.Escape
                 "TAB" -> Key.Tab
                 "SPACE", "SPACEBAR" -> Key.Spacebar
-                "ENTER", "RETURN" -> Key.Enter
+                "ENTER", "RETURN" -> windowsKey(13)
                 "BACKSPACE", "BS" -> Key.Backspace
-                "PRTSC", "PRINTSCREEN" -> Key.PrintScreen
+                "PRTSC", "PRINTSCREEN" -> windowsKey(44)
                 "SCRLK", "SCROLLLOCK" -> Key.ScrollLock
 
                 // Буквы
@@ -440,18 +445,20 @@ data class Hotkey(
                 "8" -> Key.Eight
                 "9" -> Key.Nine
 
-                // Символы
-                "`" -> Key.Grave
-                "-" -> Key.Minus
-                "=" -> Key.Equals
-                "[" -> Key.LeftBracket
-                "]" -> Key.RightBracket
-                "\\" -> Key.Backslash
-                ";" -> Key.Semicolon
-                "'" -> Key.Apostrophe
-                "," -> Key.Comma
-                "." -> Key.Period
-                "/" -> Key.Slash
+                // Символы — по кодам Windows, как их отдаёт PhysicalKey.
+                // Коды Compose (Key.Slash и прочие) зависят от раскладки, и
+                // сохранённый хоткей после перезапуска не находил свою клавишу.
+                "`" -> windowsKey(192)
+                "-" -> windowsKey(189)
+                "=" -> windowsKey(187)
+                "[" -> windowsKey(219)
+                "]" -> windowsKey(221)
+                "\\" -> windowsKey(220)
+                ";" -> windowsKey(186)
+                "'" -> windowsKey(222)
+                "," -> windowsKey(188)
+                "." -> windowsKey(190)
+                "/" -> windowsKey(191)
 
                 else -> {
                     // Попытка распарсить Key(код)

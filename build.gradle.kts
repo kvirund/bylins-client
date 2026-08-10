@@ -86,7 +86,10 @@ compose.desktop {
             "-Dstderr.encoding=UTF-8",
             "-Dsun.stdout.encoding=UTF-8",
             "-Dsun.stderr.encoding=UTF-8",
-            "-DCONSOLE_CHARSET=UTF-8"
+            "-DCONSOLE_CHARSET=UTF-8",
+            // Хоткеи определяются по физической клавише: её код лежит в
+            // приватном поле события AWT, читать его иначе нечем
+            "--add-opens=java.desktop/java.awt.event=ALL-UNNAMED"
         )
 
         nativeDistributions {

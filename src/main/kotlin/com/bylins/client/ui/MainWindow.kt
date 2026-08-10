@@ -128,9 +128,11 @@ fun MainWindow() {
                                 lastHandledKey = event.key
                                 return@onPreviewKeyEvent true
                             }
-                            // Обрабатываем горячие клавиши
+                            // Хоткей сравниваем по физической клавише: код от Compose
+                            // зависит от раскладки, и назначенный в английской
+                            // хоткей не срабатывал в русской
                             val handled = clientState.processHotkey(
-                                key = event.key,
+                                key = com.bylins.client.hotkeys.PhysicalKey.of(event),
                                 isCtrlPressed = event.isCtrlPressed,
                                 isAltPressed = event.isAltPressed,
                                 isShiftPressed = event.isShiftPressed
