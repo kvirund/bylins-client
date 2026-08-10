@@ -23,10 +23,47 @@ class ConfigManager {
     private val configDir = Paths.get(System.getProperty("user.home"), ".bylins-client")
     private val configFile = configDir.resolve("config.json")
 
+    /**
+     * Читали ли конфиг в этом запуске.
+     *
+     * Пока не читали, сохранять нечего: состояние клиента ещё пустое, и запись
+     * означала бы затирание файла. Ровно так и терялись настройки — клиент
+     * падал при старте, а shutdown hook честно сохранял пустоту поверх.
+     */
+    private var loaded = false
+
     init {
         // Создаём директорию конфига если её нет
         if (!Files.exists(configDir)) {
             Files.createDirectories(configDir)
+        }
+    }
+
+    /** Сколько прошлых версий конфига храним рядом. */
+    private val backupsToKeep = 3
+
+    /**
+     * Отодвигает прежний конфиг в config.json.1 (и далее по кругу).
+     *
+     * Дёшево и спасает от любой ошибки, которая приводит к записи неполного
+     * состояния: файл со списком триггеров, копившимся месяцами, не должен
+     * зависеть от единственной удачной записи.
+     */
+    private fun rotateBackups() {
+        if (!Files.exists(configFile)) return
+        try {
+            for (index in backupsToKeep downTo 2) {
+                val older = configDir.resolve("config.json.$index")
+                val newer = configDir.resolve("config.json.${index - 1}")
+                if (Files.exists(newer)) Files.move(newer, older, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
+            Files.copy(
+                configFile,
+                configDir.resolve("config.json.1"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
+        } catch (e: Exception) {
+            logger.warn { "Не удалось сохранить резервную копию конфига: ${e.message}" }
         }
     }
 
@@ -89,8 +126,23 @@ class ConfigManager {
                 pluginPermissions = pluginPermissions
             )
 
+            // Конфиг не читали — значит и состояния ещё нет, писать нечего
+            if (!loaded) {
+                logger.warn { "Конфиг не сохранён: он ещё не был загружен в этом запуске" }
+                return
+            }
+
             val jsonString = json.encodeToString(config)
-            Files.writeString(configFile, jsonString)
+            rotateBackups()
+            // Пишем во временный файл и подменяем: оборванная запись не должна
+            // оставлять обрезанный конфиг вместо целого
+            val temp = configDir.resolve("config.json.tmp")
+            Files.writeString(temp, jsonString)
+            Files.move(
+                temp,
+                configFile,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+            )
 
             logger.info { "Config saved to: $configFile" }
         } catch (e: Exception) {
@@ -106,6 +158,8 @@ class ConfigManager {
         try {
             if (!Files.exists(configFile)) {
                 logger.info { "Config file not found: $configFile" }
+                // Первый запуск: сохранять можно, затирать нечего
+                loaded = true
                 return ConfigData(
                     triggers = emptyList(),
                     aliases = emptyList(),
@@ -149,6 +203,7 @@ class ConfigManager {
             val contextCommandMaxQueueSize = config.contextCommandMaxQueueSize
 
             logger.info { "Config loaded from: $configFile (${triggers.size} triggers, ${aliases.size} aliases, ${hotkeys.size} hotkeys, ${variables.size} variables, ${tabs.size} tabs, ${contextCommandRules.size} context rules, encoding: $encoding, miniMapWidth: $miniMapWidth, miniMapHeight: $miniMapHeight, theme: $theme, fontFamily: $fontFamily, fontSize: $fontSize, ${connectionProfiles.size} connection profiles, ignoreNumLock: $ignoreNumLock, ${activeProfileStack.size} active profiles, lastMapRoomId: $lastMapRoomId)" }
+            loaded = true
             return ConfigData(
                 triggers = triggers,
                 aliases = aliases,
@@ -177,6 +232,8 @@ class ConfigManager {
                 pluginPermissions = pluginPermissions
             )
         } catch (e: Exception) {
+            // Не помечаем конфиг загруженным: файл есть, но прочитать не вышло.
+            // Сохранение поверх затёрло бы его содержимое окончательно.
             logger.error { "Failed to load config: ${e.message}" }
             e.printStackTrace()
             return ConfigData(

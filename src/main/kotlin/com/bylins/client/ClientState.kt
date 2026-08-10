@@ -1748,6 +1748,16 @@ class ClientState {
     }
 
     private fun doSaveConfig() {
+        // Инициализация не завершена — значит конфиг прочитан, но ещё не разложен
+        // по менеджерам, и сохранять сейчас означает записать пустоту поверх.
+        // Проверка стояла только в saveConfig(), а shutdown зовёт saveConfigNow():
+        // падение в конструкторе уводило JVM в shutdown hook, и тот затирал файл
+        // со всеми триггерами, хоткеями и контекстными правилами.
+        if (isInitializing) {
+            logger.warn { "Конфиг не сохранён: инициализация клиента не завершена" }
+            return
+        }
+
         // Синхронизируем стек профилей с текущим профилем подключения перед сохранением
         if (::profileManager.isInitialized) {
             saveActiveProfileStackToCurrentConnectionProfile()
