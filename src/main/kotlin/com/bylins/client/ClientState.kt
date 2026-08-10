@@ -206,6 +206,38 @@ class ClientState {
         }
     }
 
+    // --- Проход по маршруту ---
+    // Объявлено до mapManager намеренно: карта зовёт onPathAdvanced, а поля,
+    // объявленные ниже блока init, на момент его выполнения ещё null.
+
+    private val _walking = MutableStateFlow(false)
+    /** Идёт ли сейчас автоматический проход по маршруту. */
+    val walking: StateFlow<Boolean> = _walking
+
+    private var walkWatchdog: kotlinx.coroutines.Job? = null
+
+    /** Сколько ждать смены комнаты, прежде чем признать шаг непрошедшим. */
+    private val walkStepTimeoutMs = 4000L
+
+    private val pathWalker: com.bylins.client.mapper.PathWalker =
+        com.bylins.client.mapper.PathWalker(
+            currentRoomId = { mapManager.getCurrentRoom()?.id },
+            send = { command ->
+                // Через send(), а не sendRaw(): шаг должен вести себя как
+                // обычная команда игрока — попасть в лог и в эхо
+                send(command)
+                armWalkWatchdog()
+            },
+            notify = { message -> telnetClient.addLocalOutput(message) }
+        ).also { walker ->
+            walker.onStopped = {
+                walkWatchdog?.cancel()
+                walkWatchdog = null
+                _walking.value = false
+                mapManager.clearPath()
+            }
+        }
+
     // MapManager - может быть пересоздан при смене профиля
     private var mapManager: com.bylins.client.mapper.MapManager = com.bylins.client.mapper.MapManager(
         onRoomEnter = mapManagerOnRoomEnter
@@ -2256,37 +2288,6 @@ class ClientState {
 
     fun executeMapCommand(name: String, room: com.bylins.client.mapper.Room) {
         mapContextCommands[name]?.invoke(room)
-    }
-
-    // --- Проход по маршруту ---
-
-    private val _walking = MutableStateFlow(false)
-    /** Идёт ли сейчас автоматический проход по маршруту. */
-    val walking: StateFlow<Boolean> = _walking
-
-    private var walkWatchdog: kotlinx.coroutines.Job? = null
-
-    /** Сколько ждать смены комнаты, прежде чем признать шаг непрошедшим. */
-    private val walkStepTimeoutMs = 4000L
-
-    private val pathWalker: com.bylins.client.mapper.PathWalker by lazy {
-        com.bylins.client.mapper.PathWalker(
-            currentRoomId = { mapManager.getCurrentRoom()?.id },
-            send = { command ->
-                // Через send(), а не sendRaw(): шаг должен вести себя как
-                // обычная команда игрока — попасть в лог и в эхо
-                send(command)
-                armWalkWatchdog()
-            },
-            notify = { message -> telnetClient.addLocalOutput(message) }
-        ).also { walker ->
-            walker.onStopped = {
-                walkWatchdog?.cancel()
-                walkWatchdog = null
-                _walking.value = false
-                mapManager.clearPath()
-            }
-        }
     }
 
     private fun armWalkWatchdog() {
