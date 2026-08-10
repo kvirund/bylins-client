@@ -757,7 +757,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         // Путь к файлу и каталог живут в getLogInfo(): держать их в двух местах
         // значит рано или поздно разойтись
         "logging" to state.isLogging.value,
-        "logWithColors" to state.logWithColors.value
+        "logWithColors" to state.logWithColors.value,
+        "configBackups" to state.configBackups.value
     )
 
     override fun updateSettings(changes: Map<String, Any?>): Map<String, Any?> {
@@ -771,6 +772,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
                 "ignoreNumLock" -> (value as? Boolean)?.let { state.setIgnoreNumLock(it); applied[key] = it }
                 "sidePanelCollapsed" -> (value as? Boolean)?.let { state.setSidePanelCollapsed(it); applied[key] = it }
                 "logWithColors" -> (value as? Boolean)?.let { state.setLogWithColors(it); applied[key] = it }
+                "configBackups" -> (value as? Number)?.let { state.setConfigBackups(it.toInt()); applied[key] = state.configBackups.value }
                 "logging" -> (value as? Boolean)?.let { setLogging(it); applied[key] = it }
                 // Неизвестные ключи молча пропускаем: список настроек растёт,
                 // и плагин не должен падать из-за незнакомого имени

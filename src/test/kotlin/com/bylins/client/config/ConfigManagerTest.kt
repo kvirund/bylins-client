@@ -100,6 +100,72 @@ class ConfigManagerTest {
         assertTrue(Files.readString(backup).contains("боевой"), "в копии нет прежних триггеров")
     }
 
+    /** Пишет конфиг с одним триггером-меткой, чтобы копии можно было различить. */
+    private fun saveMarked(mark: String, backups: Int = 3) {
+        val manager = ConfigManager()
+        manager.loadConfig()
+        manager.saveConfig(
+            triggers = listOf(trigger(mark)),
+            aliases = emptyList(),
+            hotkeys = emptyList(),
+            variables = emptyMap(),
+            tabs = emptyList(),
+            configBackups = backups
+        )
+    }
+
+    private fun backup(index: Int): Path = home.resolve(".bylins-client").resolve("config.json.$index")
+
+    @Test
+    fun `копии сдвигаются по кругу, самая старая вытесняется`() {
+        listOf("первый", "второй", "третий", "четвёртый").forEach { saveMarked(it) }
+
+        // .1 — предыдущая версия, .3 — самая старая из хранимых
+        assertTrue(Files.readString(backup(1)).contains("третий"), "в .1 не предыдущая версия")
+        assertTrue(Files.readString(backup(2)).contains("второй"))
+        assertTrue(Files.readString(backup(3)).contains("первый"))
+        assertTrue(!Files.exists(backup(4)), "хранится больше копий, чем задано")
+    }
+
+    @Test
+    fun `глубина цикла настраивается`() {
+        listOf("первый", "второй", "третий", "четвёртый").forEach { saveMarked(it, backups = 1) }
+
+        assertTrue(Files.readString(backup(1)).contains("третий"))
+        assertTrue(!Files.exists(backup(2)), "при глубине 1 лишних копий быть не должно")
+    }
+
+    @Test
+    fun `нулевая глубина отключает копии`() {
+        saveMarked("первый", backups = 0)
+        saveMarked("второй", backups = 0)
+
+        assertTrue(!Files.exists(backup(1)))
+    }
+
+    @Test
+    fun `уменьшение глубины убирает лишние копии`() {
+        listOf("первый", "второй", "третий", "четвёртый").forEach { saveMarked(it) }
+        assertTrue(Files.exists(backup(3)))
+
+        saveMarked("пятый", backups = 1)
+
+        assertTrue(!Files.exists(backup(2)), "старые копии остались после уменьшения глубины")
+        assertTrue(!Files.exists(backup(3)))
+    }
+
+    @Test
+    fun `глубина копий переживает перезапуск`() {
+        val manager = ConfigManager()
+        manager.loadConfig()
+        manager.saveConfig(
+            triggers = emptyList(), aliases = emptyList(), hotkeys = emptyList(),
+            variables = emptyMap(), tabs = emptyList(), configBackups = 7
+        )
+
+        assertEquals(7, ConfigManager().loadConfig().configBackups)
+    }
+
     @Test
     fun `временный файл не остаётся после записи`() {
         val manager = ConfigManager()

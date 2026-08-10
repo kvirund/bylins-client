@@ -14,6 +14,12 @@ import java.nio.file.Files
 import java.nio.file.Paths
 
 private val logger = KotlinLogging.logger("ConfigManager")
+
+/** Сколько прошлых версий конфига хранить, если игрок не задал своё число. */
+const val DEFAULT_CONFIG_BACKUPS = 3
+
+/** Верхняя граница: копии дешёвые, но плодить их без счёта незачем. */
+const val MAX_CONFIG_BACKUPS = 20
 class ConfigManager {
     private val json = Json {
         prettyPrint = true
@@ -39,20 +45,25 @@ class ConfigManager {
         }
     }
 
-    /** Сколько прошлых версий конфига храним рядом. */
-    private val backupsToKeep = 3
-
     /**
-     * Отодвигает прежний конфиг в config.json.1 (и далее по кругу).
+     * Отодвигает прежний конфиг в config.json.1, сдвигая старые копии дальше по
+     * кругу; самая старая вытесняется.
      *
-     * Дёшево и спасает от любой ошибки, которая приводит к записи неполного
-     * состояния: файл со списком триггеров, копившимся месяцами, не должен
-     * зависеть от единственной удачной записи.
+     * Дёшево и спасает от любой ошибки, приводящей к записи неполного состояния:
+     * файл со списком триггеров, копившимся месяцами, не должен зависеть от
+     * единственной удачной записи.
+     *
+     * @param keep сколько копий хранить; 0 отключает
      */
-    private fun rotateBackups() {
-        if (!Files.exists(configFile)) return
+    private fun rotateBackups(keep: Int) {
+        if (keep <= 0 || !Files.exists(configFile)) return
         try {
-            for (index in backupsToKeep downTo 2) {
+            // Лишние копии убираем сразу: после уменьшения глубины они иначе
+            // остались бы лежать навсегда
+            var extra = keep + 1
+            while (Files.deleteIfExists(configDir.resolve("config.json.$extra"))) extra++
+
+            for (index in keep downTo 2) {
                 val older = configDir.resolve("config.json.$index")
                 val newer = configDir.resolve("config.json.${index - 1}")
                 if (Files.exists(newer)) Files.move(newer, older, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
@@ -95,7 +106,8 @@ class ConfigManager {
         statusGroupCollapsed: Map<String, Boolean> = emptyMap(),
         outputSplitFractions: Map<String, Float> = emptyMap(),
         sidePanelCollapsed: Boolean = false,
-        pluginPermissions: Map<String, Set<String>> = emptyMap()
+        pluginPermissions: Map<String, Set<String>> = emptyMap(),
+        configBackups: Int = DEFAULT_CONFIG_BACKUPS
     ) {
         try {
             val config = ClientConfig(
@@ -123,7 +135,8 @@ class ConfigManager {
                 statusGroupCollapsed = statusGroupCollapsed,
                 outputSplitFractions = outputSplitFractions,
                 sidePanelCollapsed = sidePanelCollapsed,
-                pluginPermissions = pluginPermissions
+                pluginPermissions = pluginPermissions,
+                configBackups = configBackups
             )
 
             // Конфиг не читали — значит и состояния ещё нет, писать нечего
@@ -133,7 +146,7 @@ class ConfigManager {
             }
 
             val jsonString = json.encodeToString(config)
-            rotateBackups()
+            rotateBackups(configBackups.coerceIn(0, MAX_CONFIG_BACKUPS))
             // Пишем во временный файл и подменяем: оборванная запись не должна
             // оставлять обрезанный конфиг вместо целого
             val temp = configDir.resolve("config.json.tmp")
@@ -198,6 +211,7 @@ class ConfigManager {
             val outputSplitFractions = config.outputSplitFractions
             val sidePanelCollapsed = config.sidePanelCollapsed
             val pluginPermissions = config.pluginPermissions
+            val configBackups = config.configBackups
 
             val contextCommandRules = config.contextCommandRules
             val contextCommandMaxQueueSize = config.contextCommandMaxQueueSize
@@ -229,7 +243,8 @@ class ConfigManager {
                 statusGroupCollapsed = statusGroupCollapsed,
                 outputSplitFractions = outputSplitFractions,
                 sidePanelCollapsed = sidePanelCollapsed,
-                pluginPermissions = pluginPermissions
+                pluginPermissions = pluginPermissions,
+                configBackups = configBackups
             )
         } catch (e: Exception) {
             // Не помечаем конфиг загруженным: файл есть, но прочитать не вышло.
@@ -359,5 +374,6 @@ data class ConfigData(
     val statusGroupCollapsed: Map<String, Boolean> = emptyMap(),
     val outputSplitFractions: Map<String, Float> = emptyMap(),
     val sidePanelCollapsed: Boolean = false,
-    val pluginPermissions: Map<String, Set<String>> = emptyMap()
+    val pluginPermissions: Map<String, Set<String>> = emptyMap(),
+    val configBackups: Int = DEFAULT_CONFIG_BACKUPS
 )

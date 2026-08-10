@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.config.MAX_CONFIG_BACKUPS
 import com.bylins.client.PERMANENT_TAB_IDS
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import com.bylins.client.ui.ALL_TABS
@@ -204,6 +205,53 @@ fun SettingsPanel(
                         text = "Сохранять цвета (ANSI-коды)",
                         color = colorScheme.onSurface,
                         fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+
+                Divider(color = colorScheme.divider, modifier = Modifier.padding(vertical = 8.dp))
+
+                // Резервные копии настроек: список триггеров копится месяцами,
+                // а испорченную запись замечаешь далеко не сразу
+                val configBackups by clientState.configBackups.collectAsState()
+                var backupsText by remember(configBackups) { mutableStateOf(configBackups.toString()) }
+
+                Text(
+                    text = "Резервные копии настроек",
+                    color = colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = backupsText,
+                        onValueChange = { text ->
+                            backupsText = text.filter { it.isDigit() }.take(2)
+                            backupsText.toIntOrNull()?.let { clientState.setConfigBackups(it) }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.width(90.dp),
+                        textStyle = LocalTextStyle.current.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp
+                        ),
+                        colors = TextFieldDefaults.outlinedTextFieldColors(
+                            textColor = colorScheme.onSurface,
+                            backgroundColor = colorScheme.background,
+                            cursorColor = colorScheme.onSurface,
+                            focusedBorderColor = colorScheme.primary,
+                            unfocusedBorderColor = colorScheme.border
+                        )
+                    )
+                    Text(
+                        text = if (configBackups == 0) {
+                            "копии выключены"
+                        } else {
+                            "прошлых версий рядом с config.json (0 — выключить, максимум $MAX_CONFIG_BACKUPS)"
+                        },
+                        color = colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(start = 8.dp)
                     )

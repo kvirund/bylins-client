@@ -380,5 +380,8 @@ data class ClientConfig(
     val statusGroupCollapsed: Map<String, Boolean> = emptyMap(),  // Состояние свёрнутости групп статус-панели
     val outputSplitFractions: Map<String, Float> = emptyMap(),  // Доля разделителя панели вывода по id вкладки
     val sidePanelCollapsed: Boolean = false,  // Свёрнута ли правая (боковая) панель на вкладке «Вывод»
-    val pluginPermissions: Map<String, Set<String>> = emptyMap()  // Выданные плагинам разрешения: id плагина → id разрешений
+    val pluginPermissions: Map<String, Set<String>> = emptyMap(),  // Выданные плагинам разрешения: id плагина → id разрешений
+    // Сколько прошлых версий конфига хранить рядом (config.json.1 и далее).
+    // 0 отключает копии; они спасают, когда клиент записал испорченное состояние
+    val configBackups: Int = 3
 )

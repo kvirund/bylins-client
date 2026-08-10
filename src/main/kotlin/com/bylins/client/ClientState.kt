@@ -346,6 +346,21 @@ class ClientState {
     }
 
     // Свёрнута ли правая (боковая) панель на вкладке «Вывод»
+    /**
+     * Сколько прошлых версий config.json держать рядом (config.json.1 и далее).
+     * Копии — единственное, что спасает, если клиент записал в файл неполное
+     * состояние: заметить это можно много позже.
+     */
+    private val _configBackups = MutableStateFlow(com.bylins.client.config.DEFAULT_CONFIG_BACKUPS)
+    val configBackups: StateFlow<Int> = _configBackups
+
+    fun setConfigBackups(count: Int) {
+        val value = count.coerceIn(0, com.bylins.client.config.MAX_CONFIG_BACKUPS)
+        if (_configBackups.value == value) return
+        _configBackups.value = value
+        saveConfig()
+    }
+
     private val _sidePanelCollapsed = MutableStateFlow(false)
     val sidePanelCollapsed: StateFlow<Boolean> = _sidePanelCollapsed
     fun setSidePanelCollapsed(collapsed: Boolean) {
@@ -595,6 +610,7 @@ class ClientState {
         // вынужден их потом переспрашивать.
         val configData = configManager.loadConfig()
         _pluginPermissions.value = configData.pluginPermissions
+        _configBackups.value = configData.configBackups
 
         // Инициализируем скриптинг
         initializeScripting()
@@ -1790,6 +1806,7 @@ class ClientState {
             logWithColors = logManager.logWithColors.value,
             statusGroupCollapsed = _statusGroupCollapsed.value,
             sidePanelCollapsed = _sidePanelCollapsed.value,
+            configBackups = _configBackups.value,
             pluginPermissions = _pluginPermissions.value,
             outputSplitFractions = getOutputSplitFractions()
         )
