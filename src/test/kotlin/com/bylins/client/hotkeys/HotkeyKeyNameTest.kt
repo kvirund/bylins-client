@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 class HotkeyKeyNameTest {
 
     /** Клавиша так, как её строит PhysicalKey: код Windows + расположение. */
-    private fun windowsKey(vk: Int, location: Long = 0L) = Key((vk.toLong() shl 32) or location)
+    private fun windowsKey(vk: Int, location: Long = 0x20000000L) = Key((vk.toLong() shl 32) or location)
 
     private fun assertName(vk: Int, expected: String) {
         assertEquals(expected, Hotkey.getKeyName(windowsKey(vk)), "имя для VK $vk")
@@ -62,6 +62,17 @@ class HotkeyKeyNameTest {
             assertTrue(key != null, "имя «$name» не разбирается")
             assertEquals(name, Hotkey.getKeyName(key!!), "круг для «$name» не замкнулся")
         }
+    }
+
+    @Test
+    fun `цифры совпадают с константами Compose`() {
+        // На Key.One..Key.Zero держатся контекстные команды Alt+1..0: если наш
+        // код клавиши перестаёт им соответствовать, они молча перестают работать
+        assertEquals(Key.One, windowsKey(49))
+        assertEquals(Key.Two, windowsKey(50))
+        assertEquals(Key.Zero, windowsKey(48))
+        assertEquals(Key.A, windowsKey(65))
+        assertEquals(Key.F1, windowsKey(112))
     }
 
     @Test

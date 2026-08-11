@@ -23,9 +23,6 @@ private val logger = KotlinLogging.logger("PhysicalKey")
  */
 object PhysicalKey {
 
-    /** Как Compose помечает клавиши цифрового блока в младших битах кода. */
-    private const val NUMPAD_LOCATION = 0x80000000L
-
     private val rawCodeField: Field? = runCatching {
         java.awt.event.KeyEvent::class.java.getDeclaredField("rawCode").apply { isAccessible = true }
     }.onFailure {
@@ -43,21 +40,15 @@ object PhysicalKey {
      */
     fun of(event: KeyEvent): Key {
         val awt = event.nativeKeyEvent as? java.awt.event.KeyEvent ?: return event.key
-        return of(awt) ?: event.key
-    }
+        val field = rawCodeField ?: return event.key
+        val raw = runCatching { field.getLong(awt) }.getOrNull() ?: return event.key
+        if (raw <= 0) return event.key
 
-    fun of(awt: java.awt.event.KeyEvent): Key? {
-        val field = rawCodeField ?: return null
-        val raw = runCatching { field.getLong(awt) }.getOrNull() ?: return null
-        if (raw <= 0) return null
-        // Расположение кодируем так же, как Compose, иначе уже назначенные
-        // хоткеи на цифровой клавиатуре перестанут совпадать: у них в конфиге
-        // лежит именно это значение
-        val location = if (awt.keyLocation == java.awt.event.KeyEvent.KEY_LOCATION_NUMPAD) {
-            NUMPAD_LOCATION
-        } else {
-            0L
-        }
+        // Расположение берём из самого события, а не пересобираем: Compose
+        // кодирует его по-своему, и своя нумерация ломала сравнение с его же
+        // константами — Key.One переставала совпадать, а на ней держатся
+        // контекстные команды Alt+1..0
+        val location = event.key.keyCode and 0xFFFFFFFFL
         return Key((raw shl 32) or location)
     }
 }

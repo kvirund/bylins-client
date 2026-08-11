@@ -348,7 +348,14 @@ data class Hotkey(
          * Парсит имя клавиши в Key
          */
         /** Клавиша по коду Windows — тому же, что кладёт [PhysicalKey]. */
-        private fun windowsKey(vk: Int): Key = Key(vk.toLong() shl 32)
+        /**
+         * Клавиша по коду Windows.
+         *
+         * Расположение — как его кодирует Compose (0x20000000 для основной
+         * клавиатуры), иначе клавиша не совпадёт с его же константами, а на
+         * них держатся контекстные команды Alt+1..0.
+         */
+        private fun windowsKey(vk: Int): Key = Key((vk.toLong() shl 32) or STANDARD_LOCATION.toLong())
 
         fun parseKey(keyName: String): Key? {
             return when (keyName.uppercase()) {
