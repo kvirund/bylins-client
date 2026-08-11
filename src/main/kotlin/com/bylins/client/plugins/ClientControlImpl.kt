@@ -301,6 +301,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         pattern: String,
         commands: List<String>,
         enabled: Boolean,
+        priority: Int,
         profileId: String?
     ): String {
         val alias = com.bylins.client.aliases.Alias(
@@ -308,7 +309,8 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             name = name,
             pattern = pattern.toRegex(),
             commands = commands,
-            enabled = enabled
+            enabled = enabled,
+            priority = priority
         )
         if (profileId != null) {
             require(state.profileManager.profiles.value.any { it.id == profileId }) {
@@ -390,7 +392,6 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             .find { profile -> profile.hotkeys.any { it.id == hotkeyId } }?.id
 
     override fun createHotkey(
-        name: String,
         key: String,
         commands: List<String>,
         ctrl: Boolean,

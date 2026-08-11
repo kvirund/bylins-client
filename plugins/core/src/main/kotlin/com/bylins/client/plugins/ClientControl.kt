@@ -96,6 +96,7 @@ interface ClientControl {
         pattern: String,
         commands: List<String>,
         enabled: Boolean = true,
+        priority: Int = 0,
         profileId: String? = null
     ): String
 
@@ -104,15 +105,18 @@ interface ClientControl {
 
     // --- Хоткеи ---
 
-    /** Список хоткеев: id, name, key, modifiers, commands, enabled. */
+    /** Список хоткеев: id, key, modifiers, commands, enabled, scope. */
     fun listHotkeys(): List<Map<String, Any?>>
 
     /**
      * Создаёт хоткей (key — например "F5", "Num8"), возвращает id.
+     *
+     * Имени у хоткея нет: клавиша с модификаторами и есть его имя. Параметр
+     * name здесь когда-то был и молча выбрасывался.
+     *
      * @param profileId если задан — хоткей кладётся в профиль персонажа.
      */
     fun createHotkey(
-        name: String,
         key: String,
         commands: List<String>,
         ctrl: Boolean = false,

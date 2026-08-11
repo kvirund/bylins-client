@@ -11,6 +11,7 @@ import com.bylins.client.plugins.PluginPermissionDeniedException
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import mu.KotlinLogging
@@ -23,9 +24,12 @@ private val logger = KotlinLogging.logger("AiHttpServer")
 /** Поля комнаты, доступные через /map/room/set. */
 private val ROOM_FIELDS = setOf("name", "zone", "terrain", "visited", "notes", "color")
 
-// Поля update-ручек. profileId переносит правило между профилями персонажей
-// (null — в базовый набор), сохраняя id: иначе перенос означал бы удалить и
-// создать заново, с новым id и ручной починкой всего, что на него ссылалось.
+// Поля сущностей — один набор и на create, и на update. Держать их двумя
+// списками уже пробовали: create читал поля поимённо, и списки разъехались
+// молча — приходил {"ok":true}, а часть данных терялась по дороге.
+// profileId переносит правило между профилями персонажей (null — в базовый
+// набор), сохраняя id: иначе перенос означал бы удалить и создать заново, с
+// новым id и ручной починкой всего, что на него ссылалось.
 private val TRIGGER_FIELDS =
     setOf("name", "pattern", "commands", "enabled", "gag", "priority", "scope", "profileId")
 private val ALIAS_FIELDS =
@@ -36,6 +40,9 @@ private val TAB_FIELDS =
     setOf("name", "patterns", "captureMode", "profileTab", "profileLog", "persistContent", "timestamps")
 private val CONTEXT_RULE_FIELDS =
     setOf("command", "pattern", "scope", "ttl", "ttlMinutes", "priority", "enabled", "profileId")
+
+/** Адрес сущности, а не её данные: приходит вместе с полями, но не сверяется. */
+private val ADDRESS_FIELDS = setOf("id", "roomId")
 
 /** Потолок размера пакета: массовая правка не должна вешать клиент надолго. */
 private const val MAX_BATCH = 500
@@ -124,17 +131,32 @@ class AiHttpServer(
         if (result) mapOf("ok" to true) else throw ApiError(404, notFound)
 
     /**
+     * Неизвестное поле — почти всегда опечатка в имени, и молча его терять
+     * дороже, чем отказать: правило со скоупом world вместо зоны не падает и
+     * не жалуется, оно просто начинает срабатывать не там.
+     *
+     * @param address поля-адреса (id и подобные) — они не данные, их не сверяем
+     */
+    private fun requireKnown(req: JsonObject, known: Set<String>, address: Set<String> = ADDRESS_FIELDS) {
+        val unknown = req.keys - known - address
+        if (unknown.isNotEmpty()) {
+            throw ApiError(
+                400,
+                "Неизвестные поля: ${unknown.joinToString(", ")}. " +
+                    "Доступны: ${known.sorted().joinToString(", ")}"
+            )
+        }
+        requireScopeShape(req)
+    }
+
+    /**
      * Изменения для update-ручек: возвращаем список реально применённых полей,
      * иначе `{"ok":true}` приходит и когда не изменилось ничего.
-     * Неизвестные ключи — ошибка: обычно это опечатка в имени поля.
      */
     private fun changesOf(req: JsonObject, known: Set<String>): Pair<Map<String, Any?>, List<String>> {
+        requireKnown(req, known)
         // id/roomId — адрес сущности, а не изменяемое поле
-        val changes = req.toChanges().filterKeys { it != "id" && it != "roomId" }
-        val unknown = changes.keys - known
-        if (unknown.isNotEmpty()) {
-            throw ApiError(400, "Неизвестные поля: ${unknown.joinToString(", ")}. Доступны: ${known.sorted().joinToString(", ")}")
-        }
+        val changes = req.toChanges().filterKeys { it !in ADDRESS_FIELDS }
         return changes to changes.keys.toList()
     }
 
@@ -550,8 +572,28 @@ class AiHttpServer(
         )
     }
 
+    /**
+     * Скоуп на входе — вложенный объект, как его отдают ручки чтения.
+     *
+     * В profile.json на диске лежит другая, плоская форма
+     * (`"scope":"zone","zones":[...]`), и кто сверяется с файлом, пишет её.
+     * Раньше такое тело давало `{"ok":true}` и правило вообще без скоупа —
+     * то есть срабатывающее по всему миру.
+     */
+    private fun requireScopeShape(req: JsonObject) {
+        val raw = req["scope"] ?: return
+        if (raw is JsonNull || raw is JsonObject) return
+        throw ApiError(
+            400,
+            "scope должен быть объектом: {\"type\":\"zone\",\"zones\":[\"41\"]} или " +
+                "{\"type\":\"room\",\"roomIds\":[\"4056\"]}. Плоская форма из profile.json здесь не " +
+                "принимается — образец есть в выдаче triggers/hotkeys/context/rules."
+        )
+    }
+
     /** Область действия из тела запроса: {"scope": {"type":"zone","zones":[...]}}. */
     private fun scopeOf(req: JsonObject): Map<String, Any?>? {
+        requireScopeShape(req)
         val raw = req["scope"] as? JsonObject ?: return null
         return raw.toChanges()
     }
@@ -616,6 +658,7 @@ class AiHttpServer(
             // Триггеры
             "triggers" -> mapOf("triggers" to client.listTriggers())
             "triggers/create" -> audited("созданы триггеры", batched(req) { item ->
+                requireKnown(item, TRIGGER_FIELDS)
                 mapOf(
                     "id" to client.createTrigger(
                         name = item.str("name") ?: "ai-trigger",
@@ -642,12 +685,14 @@ class AiHttpServer(
             // Алиасы
             "aliases" -> mapOf("aliases" to client.listAliases())
             "aliases/create" -> audited("созданы алиасы", batched(req) { item ->
+                requireKnown(item, ALIAS_FIELDS)
                 mapOf(
                     "id" to client.createAlias(
                         name = item.str("name") ?: "ai-alias",
                         pattern = item.str("pattern") ?: throw ApiError(400, "Нужен pattern"),
                         commands = item.strList("commands"),
                         enabled = item.bool("enabled", true),
+                        priority = item.int("priority", 0),
                         profileId = item.str("profileId")
                     )
                 )
@@ -665,9 +710,9 @@ class AiHttpServer(
             // Хоткеи
             "hotkeys" -> mapOf("hotkeys" to client.listHotkeys())
             "hotkeys/create" -> audited("созданы хоткеи", batched(req) { item ->
+                requireKnown(item, HOTKEY_FIELDS)
                 mapOf(
                     "id" to client.createHotkey(
-                        name = item.str("name") ?: "ai-hotkey",
                         key = item.str("key") ?: throw ApiError(400, "Нужна key"),
                         commands = item.strList("commands"),
                         ctrl = item.bool("ctrl", false),
@@ -691,17 +736,20 @@ class AiHttpServer(
 
             // Вкладки вывода
             "tabs" -> mapOf("tabs" to client.listTabs())
-            "tabs/create" -> audited("создана вкладка '${req.str("name")}'", mapOf(
-                "id" to client.createTab(
-                    name = req.str("name") ?: throw ApiError(400, "Нужно name"),
-                    patterns = req.strList("patterns"),
-                    captureMode = req.str("captureMode") ?: "COPY",
-                    profileTab = req.bool("profileTab", false),
-                    profileLog = req.bool("profileLog", false),
-                    persistContent = req.bool("persistContent", false),
-                    timestamps = req.bool("timestamps", false)
+            "tabs/create" -> audited("создана вкладка '${req.str("name")}'", run {
+                requireKnown(req, TAB_FIELDS)
+                mapOf(
+                    "id" to client.createTab(
+                        name = req.str("name") ?: throw ApiError(400, "Нужно name"),
+                        patterns = req.strList("patterns"),
+                        captureMode = req.str("captureMode") ?: "COPY",
+                        profileTab = req.bool("profileTab", false),
+                        profileLog = req.bool("profileLog", false),
+                        persistContent = req.bool("persistContent", false),
+                        timestamps = req.bool("timestamps", false)
+                    )
                 )
-            ))
+            })
             "tabs/update" -> audited("изменены вкладки", batched(req) { item ->
                 val id = item.str("id") ?: throw ApiError(400, "Нужно id")
                 val (changes, applied) = changesOf(item, TAB_FIELDS)
@@ -715,6 +763,7 @@ class AiHttpServer(
             // Контекстные команды (предложения в панели, не автоматические)
             "context/rules" -> mapOf("rules" to client.listContextRules())
             "context/rules/create" -> audited("созданы контекстные правила", batched(req) { item ->
+                requireKnown(item, CONTEXT_RULE_FIELDS)
                 mapOf(
                     "id" to client.createContextRule(
                         command = item.str("command") ?: throw ApiError(400, "Нужно command"),

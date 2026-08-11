@@ -58,18 +58,18 @@ internal class GuardedClientControl(
     // --- Алиасы ---
     override fun listAliases(): List<Map<String, Any?>> = control().listAliases()
     override fun createAlias(
-        name: String, pattern: String, commands: List<String>, enabled: Boolean, profileId: String?
-    ): String = control().createAlias(name, pattern, commands, enabled, profileId)
+        name: String, pattern: String, commands: List<String>, enabled: Boolean, priority: Int, profileId: String?
+    ): String = control().createAlias(name, pattern, commands, enabled, priority, profileId)
     override fun updateAlias(id: String, changes: Map<String, Any?>): Boolean = control().updateAlias(id, changes)
     override fun deleteAlias(id: String): Boolean = control().deleteAlias(id)
 
     // --- Хоткеи ---
     override fun listHotkeys(): List<Map<String, Any?>> = control().listHotkeys()
     override fun createHotkey(
-        name: String, key: String, commands: List<String>,
+        key: String, commands: List<String>,
         ctrl: Boolean, alt: Boolean, shift: Boolean, enabled: Boolean,
         profileId: String?, scope: Map<String, Any?>?
-    ): String = control().createHotkey(name, key, commands, ctrl, alt, shift, enabled, profileId, scope)
+    ): String = control().createHotkey(key, commands, ctrl, alt, shift, enabled, profileId, scope)
     override fun updateHotkey(id: String, changes: Map<String, Any?>): Boolean = control().updateHotkey(id, changes)
     override fun deleteHotkey(id: String): Boolean = control().deleteHotkey(id)
 
