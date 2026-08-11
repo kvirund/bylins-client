@@ -141,8 +141,15 @@ fun MainWindow() {
                             if (handled) {
                                 // Запоминаем клавишу чтобы поглотить KeyUp
                                 lastHandledKey = event.key
-                            } else if (!event.isCtrlPressed && !event.isAltPressed && !secondaryTextFieldFocused) {
-                                // Если hotkey не обработан и не редактируется вторичное поле,
+                            } else if (
+                                InputFocusPolicy.shouldFocusInput(
+                                    key = event.key,
+                                    isCtrlPressed = event.isCtrlPressed,
+                                    isAltPressed = event.isAltPressed,
+                                    secondaryFieldFocused = secondaryTextFieldFocused
+                                )
+                            ) {
+                                // Если hotkey не обработан и клавишей можно печатать,
                                 // фокусируем input для обычного ввода
                                 inputFocusRequester.requestFocus()
                             }
