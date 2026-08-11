@@ -122,7 +122,15 @@ fun MainWindow() {
                         KeyEventType.KeyDown -> {
                             // Ctrl+F из любого места (включая поле ввода команд) открывает
                             // и фокусирует поиск по выводу на вкладке «Вывод».
-                            if (event.isCtrlPressed && event.key == Key.F) {
+                            // Сочетания с Shift и Alt свободны — они уходят в хоткеи.
+                            if (
+                                OutputSearchShortcut.isOpen(
+                                    key = com.bylins.client.hotkeys.PhysicalKey.of(event),
+                                    isCtrlPressed = event.isCtrlPressed,
+                                    isAltPressed = event.isAltPressed,
+                                    isShiftPressed = event.isShiftPressed
+                                )
+                            ) {
                                 selectedTabId = "main"
                                 clientState.requestOutputSearch()
                                 lastHandledKey = event.key

@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
@@ -279,7 +280,12 @@ fun ScrollbackOutputView(
             val handleKey: (KeyEvent) -> Boolean = handleKey@{ event ->
                 if (event.type != KeyEventType.KeyDown) return@handleKey false
                 when {
-                    event.isCtrlPressed && event.key == Key.F -> {
+                    com.bylins.client.ui.OutputSearchShortcut.isOpen(
+                        key = com.bylins.client.hotkeys.PhysicalKey.of(event),
+                        isCtrlPressed = event.isCtrlPressed,
+                        isAltPressed = event.isAltPressed,
+                        isShiftPressed = event.isShiftPressed
+                    ) -> {
                         holder.searchActive = true; holder.bumpSearchOpen(); true
                     }
                     event.key == Key.F3 && event.isShiftPressed -> { prevMatch(); true }
