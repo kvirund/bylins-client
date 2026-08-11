@@ -40,6 +40,7 @@ private val TAB_FIELDS =
     setOf("name", "patterns", "captureMode", "profileTab", "profileLog", "persistContent", "timestamps")
 private val CONTEXT_RULE_FIELDS =
     setOf("command", "pattern", "scope", "ttl", "ttlMinutes", "priority", "enabled", "profileId")
+private val VARIABLE_FIELDS = setOf("name", "value")
 
 /** Адрес сущности, а не её данные: приходит вместе с полями, но не сверяется. */
 private val ADDRESS_FIELDS = setOf("id", "roomId")
@@ -603,7 +604,7 @@ class AiHttpServer(
         val action = exchange.requestURI.path.removePrefix("/client/").trim('/')
         // Любое изменение состояния клиента — только с правом записи
         val isMutation = action.substringAfterLast('/') in
-            setOf("create", "update", "delete", "select", "push", "pop", "requires", "start", "stop") ||
+            setOf("create", "update", "delete", "select", "push", "pop", "requires", "start", "stop", "set") ||
             action in setOf("connect", "disconnect")
         if (isMutation) requireWrite(session)
         val client = api.client
@@ -788,6 +789,26 @@ class AiHttpServer(
                 asMap(mutated(client.deleteContextRule(id), "Контекстное правило не найдено: $id"))
             })
             "context/queue" -> mapOf("queue" to client.listContextQueue())
+
+            // Переменные клиента: ${target}, ${first_attack} и прочее, на что
+            // ссылаются команды правил. Без них профиль через API не настроить
+            // целиком: правила завести можно, а значения для них — нет.
+            "variables" -> mapOf("variables" to api.getAllVariables())
+            "variables/set" -> audited("заданы переменные", batched(req) { item ->
+                requireKnown(item, VARIABLE_FIELDS)
+                val name = item.str("name") ?: throw ApiError(400, "Нужно name")
+                val value = item.str("value") ?: throw ApiError(400, "Нужно value")
+                api.setVariable(name, value)
+                mapOf("name" to name)
+            })
+            "variables/delete" -> audited("удалены переменные", batched(req) { item ->
+                requireKnown(item, setOf("name"))
+                val name = item.str("name") ?: throw ApiError(400, "Нужно name")
+                // Молчаливое удаление несуществующей переменной скрыло бы опечатку
+                if (api.getVariable(name) == null) throw ApiError(404, "Переменная не найдена: $name")
+                api.deleteVariable(name)
+                mapOf("name" to name)
+            })
 
             // Где игрок сейчас: комната и зона с человекочитаемой подписью
             "where" -> client.getLocation()
