@@ -396,14 +396,32 @@ class ClientState {
         _panelTargetProfileId.value = profileId
     }
 
-    private val telnetClient = TelnetClient(this, _encoding)
+    // Объявлены до telnetClient: он сразу получает обработчик локального
+    // вывода, и тот не должен опираться на ещё не созданные поля
+    private val pluginEventBus = com.bylins.client.plugins.events.EventBus()
+    private val localOutputAnsi = com.bylins.client.ui.AnsiParser()
+
+    private val telnetClient = TelnetClient(this, _encoding).apply {
+        // Собственный вывод клиента плагинам тоже виден: иначе агент не
+        // получает ответа на свои же #-команды и считает, что они не сработали
+        onLocalOutput = { text -> postLocalOutput(text) }
+    }
+
+    /** Локальный вывод — плагинам, построчно и без ANSI, как строки сервера. */
+    private fun postLocalOutput(text: String) {
+        text.split("\n").forEach { line ->
+            val clean = localOutputAnsi.stripAnsi(line)
+            if (clean.isNotBlank()) {
+                pluginEventBus.post(com.bylins.client.plugins.events.LocalOutputEvent(clean))
+            }
+        }
+    }
 
     // Скриптинг - инициализируется позже
     private lateinit var scriptManager: com.bylins.client.scripting.ScriptManager
 
     // Плагины - инициализируются после скриптинга
     private lateinit var pluginManager: com.bylins.client.plugins.PluginManager
-    private val pluginEventBus = com.bylins.client.plugins.events.EventBus()
     val pluginTabManager = com.bylins.client.plugins.ui.PluginTabManager()
 
     // Профили персонажей - инициализируется после скриптинга

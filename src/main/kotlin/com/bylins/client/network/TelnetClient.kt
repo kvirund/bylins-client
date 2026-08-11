@@ -138,10 +138,24 @@ class TelnetClient(
     }
 
     /**
+     * Слушатель собственного вывода клиента: эхо команд, ответы #-команд,
+     * сообщения плагинов и ходока.
+     *
+     * Всё это, в отличие от строк сервера, не проходит через разбор
+     * входящих данных, а значит и мимо событий плагинов: плагину, который
+     * ведёт журнал вывода, видна только половина происходящего.
+     *
+     * Зовётся вне замка буфера — обработчик чужой, держать под ним весь
+     * вывод нельзя.
+     */
+    var onLocalOutput: ((String) -> Unit)? = null
+
+    /**
      * Добавляет текст в лог (для эхо команд)
      */
     fun echoCommand(command: String) {
         appendToBuffer("\u001B[1;36m$command\u001B[0m\n")
+        onLocalOutput?.invoke(command)
     }
 
     /**
@@ -160,18 +174,21 @@ class TelnetClient(
      * Используется для echo из скриптов чтобы избежать рекурсии
      * Вставляет перед незавершённой строкой (промптом/картой)
      */
-    fun addToOutputRaw(text: String) = synchronized(bufferLock) {
-        val currentValue = _receivedData.value
-        val lastNewlineIndex = currentValue.lastIndexOf('\n')
-        val incompleteLine = if (lastNewlineIndex == -1) currentValue else currentValue.substring(lastNewlineIndex + 1)
+    fun addToOutputRaw(text: String) {
+        synchronized(bufferLock) {
+            val currentValue = _receivedData.value
+            val lastNewlineIndex = currentValue.lastIndexOf('\n')
+            val incompleteLine = if (lastNewlineIndex == -1) currentValue else currentValue.substring(lastNewlineIndex + 1)
 
-        if (incompleteLine.isNotEmpty()) {
-            // Вставляем перед незавершённой строкой
-            val bufferComplete = if (lastNewlineIndex == -1) "" else currentValue.substring(0, lastNewlineIndex + 1)
-            setReceived(bufferComplete + text + "\n" + incompleteLine)
-        } else {
-            appendToBuffer(text + "\n")
+            if (incompleteLine.isNotEmpty()) {
+                // Вставляем перед незавершённой строкой
+                val bufferComplete = if (lastNewlineIndex == -1) "" else currentValue.substring(0, lastNewlineIndex + 1)
+                setReceived(bufferComplete + text + "\n" + incompleteLine)
+            } else {
+                appendToBuffer(text + "\n")
+            }
         }
+        onLocalOutput?.invoke(text)
     }
 
     /**
@@ -179,34 +196,37 @@ class TelnetClient(
      * Если последняя строка в буфере не заканчивается на \n (это промпт),
      * то выводит сообщение ПЕРЕД промптом
      */
-    fun addLocalOutput(text: String) = synchronized(bufferLock) {
-        val currentValue = _receivedData.value
+    fun addLocalOutput(text: String) {
+        synchronized(bufferLock) {
+            val currentValue = _receivedData.value
 
-        // Находим последний перенос строки
-        val lastNewlineIndex = currentValue.lastIndexOf('\n')
+            // Находим последний перенос строки
+            val lastNewlineIndex = currentValue.lastIndexOf('\n')
 
-        // Текст после последнего \n (потенциальный промпт)
-        val possiblePrompt = if (lastNewlineIndex == -1) {
-            currentValue
-        } else {
-            currentValue.substring(lastNewlineIndex + 1)
-        }
-
-        // Если есть незавершённая строка (промпт), вставляем наш текст перед ней
-        if (possiblePrompt.isNotEmpty()) {
-            // Убираем промпт из буфера
-            val bufferWithoutPrompt = if (lastNewlineIndex == -1) {
-                ""
+            // Текст после последнего \n (потенциальный промпт)
+            val possiblePrompt = if (lastNewlineIndex == -1) {
+                currentValue
             } else {
-                currentValue.substring(0, lastNewlineIndex + 1)
+                currentValue.substring(lastNewlineIndex + 1)
             }
 
-            // Добавляем наш текст + промпт
-            setReceived(bufferWithoutPrompt + text + "\n" + possiblePrompt)
-        } else {
-            // Нет промпта, просто добавляем текст
-            appendToBuffer(text + "\n")
+            // Если есть незавершённая строка (промпт), вставляем наш текст перед ней
+            if (possiblePrompt.isNotEmpty()) {
+                // Убираем промпт из буфера
+                val bufferWithoutPrompt = if (lastNewlineIndex == -1) {
+                    ""
+                } else {
+                    currentValue.substring(0, lastNewlineIndex + 1)
+                }
+
+                // Добавляем наш текст + промпт
+                setReceived(bufferWithoutPrompt + text + "\n" + possiblePrompt)
+            } else {
+                // Нет промпта, просто добавляем текст
+                appendToBuffer(text + "\n")
+            }
         }
+        onLocalOutput?.invoke(text)
     }
 
     /**

@@ -67,6 +67,16 @@ class AiControlPlugin : PluginBase() {
             journal.append(event.line, event.timestamp)
         }
 
+        // Вывод самого клиента — туда же. Без него агент не видит ответа на
+        // свои #-команды: /exec отсиживал таймаут в тишине, и «переменная не
+        // завелась» было не отличить от «завелась, но молча».
+        api.subscribe(
+            com.bylins.client.plugins.events.LocalOutputEvent::class.java,
+            EventPriority.MONITOR
+        ) { event ->
+            journal.append(event.line, event.timestamp)
+        }
+
         // Периодическая уборка «мёртвых» контекстов
         api.setInterval(60_000) {
             sessions.evictIdle().forEach { id -> audit("Сессия $id закрыта по таймауту") }
