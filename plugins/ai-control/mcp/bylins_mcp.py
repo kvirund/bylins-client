@@ -153,6 +153,8 @@ TOOLS = [
             "params.vars — выбрать конкретные), "
             "context/rules, context/rules/create, context/rules/update, "
             "context/rules/delete, context/queue, "
+            "variables (переменные клиента: ${target}, ${first_attack} и прочее, "
+            "на что ссылаются команды правил), variables/set, variables/delete, "
             "characters, characters/create, characters/push, characters/pop, characters/requires.\n"
             "Массовые правки: create/update/delete у триггеров, алиасов, хоткеев и "
             "контекстных правил принимают пакет — params.items (массив объектов) "
@@ -174,8 +176,12 @@ TOOLS = [
                         "работать, только пока этот профиль активен. Там же можно задать "
                         "область действия: scope={\"type\":\"zone\",\"zones\":[\"759\"]} "
                         "или {\"type\":\"room\",\"roomIds\":[...]} — правило сработает "
-                        "только там. Те же поля принимает update, в том числе "
-                        "profileId (null — перенести в базовый набор).\n"
+                        "только там. Скоуп задаётся вложенным объектом; плоская форма, "
+                        "как в profile.json, не принимается. "
+                        "triggers/create принимает once=true — сработать один раз.\n"
+                        "Те же поля принимает update, в том числе "
+                        "profileId (null — перенести в базовый набор). Неизвестное поле — "
+                        "ошибка 400, и на create тоже: молча оно больше не теряется.\n"
                         "Пакет: {\"items\":[{...},{...}]} или {\"ids\":[\"a\",\"b\"]}, "
                         "до 500 элементов за вызов."
                     ),
@@ -206,7 +212,10 @@ TOOLS = [
                 "params": {
                     "type": "object",
                     "description": (
-                        "Параметры: id, roomId, query, targetRoomId, property, nameContains, key, value. "
+                        "Параметры: id, roomId, zoneId, query, targetRoomId, nameContains, "
+                        "key, value, note. Свойство задаётся парой key/value. "
+                        "Зонные действия (zone, zone/rooms, zone/note, zone/properties, "
+                        "zone/property/set) требуют zoneId. "
                         "Для room/set — roomId и меняемые поля, например "
                         "{\"roomId\":\"4344\",\"visited\":true,\"name\":\"ДТ\"}"
                     ),
