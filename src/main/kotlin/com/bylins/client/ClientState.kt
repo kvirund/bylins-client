@@ -35,6 +35,16 @@ val PERMANENT_TAB_IDS = setOf("settings")
 
 class ClientState {
     private val scope = CoroutineScope(Dispatchers.Main)
+
+    /**
+     * Отправка команд серверу — строго по одной за раз.
+     *
+     * Порядок команд должен совпадать с порядком, в котором их дали: игрок
+     * набрал, скрипт выполнил, агент прислал пачку. Общий пул этого не
+     * обещает.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val sendScope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
     private val configManager = ConfigManager()
 
     // Флаг для предотвращения множественного сохранения при инициализации
@@ -1022,7 +1032,10 @@ class ClientState {
         // Увеличиваем счетчик отправленных команд
         sessionStats.incrementCommandsSent()
 
-        scope.launch {
+        // Отправляем в одном потоке: каждая команда своей корутиной в общем пуле
+        // означала гонку за сокет, и пачка команд (например, от ИИ) приходила
+        // серверу перемешанной. Порядок отправки должен повторять порядок команд.
+        sendScope.launch {
             try {
                 telnetClient.send(command)
             } catch (e: Exception) {

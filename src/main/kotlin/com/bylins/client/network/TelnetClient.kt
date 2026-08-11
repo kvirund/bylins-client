@@ -113,14 +113,28 @@ class TelnetClient(
         }
     }
 
-    suspend fun send(command: String) = withContext(Dispatchers.IO) {
-        try {
-            outputStream?.write("$command\r\n".toByteArray(Charsets.UTF_8))
-            outputStream?.flush()
-        } catch (e: IOException) {
-            disconnect()
-            throw e
+    /**
+     * Отправляет команду серверу.
+     *
+     * Пишет под тем же замком, что и telnet-команды. Раньше запись шла без
+     * него, а каждая команда уходила своей корутиной в пул IO: при залпе —
+     * например, пачке команд от ИИ — записи наслаивались, и до сервера
+     * доходило перемешанное или склеенное.
+     */
+    fun send(command: String) {
+        val bytes = (command + "\r\n").toByteArray(Charsets.UTF_8)
+        var shouldDisconnect = false
+        synchronized(writeLock) {
+            try {
+                outputStream?.write(bytes)
+                outputStream?.flush()
+            } catch (e: IOException) {
+                logger.error { "Error sending command: ${e.message}" }
+                shouldDisconnect = true
+            }
         }
+        // disconnect() вне замка: он берёт его сам при отправке telnet-команд
+        if (shouldDisconnect) disconnect()
     }
 
     /**
