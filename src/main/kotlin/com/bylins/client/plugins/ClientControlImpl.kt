@@ -178,6 +178,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             "enabled" to enabled,
             "gag" to gag,
             "priority" to priority,
+            "once" to once,
             "profileId" to profileId,
             "scope" to scopeToMap(scope)
         )
@@ -200,6 +201,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
         enabled: Boolean,
         gag: Boolean,
         priority: Int,
+        once: Boolean,
         profileId: String?,
         scope: Map<String, Any?>?
     ): String {
@@ -211,6 +213,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             enabled = enabled,
             gag = gag,
             priority = priority,
+            once = once,
             scope = parseScope(scope)
         )
         if (profileId != null) {
@@ -240,6 +243,7 @@ class ClientControlImpl(private val state: ClientState) : ClientControl {
             enabled = changes["enabled"] as? Boolean ?: existing.enabled,
             gag = changes["gag"] as? Boolean ?: existing.gag,
             priority = (changes["priority"] as? Number)?.toInt() ?: existing.priority,
+            once = changes["once"] as? Boolean ?: existing.once,
             // Область приходит вложенным объектом, а не скаляром — без разбора
             // она молча терялась, и проставить её существующему правилу было нельзя
             scope = if (changes.containsKey("scope")) {

@@ -50,8 +50,9 @@ internal class GuardedClientControl(
     override fun listTriggers(): List<Map<String, Any?>> = control().listTriggers()
     override fun createTrigger(
         name: String, pattern: String, commands: List<String>,
-        enabled: Boolean, gag: Boolean, priority: Int, profileId: String?, scope: Map<String, Any?>?
-    ): String = control().createTrigger(name, pattern, commands, enabled, gag, priority, profileId, scope)
+        enabled: Boolean, gag: Boolean, priority: Int, once: Boolean,
+        profileId: String?, scope: Map<String, Any?>?
+    ): String = control().createTrigger(name, pattern, commands, enabled, gag, priority, once, profileId, scope)
     override fun updateTrigger(id: String, changes: Map<String, Any?>): Boolean = control().updateTrigger(id, changes)
     override fun deleteTrigger(id: String): Boolean = control().deleteTrigger(id)
 

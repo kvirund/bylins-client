@@ -53,12 +53,14 @@ interface ClientControl {
 
     // --- Пользовательские триггеры (персистентные, видны в UI) ---
 
-    /** Список триггеров: id, name, pattern, commands, enabled, gag, priority. */
+    /** Список триггеров: id, name, pattern, commands, enabled, gag, priority, once. */
     fun listTriggers(): List<Map<String, Any?>>
 
     /**
      * Создаёт пользовательский триггер, возвращает id.
      *
+     * @param once сработать один раз и больше не срабатывать до перезапуска —
+     *   для временных триггеров, которые иначе приходится удалять вручную.
      * @param profileId если задан — триггер кладётся в профиль персонажа
      *   (активен, только когда профиль в стеке), иначе в базовый набор.
      * @param scope область действия: null или {"type":"world"} — везде,
@@ -72,6 +74,7 @@ interface ClientControl {
         enabled: Boolean = true,
         gag: Boolean = false,
         priority: Int = 0,
+        once: Boolean = false,
         profileId: String? = null,
         scope: Map<String, Any?>? = null
     ): String

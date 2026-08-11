@@ -31,7 +31,7 @@ private val ROOM_FIELDS = setOf("name", "zone", "terrain", "visited", "notes", "
 // набор), сохраняя id: иначе перенос означал бы удалить и создать заново, с
 // новым id и ручной починкой всего, что на него ссылалось.
 private val TRIGGER_FIELDS =
-    setOf("name", "pattern", "commands", "enabled", "gag", "priority", "scope", "profileId")
+    setOf("name", "pattern", "commands", "enabled", "gag", "priority", "once", "scope", "profileId")
 private val ALIAS_FIELDS =
     setOf("name", "pattern", "commands", "enabled", "priority", "profileId")
 private val HOTKEY_FIELDS =
@@ -668,6 +668,7 @@ class AiHttpServer(
                         enabled = item.bool("enabled", true),
                         gag = item.bool("gag", false),
                         priority = item.int("priority", 0),
+                        once = item.bool("once", false),
                         profileId = item.str("profileId"),
                         scope = scopeOf(item)
                     )

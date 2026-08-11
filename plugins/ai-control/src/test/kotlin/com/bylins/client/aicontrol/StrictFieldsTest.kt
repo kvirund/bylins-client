@@ -24,6 +24,7 @@ class StrictFieldsTest {
     private val createdRules = mutableListOf<List<Any?>>()
     private val createdAliases = mutableListOf<List<Any?>>()
     private val createdHotkeys = mutableListOf<List<Any?>>()
+    private val createdTriggers = mutableListOf<List<Any?>>()
 
     private val control: ClientControl = Proxy.newProxyInstance(
         ClientControl::class.java.classLoader,
@@ -33,7 +34,7 @@ class StrictFieldsTest {
             "createContextRule" -> "rule".also { createdRules.add(args.toList()) }
             "createAlias" -> "alias".also { createdAliases.add(args.toList()) }
             "createHotkey" -> "hotkey".also { createdHotkeys.add(args.toList()) }
-            "createTrigger" -> "trigger"
+            "createTrigger" -> "trigger".also { createdTriggers.add(args.toList()) }
             "updateContextRule" -> true
             "isConnected" -> false
             else -> null
@@ -141,6 +142,19 @@ class StrictFieldsTest {
 
         assertEquals(200, code, body)
         assertEquals(7, createdAliases.single()[4], createdAliases.toString())
+    }
+
+    @Test
+    fun `одноразовый триггер заводится через API`() {
+        // Временный триггер иначе остаётся включённым навсегда и его надо
+        // удалять отдельным вызовом — а поле once в модели есть давно
+        val (code, body) = post(
+            "/client/triggers/create",
+            """{"name":"разовый","pattern":"посмотрели по сторонам","commands":["смотреть"],"once":true}"""
+        )
+
+        assertEquals(200, code, body)
+        assertEquals(true, createdTriggers.single()[6], createdTriggers.toString())
     }
 
     @Test
