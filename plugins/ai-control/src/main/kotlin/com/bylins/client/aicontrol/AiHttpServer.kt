@@ -141,11 +141,10 @@ class AiHttpServer(
     private fun requireKnown(req: JsonObject, known: Set<String>, address: Set<String> = ADDRESS_FIELDS) {
         val unknown = req.keys - known - address
         if (unknown.isNotEmpty()) {
-            throw ApiError(
-                400,
-                "Неизвестные поля: ${unknown.joinToString(", ")}. " +
-                    "Доступны: ${known.sorted().joinToString(", ")}"
-            )
+            val available =
+                if (known.isEmpty()) "Действие принимает только ${address.sorted().joinToString(", ")}"
+                else "Доступны: ${known.sorted().joinToString(", ")}"
+            throw ApiError(400, "Неизвестные поля: ${unknown.joinToString(", ")}. $available")
         }
         requireScopeShape(req)
     }
@@ -535,23 +534,31 @@ class AiHttpServer(
     /**
      * Одиночный вызов или пакет.
      *
-     * Пакет включается массивом `items` (объекты с полями действия) или `ids`
-     * (для удаления). Поштучные ручки делали массовые правки неподъёмными:
-     * перенос восьмидесяти правил между профилями — это сто шестьдесят вызовов
+     * Пакет включается массивом `items` (объекты с полями действия) или `ids`.
+     * Поштучные ручки делали массовые правки неподъёмными: перенос
+     * восьмидесяти правил между профилями — это сто шестьдесят вызовов
      * инструмента, и агент уходил править конфиг в обход клиента.
+     *
+     * К форме `ids` поля из корня подмешиваются в каждый элемент. Когда у всей
+     * партии меняется одно и то же поле — а это самый частый случай: перенести
+     * в другой профиль, выключить, поднять приоритет, — иначе приходилось
+     * повторять его в девяноста объектах и слать килобайты одинакового текста.
+     * У delete в корне ничего кроме ids не бывает, так что для него ничего не
+     * меняется.
      *
      * Ошибка одного элемента не отменяет остальные: при массовой правке важнее
      * знать, что именно не прошло, чем потерять всю партию. Поэтому пакет
      * всегда отвечает 200, а исход каждого элемента лежит в results.
      */
     private fun batched(req: JsonObject, one: (JsonObject) -> Map<String, Any?>): Any {
+        val shared = req.filterKeys { it != "ids" && it != "items" }
         val items: List<JsonObject> = when {
             req["items"] is JsonArray -> (req["items"] as JsonArray).mapIndexed { i, element ->
                 element as? JsonObject ?: throw ApiError(400, "items[$i] должен быть объектом")
             }
             req["ids"] is JsonArray -> (req["ids"] as JsonArray).mapIndexed { i, element ->
                 val primitive = element as? JsonPrimitive ?: throw ApiError(400, "ids[$i] должен быть строкой")
-                JsonObject(mapOf("id" to primitive))
+                JsonObject(shared + ("id" to primitive))
             }
             // Обычный вызов с полями в корне — как было
             else -> return one(req)
@@ -680,6 +687,7 @@ class AiHttpServer(
                 asMap(updated(applied, client.updateTrigger(id, changes), "Триггер не найден: $id"))
             })
             "triggers/delete" -> audited("удалены триггеры", batched(req) { item ->
+                requireKnown(item, emptySet())
                 val id = item.str("id") ?: throw ApiError(400, "Нужно id")
                 asMap(mutated(client.deleteTrigger(id), "Триггер не найден: $id"))
             })
@@ -705,6 +713,7 @@ class AiHttpServer(
                 asMap(updated(applied, client.updateAlias(id, changes), "Алиас не найден: $id"))
             })
             "aliases/delete" -> audited("удалены алиасы", batched(req) { item ->
+                requireKnown(item, emptySet())
                 val id = item.str("id") ?: throw ApiError(400, "Нужно id")
                 asMap(mutated(client.deleteAlias(id), "Алиас не найден: $id"))
             })
@@ -732,6 +741,7 @@ class AiHttpServer(
                 asMap(updated(applied, client.updateHotkey(id, changes), "Хоткей не найден: $id"))
             })
             "hotkeys/delete" -> audited("удалены хоткеи", batched(req) { item ->
+                requireKnown(item, emptySet())
                 val id = item.str("id") ?: throw ApiError(400, "Нужно id")
                 asMap(mutated(client.deleteHotkey(id), "Хоткей не найден: $id"))
             })
@@ -786,6 +796,7 @@ class AiHttpServer(
                 asMap(updated(applied, client.updateContextRule(id, changes), "Контекстное правило не найдено: $id"))
             })
             "context/rules/delete" -> audited("удалены контекстные правила", batched(req) { item ->
+                requireKnown(item, emptySet())
                 val id = item.str("id") ?: throw ApiError(400, "Нужно id")
                 asMap(mutated(client.deleteContextRule(id), "Контекстное правило не найдено: $id"))
             })

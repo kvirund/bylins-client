@@ -168,6 +168,49 @@ class BatchApiTest {
     }
 
     @Test
+    fun `общее поле из корня применяется ко всему списку id`() {
+        // Перенос девяноста правил в другой профиль — это одно и то же поле у
+        // всех. Повторять его в каждом объекте значило слать килобайты
+        // одинакового текста, а форма ids молча меняла ноль полей
+        val (code, body) = post(
+            "/client/context/rules/update",
+            """{"ids":["r1","r2","r3"],"profileId":"былины"}"""
+        )
+
+        assertEquals(200, code, body)
+        assertTrue(body.contains("\"failed\":0"), body)
+        assertEquals(listOf("r1", "r2", "r3"), updates.map { it.first })
+        assertTrue(updates.all { it.second["profileId"] == "былины" }, updates.toString())
+        // applied показывает, что поле действительно применилось: раньше
+        // единственным признаком беды был пустой список
+        assertTrue(body.contains("\"applied\":[\"profileId\"]"), body)
+    }
+
+    @Test
+    fun `общее поле сверяется так же строго, как в items`() {
+        val (code, body) = post(
+            "/client/context/rules/update",
+            """{"ids":["r1","r2"],"profileld":"былины"}"""
+        )
+
+        assertEquals(200, code, body)
+        assertTrue(body.contains("\"failed\":2"), body)
+        assertTrue(body.contains("Неизвестные поля: profileld"), body)
+        assertTrue(updates.isEmpty(), "правила изменены, несмотря на опечатку")
+    }
+
+    @Test
+    fun `удаление принимает только id`() {
+        // Поля из корня теперь доезжают до элементов, и лишнее у delete должно
+        // быть слышно, а не проглатываться
+        val (code, body) = post("/client/context/rules/delete", """{"ids":["r1"],"profileId":"былины"}""")
+
+        assertEquals(200, code, body)
+        assertTrue(body.contains("\"failed\":1"), body)
+        assertTrue(deleted.isEmpty(), "правило удалено по запросу с лишним полем")
+    }
+
+    @Test
     fun `пустой пакет — ошибка запроса`() {
         val (code, body) = post("/client/context/rules/delete", """{"ids":[]}""")
 
