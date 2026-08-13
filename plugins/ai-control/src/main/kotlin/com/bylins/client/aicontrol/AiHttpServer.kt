@@ -45,6 +45,48 @@ private val VARIABLE_FIELDS = setOf("name", "value")
 /** Адрес сущности, а не её данные: приходит вместе с полями, но не сверяется. */
 private val ADDRESS_FIELDS = setOf("id", "roomId")
 
+/**
+ * Действия, которые ничего не меняют. Всё остальное считается мутацией и
+ * требует права записи.
+ *
+ * Именно так, а не наоборот: раньше мутацию узнавали по глаголу в конце пути
+ * («create», «update», …), и действие с любым другим глаголом — rename,
+ * toggle, import — молча оказалось бы доступно сессии без права записи.
+ * Пропустить действие в этом списке безопасно: худшее — лишний отказ.
+ */
+private val READ_ONLY_ACTIONS = setOf(
+    "connected", "profiles", "triggers", "aliases", "hotkeys", "tabs",
+    "context/rules", "context/queue", "variables", "characters",
+    "where", "msdp", "settings", "logs", "schema"
+)
+
+/**
+ * Что API принимает — машиночитаемо.
+ *
+ * Имена полей до сих пор жили только в коде и в описании MCP-моста, которое
+ * приходилось править руками и которое от этого отставало: обещало
+ * несуществующий параметр и умалчивало о нужном. Отдать список — дешевле, чем
+ * поддерживать его копию.
+ */
+private fun entitySchema(fields: Set<String>, actions: List<String>, batch: List<String>) = mapOf(
+    "fields" to fields.sorted(),
+    "actions" to actions,
+    "batch" to batch
+)
+
+private val CLIENT_SCHEMA: Map<String, Any?> = mapOf(
+    "triggers" to entitySchema(TRIGGER_FIELDS, listOf("create", "update", "delete"), listOf("create", "update", "delete")),
+    "aliases" to entitySchema(ALIAS_FIELDS, listOf("create", "update", "delete"), listOf("create", "update", "delete")),
+    "hotkeys" to entitySchema(HOTKEY_FIELDS, listOf("create", "update", "delete"), listOf("create", "update", "delete")),
+    "tabs" to entitySchema(TAB_FIELDS, listOf("create", "update", "delete"), listOf("update")),
+    "context/rules" to entitySchema(
+        CONTEXT_RULE_FIELDS, listOf("create", "update", "delete"), listOf("create", "update", "delete")
+    ),
+    "variables" to entitySchema(VARIABLE_FIELDS, listOf("set", "delete"), listOf("set", "delete")),
+    // Комнаты правит /map room/set, но отдельного описания там нет
+    "map/room" to entitySchema(ROOM_FIELDS, listOf("room/set"), emptyList())
+)
+
 /** Потолок размера пакета: массовая правка не должна вешать клиент надолго. */
 private const val MAX_BATCH = 500
 
@@ -609,11 +651,10 @@ class AiHttpServer(
     private fun handleClient(exchange: HttpExchange, req: JsonObject): Any {
         val session = requireSession(exchange)
         val action = exchange.requestURI.path.removePrefix("/client/").trim('/')
-        // Любое изменение состояния клиента — только с правом записи
-        val isMutation = action.substringAfterLast('/') in
-            setOf("create", "update", "delete", "select", "push", "pop", "requires", "start", "stop", "set") ||
-            action in setOf("connect", "disconnect")
-        if (isMutation) requireWrite(session)
+        // Любое изменение состояния клиента — только с правом записи.
+        // Список читающих действий закрытый: неизвестное действие считается
+        // мутацией, чтобы новое не оказалось доступно без права по недосмотру
+        if (action !in READ_ONLY_ACTIONS) requireWrite(session)
         val client = api.client
 
         fun audited(what: String, result: Any): Any {
@@ -629,6 +670,27 @@ class AiHttpServer(
         }
 
         return when (action) {
+            // Какие поля принимают ручки — чтобы имена не приходилось угадывать
+            // по ошибкам и не сверяться с описанием, которое отстаёт от кода
+            "schema" -> mapOf(
+                "entities" to CLIENT_SCHEMA,
+                "scope" to mapOf(
+                    "world" to mapOf("type" to "world"),
+                    "zone" to mapOf("type" to "zone", "zones" to listOf("41")),
+                    "room" to mapOf(
+                        "type" to "room",
+                        "roomIds" to listOf("4056"),
+                        "roomPropertyKeys" to listOf("кузница")
+                    )
+                ),
+                "batch" to mapOf(
+                    "items" to "массив объектов с полями действия",
+                    "ids" to "массив id; поля из корня применяются ко всем",
+                    "max" to MAX_BATCH
+                ),
+                "readOnly" to READ_ONLY_ACTIONS.sorted()
+            )
+
             // Соединение
             "connect" -> audited("подключение", mapOf("ok" to true).also { client.connect(req.str("profileId")) })
             "disconnect" -> audited("отключение", mapOf("ok" to true).also { client.disconnect() })
