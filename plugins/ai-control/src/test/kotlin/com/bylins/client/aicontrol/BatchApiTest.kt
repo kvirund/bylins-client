@@ -23,6 +23,8 @@ class BatchApiTest {
     private val created = mutableListOf<String>()
     private val deleted = mutableListOf<String>()
     private val updates = mutableListOf<Pair<String, Map<String, Any?>>>()
+    private val createdTabs = mutableListOf<String>()
+    private val createdProfiles = mutableListOf<String>()
 
     /** Заглушка знает три правила; всё остальное — «не найдено». */
     private val knownRules = setOf("r1", "r2", "r3")
@@ -39,6 +41,9 @@ class BatchApiTest {
                 updates.add((args[0] as String) to (args[1] as Map<String, Any?>))
                 args[0] as String in knownRules
             }
+            "createTab" -> "tab-${createdTabs.size}".also { createdTabs.add(args[0] as String) }
+            "deleteTab" -> true
+            "createConnectionProfile" -> "conn-${createdProfiles.size}".also { createdProfiles.add(args[0] as String) }
             "isConnected" -> false
             else -> null
         }
@@ -208,6 +213,34 @@ class BatchApiTest {
         assertEquals(200, code, body)
         assertTrue(body.contains("\"failed\":1"), body)
         assertTrue(deleted.isEmpty(), "правило удалено по запросу с лишним полем")
+    }
+
+    @Test
+    fun `вкладки и профили подключения тоже принимают пакет`() {
+        // Пакетность была неоднородной: у соседей есть, у этих нет, и агенту
+        // приходилось помнить, где можно, а где надо звать поштучно
+        val (tabsCode, tabsBody) = post(
+            "/client/tabs/create",
+            """{"items":[{"name":"Чат"},{"name":"Бой"}]}"""
+        )
+        val (profilesCode, profilesBody) = post(
+            "/client/profiles/create",
+            """{"items":[{"name":"основной","host":"bylins.su"},{"name":"зеркало","host":"mud.ru"}]}"""
+        )
+
+        assertEquals(200, tabsCode, tabsBody)
+        assertEquals(listOf("Чат", "Бой"), createdTabs)
+        assertEquals(200, profilesCode, profilesBody)
+        assertEquals(listOf("основной", "зеркало"), createdProfiles)
+    }
+
+    @Test
+    fun `вкладки удаляются пакетом`() {
+        val (code, body) = post("/client/tabs/delete", """{"ids":["t1","t2"]}""")
+
+        assertEquals(200, code, body)
+        assertTrue(body.contains("\"total\":2"), body)
+        assertTrue(body.contains("\"failed\":0"), body)
     }
 
     @Test

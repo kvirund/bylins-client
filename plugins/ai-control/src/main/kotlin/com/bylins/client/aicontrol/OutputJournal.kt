@@ -48,7 +48,25 @@ class OutputJournal(private val capacity: Int = 5000) {
             lines.removeFirst()
             evicted++
         }
+        // Ждущие ответа на команду просыпаются сразу, а не по таймеру опроса
+        (lock as Object).notifyAll()
         seq
+    }
+
+    /**
+     * Ждёт появления строки после [since], но не дольше [timeoutMs].
+     *
+     * @return номер следующей строки на момент выхода — он же и признак, что
+     *   что-то пришло: если равен [since], значит истёк таймаут.
+     */
+    fun awaitAfter(since: Long, timeoutMs: Long): Long = synchronized(lock) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (nextSeq <= since) {
+            val left = deadline - System.currentTimeMillis()
+            if (left <= 0) break
+            (lock as Object).wait(left)
+        }
+        nextSeq
     }
 
     /**

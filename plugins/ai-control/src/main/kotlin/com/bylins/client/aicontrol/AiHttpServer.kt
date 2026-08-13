@@ -41,6 +41,9 @@ private val TAB_FIELDS =
 private val CONTEXT_RULE_FIELDS =
     setOf("command", "pattern", "scope", "ttl", "ttlMinutes", "priority", "enabled", "profileId")
 private val VARIABLE_FIELDS = setOf("name", "value")
+private val CONNECTION_PROFILE_FIELDS =
+    setOf("name", "host", "port", "encoding", "mapFile", "autoReconnect")
+private val CHARACTER_FIELDS = setOf("name", "description", "requires")
 
 /** Адрес сущности, а не её данные: приходит вместе с полями, но не сверяется. */
 private val ADDRESS_FIELDS = setOf("id", "roomId")
@@ -83,6 +86,16 @@ private val CLIENT_SCHEMA: Map<String, Any?> = mapOf(
         CONTEXT_RULE_FIELDS, listOf("create", "update", "delete"), listOf("create", "update", "delete")
     ),
     "variables" to entitySchema(VARIABLE_FIELDS, listOf("set", "delete"), listOf("set", "delete")),
+    "profiles" to entitySchema(
+        CONNECTION_PROFILE_FIELDS,
+        listOf("create", "update", "delete", "select"),
+        // select пакета не принимает: текущий профиль ровно один
+        listOf("create", "update", "delete")
+    ),
+    // push/pop — операции со стеком, пачкой они смысла не имеют
+    "characters" to entitySchema(
+        CHARACTER_FIELDS, listOf("create", "requires", "push", "pop"), emptyList()
+    ),
     // Комнаты правит /map room/set, но отдельного описания там нет
     "map/room" to entitySchema(ROOM_FIELDS, listOf("room/set"), emptyList())
 )
@@ -109,12 +122,22 @@ class AiHttpServer(
 ) {
     private var server: HttpServer? = null
 
+    /**
+     * Пропуск на /exec. Один: команды идут одному персонажу, и параллельный
+     * залп всё равно перемешал бы вывод.
+     */
+    private val execSlot = java.util.concurrent.Semaphore(1)
+
     val isRunning: Boolean get() = server != null
 
     fun start() {
         if (server != null) return
         val srv = HttpServer.create(InetSocketAddress("127.0.0.1", port), 0)
-        srv.executor = Executors.newFixedThreadPool(4)
+        // /exec занимает поток, пока ждёт ответа сервера, — до тридцати секунд.
+        // На четырёх потоках хватало пары таких вызовов, чтобы перестал
+        // отвечать и /status; ждущий всегда один (см. execSlot), остальные
+        // потоки остаются под чтение
+        srv.executor = Executors.newFixedThreadPool(8)
 
         srv.createContext("/status", handler(::handleStatus))
         srv.createContext("/session/open", handler(::handleSessionOpen))
@@ -343,39 +366,53 @@ class AiHttpServer(
 
         val timeoutMs = req.long("timeoutMs", 3000).coerceIn(0, 30_000)
         val quietMs = req.long("quietMs", 400).coerceIn(50, 5_000)
-        val startSeq = journal.headSeq
 
-        commands.forEach { command ->
-            api.send(command)
-            session.countCommandSent()
-            audit("[${session.name}] → $command")
+        // Персонаж один, и залп ему шлёт кто-то один. Занятый слот означает,
+        // что предыдущий вызов ещё ждёт ответа: пустить второй — перемешать
+        // вывод двух команд и занять последний свободный поток сервера, из-за
+        // чего перестанет отвечать и /status
+        if (!execSlot.tryAcquire()) {
+            throw ApiError(409, "Предыдущая команда ещё выполняется — дождитесь её ответа")
         }
+        try {
+            val startSeq = journal.headSeq
 
-        // Ждём тишины: вывод MUD приходит порциями, «затихание» — простой и
-        // надёжный признак, что ответ пришёл целиком.
-        val deadline = System.currentTimeMillis() + timeoutMs
-        var lastSeq = journal.headSeq
-        var lastChange = System.currentTimeMillis()
-        while (System.currentTimeMillis() < deadline) {
-            Thread.sleep(50)
-            val head = journal.headSeq
-            if (head != lastSeq) {
-                lastSeq = head
-                lastChange = System.currentTimeMillis()
-            } else if (head > startSeq && System.currentTimeMillis() - lastChange >= quietMs) {
-                break
+            commands.forEach { command ->
+                api.send(command)
+                session.countCommandSent()
+                audit("[${session.name}] → $command")
             }
-        }
 
-        val result = journal.read(startSeq, limit = 1000)
-        session.cursorSeq = result.nextSeq
-        return mapOf(
-            "commands" to commands,
-            "lines" to result.lines.map { it.text },
-            "sinceSeq" to startSeq,
-            "nextSeq" to result.nextSeq,
-            "stoppedBy" to if (System.currentTimeMillis() >= deadline) "timeout" else "quiet"
-        )
+            // Ждём тишины: вывод MUD приходит порциями, «затихание» — простой
+            // и надёжный признак, что ответ пришёл целиком. Ждём по событию, а
+            // не опросом в цикле: поток сервера всё равно занят, но ответ
+            // уходит сразу, а не на следующем тике
+            val deadline = System.currentTimeMillis() + timeoutMs
+            var lastSeq = journal.headSeq
+            while (System.currentTimeMillis() < deadline) {
+                val left = deadline - System.currentTimeMillis()
+                // Уже что-то пришло — ждём только продолжения, не дольше quietMs
+                val wait = if (lastSeq > startSeq) minOf(quietMs, left) else left
+                val head = journal.awaitAfter(lastSeq, wait)
+                if (head == lastSeq) {
+                    // Ничего нового: если ответ уже был, он закончился
+                    if (lastSeq > startSeq) break else continue
+                }
+                lastSeq = head
+            }
+
+            val result = journal.read(startSeq, limit = 1000)
+            session.cursorSeq = result.nextSeq
+            return mapOf(
+                "commands" to commands,
+                "lines" to result.lines.map { it.text },
+                "sinceSeq" to startSeq,
+                "nextSeq" to result.nextSeq,
+                "stoppedBy" to if (System.currentTimeMillis() >= deadline) "timeout" else "quiet"
+            )
+        } finally {
+            execSlot.release()
+        }
     }
 
     /**
@@ -698,28 +735,30 @@ class AiHttpServer(
 
             // Профили подключения
             "profiles" -> mapOf("profiles" to client.listConnectionProfiles())
-            "profiles/create" -> audited("создан профиль '${req.str("name")}'", mapOf(
-                "id" to client.createConnectionProfile(
-                    name = req.str("name") ?: throw ApiError(400, "Нужно name"),
-                    host = req.str("host") ?: throw ApiError(400, "Нужно host"),
-                    port = req.int("port", 4000),
-                    encoding = req.str("encoding") ?: "UTF-8",
-                    mapFile = req.str("mapFile") ?: "maps.db",
-                    autoReconnect = req.bool("autoReconnect", false)
+            "profiles/create" -> audited("созданы профили подключения", batched(req) { item ->
+                requireKnown(item, CONNECTION_PROFILE_FIELDS)
+                mapOf(
+                    "id" to client.createConnectionProfile(
+                        name = item.str("name") ?: throw ApiError(400, "Нужно name"),
+                        host = item.str("host") ?: throw ApiError(400, "Нужно host"),
+                        port = item.int("port", 4000),
+                        encoding = item.str("encoding") ?: "UTF-8",
+                        mapFile = item.str("mapFile") ?: "maps.db",
+                        autoReconnect = item.bool("autoReconnect", false)
+                    )
                 )
-            ))
-            "profiles/update" -> {
-                val id = req.str("id") ?: throw ApiError(400, "Нужно id")
-                val (changes, applied) = changesOf(
-                    req,
-                    setOf("name", "host", "port", "encoding", "mapFile", "autoReconnect")
-                )
-                audited("изменён профиль", updated(applied, client.updateConnectionProfile(id, changes), "Профиль подключения не найден: $id"))
-            }
-            "profiles/delete" -> audited("удалён профиль", mutated(
-                client.deleteConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
-                "Профиль подключения не найден: ${req.str("id")}"
-            ))
+            })
+            "profiles/update" -> audited("изменены профили подключения", batched(req) { item ->
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                val (changes, applied) = changesOf(item, CONNECTION_PROFILE_FIELDS)
+                asMap(updated(applied, client.updateConnectionProfile(id, changes), "Профиль подключения не найден: $id"))
+            })
+            "profiles/delete" -> audited("удалены профили подключения", batched(req) { item ->
+                requireKnown(item, emptySet())
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                asMap(mutated(client.deleteConnectionProfile(id), "Профиль подключения не найден: $id"))
+            })
+            // select пакета не принимает: текущий профиль ровно один
             "profiles/select" -> audited("выбран профиль", mutated(
                 client.selectConnectionProfile(req.str("id") ?: throw ApiError(400, "Нужно id")),
                 "Профиль подключения не найден: ${req.str("id")}"
@@ -810,17 +849,17 @@ class AiHttpServer(
 
             // Вкладки вывода
             "tabs" -> mapOf("tabs" to client.listTabs())
-            "tabs/create" -> audited("создана вкладка '${req.str("name")}'", run {
-                requireKnown(req, TAB_FIELDS)
+            "tabs/create" -> audited("созданы вкладки", batched(req) { item ->
+                requireKnown(item, TAB_FIELDS)
                 mapOf(
                     "id" to client.createTab(
-                        name = req.str("name") ?: throw ApiError(400, "Нужно name"),
-                        patterns = req.strList("patterns"),
-                        captureMode = req.str("captureMode") ?: "COPY",
-                        profileTab = req.bool("profileTab", false),
-                        profileLog = req.bool("profileLog", false),
-                        persistContent = req.bool("persistContent", false),
-                        timestamps = req.bool("timestamps", false)
+                        name = item.str("name") ?: throw ApiError(400, "Нужно name"),
+                        patterns = item.strList("patterns"),
+                        captureMode = item.str("captureMode") ?: "COPY",
+                        profileTab = item.bool("profileTab", false),
+                        profileLog = item.bool("profileLog", false),
+                        persistContent = item.bool("persistContent", false),
+                        timestamps = item.bool("timestamps", false)
                     )
                 )
             })
@@ -829,10 +868,11 @@ class AiHttpServer(
                 val (changes, applied) = changesOf(item, TAB_FIELDS)
                 asMap(updated(applied, client.updateTab(id, changes), "Вкладка не найдена: $id"))
             })
-            "tabs/delete" -> audited("удалена вкладка", mutated(
-                client.deleteTab(req.str("id") ?: throw ApiError(400, "Нужно id")),
-                "Вкладка не найдена: ${req.str("id")}"
-            ))
+            "tabs/delete" -> audited("удалены вкладки", batched(req) { item ->
+                requireKnown(item, emptySet())
+                val id = item.str("id") ?: throw ApiError(400, "Нужно id")
+                asMap(mutated(client.deleteTab(id), "Вкладка не найдена: $id"))
+            })
 
             // Контекстные команды (предложения в панели, не автоматические)
             "context/rules" -> mapOf("rules" to client.listContextRules())
@@ -902,13 +942,16 @@ class AiHttpServer(
 
             // Профили персонажей
             "characters" -> mapOf("profiles" to client.listCharacterProfiles())
-            "characters/create" -> audited("создан профиль персонажа '${req.str("name")}'", mapOf(
-                "id" to client.createCharacterProfile(
-                    name = req.str("name") ?: throw ApiError(400, "Нужно name"),
-                    description = req.str("description") ?: "",
-                    requires = req.strList("requires")
+            "characters/create" -> audited("создан профиль персонажа '${req.str("name")}'", run {
+                requireKnown(req, CHARACTER_FIELDS)
+                mapOf(
+                    "id" to client.createCharacterProfile(
+                        name = req.str("name") ?: throw ApiError(400, "Нужно name"),
+                        description = req.str("description") ?: "",
+                        requires = req.strList("requires")
+                    )
                 )
-            ))
+            })
             "characters/requires" -> audited("изменены зависимости профиля", mutated(
                 client.setCharacterProfileDependencies(
                     req.str("id") ?: throw ApiError(400, "Нужно id"),
