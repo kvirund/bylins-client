@@ -505,6 +505,53 @@ class MapManager(
     }
 
     /**
+     * Прописывает выход вручную.
+     *
+     * Связи маппер строит по строке «Вых:» в промпте, поэтому проходы, которых
+     * там нет, в карту не попадают никогда: скрытые (описаны прозой) и тёмные
+     * («слишком темно» в ответ на «огл»). Комнаты за ними в базе есть, а рёбер
+     * к ним нет — и маршрут туда не строится, хотя игрок ходит.
+     *
+     * Обратный выход сам не заводится: односторонние переходы в игре обычны —
+     * падения, телепорты, сдвиги. Для двустороннего прохода есть [both].
+     *
+     * @return текст ошибки или null, если выход записан
+     */
+    fun setExit(
+        roomId: String,
+        direction: Direction,
+        targetRoomId: String,
+        door: String? = null,
+        both: Boolean = false
+    ): String? {
+        val room = _rooms.value[roomId] ?: return "Комната $roomId не найдена на карте"
+        val target = _rooms.value[targetRoomId]
+            ?: return "Комната назначения $targetRoomId не найдена на карте: сначала заведите её"
+        if (roomId == targetRoomId) return "Выход сам в себя: $roomId"
+
+        addRoom(room.copy(exits = (room.exits + (direction to Exit(targetRoomId, door))).toMutableMap()))
+        if (both) {
+            val back = direction.getOpposite()
+            addRoom(target.copy(exits = (target.exits + (back to Exit(roomId, door))).toMutableMap()))
+        }
+        logger.info { "Manual exit: $roomId -$direction-> $targetRoomId (both=$both)" }
+        return null
+    }
+
+    /**
+     * Убирает выход из комнаты. Ошибочно прописанное ребро должно сниматься
+     * тем же способом, что и ставится.
+     *
+     * @return false, если комнаты или выхода нет
+     */
+    fun removeExit(roomId: String, direction: Direction): Boolean {
+        val room = _rooms.value[roomId] ?: return false
+        if (!room.exits.containsKey(direction)) return false
+        addRoom(room.copy(exits = (room.exits - direction).toMutableMap()))
+        return true
+    }
+
+    /**
      * Устанавливает заметку для комнаты
      */
     fun setRoomNote(roomId: String, note: String) {

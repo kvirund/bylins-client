@@ -209,7 +209,12 @@ TOOLS = [
             "Действия записи (требуют разрешения «Управление клиентом»): "
             "room/set (поля комнаты: name, zone, terrain, visited, notes, color — "
             "так помечают посещённой комнату, куда заходить нельзя, и подписывают "
-            "комнаты-заготовки; пустая строка очищает поле), note, "
+            "комнаты-заготовки; пустая строка очищает поле), "
+            "exit/set (прописать выход вручную: roomId, direction, targetRoomId, "
+            "door, both — маппер строит связи по строке «Вых:», поэтому скрытые "
+            "и тёмные проходы в карту сами не попадают и маршрут через них не "
+            "строится; обратное ребро без both не создаётся, односторонние "
+            "переходы обычны), exit/remove (roomId, direction), note, "
             "property/set, property/remove, zone/note, zone/property/set, highlight, highlight/clear."
         ),
         "inputSchema": {
@@ -220,7 +225,9 @@ TOOLS = [
                     "type": "object",
                     "description": (
                         "Параметры: id, roomId, zoneId, query, targetRoomId, nameContains, "
-                        "key, value, note. Свойство задаётся парой key/value. "
+                        "key, value, note, direction, door, both. "
+                        "Свойство задаётся парой key/value. "
+                        "direction принимается и как EAST, и как east, восток, в. "
                         "Зонные действия (zone, zone/rooms, zone/note, zone/properties, "
                         "zone/property/set) требуют zoneId. "
                         "Для room/set — roomId и меняемые поля, например "

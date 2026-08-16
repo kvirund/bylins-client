@@ -2834,6 +2834,15 @@ class ClientState {
             isWalkingFunc = { walking.value },
             // Маппер - модификация
             updateRoomFunc = { roomId, changes -> updateRoom(roomId, changes) },
+            setRoomExitFunc = { roomId, direction, targetRoomId, door, both ->
+                val parsed = com.bylins.client.mapper.Direction.parse(direction)
+                if (parsed == null) "Неизвестное направление: $direction"
+                else mapManager.setExit(roomId, parsed, targetRoomId, door, both)
+            },
+            removeRoomExitFunc = { roomId, direction ->
+                val parsed = com.bylins.client.mapper.Direction.parse(direction)
+                parsed != null && mapManager.removeExit(roomId, parsed)
+            },
             setRoomNoteFunc = { roomId, note -> mapManager.setRoomNote(roomId, note) },
             setRoomColorFunc = { roomId, color -> mapManager.setRoomColor(roomId, color) },
             setRoomZoneFunc = { roomId, zone -> mapManager.setRoomZone(roomId, zone) },

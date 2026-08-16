@@ -24,6 +24,9 @@ private val logger = KotlinLogging.logger("AiHttpServer")
 /** Поля комнаты, доступные через /map/room/set. */
 private val ROOM_FIELDS = setOf("name", "zone", "terrain", "visited", "notes", "color")
 
+/** Поля выхода: /map/exit/set. */
+private val EXIT_FIELDS = setOf("direction", "targetRoomId", "door", "both")
+
 // Поля сущностей — один набор и на create, и на update. Держать их двумя
 // списками уже пробовали: create читал поля поимённо, и списки разъехались
 // молча — приходил {"ok":true}, а часть данных терялась по дороге.
@@ -96,8 +99,9 @@ private val CLIENT_SCHEMA: Map<String, Any?> = mapOf(
     "characters" to entitySchema(
         CHARACTER_FIELDS, listOf("create", "requires", "push", "pop"), emptyList()
     ),
-    // Комнаты правит /map room/set, но отдельного описания там нет
-    "map/room" to entitySchema(ROOM_FIELDS, listOf("room/set"), emptyList())
+    // Комнаты и выходы правит /map, но отдельного описания там нет
+    "map/room" to entitySchema(ROOM_FIELDS, listOf("room/set"), emptyList()),
+    "map/exit" to entitySchema(EXIT_FIELDS, listOf("exit/set", "exit/remove"), emptyList())
 )
 
 /** Потолок размера пакета: массовая правка не должна вешать клиент надолго. */
@@ -531,6 +535,34 @@ class AiHttpServer(
                 val result = updated(applied, api.updateRoom(roomId, changes), "Комната $roomId не найдена на карте")
                 audit("[${session.name}] комната $roomId: ${applied.joinToString(", ")}")
                 result
+            }
+
+            // Выходы. Маппер строит связи по строке «Вых:», поэтому скрытые
+            // (описаны прозой) и тёмные («слишком темно») проходы в карту не
+            // попадают никогда: комнаты за ними есть, рёбер нет, и маршрут
+            // туда не строится, хотя игрок этим путём ходит
+            "exit/set" -> {
+                requireControl()
+                requireKnown(req, EXIT_FIELDS, address = setOf("roomId"))
+                val roomId = req.str("roomId") ?: throw ApiError(400, "Нужно roomId")
+                val direction = req.str("direction") ?: throw ApiError(400, "Нужно direction")
+                val target = req.str("targetRoomId") ?: throw ApiError(400, "Нужно targetRoomId")
+                val error = api.setRoomExit(roomId, direction, target, req.str("door"), req.bool("both", false))
+                if (error != null) throw ApiError(400, error)
+                audit("[${session.name}] выход $roomId $direction → $target")
+                mapOf("ok" to true, "applied" to listOf("exit"))
+            }
+
+            "exit/remove" -> {
+                requireControl()
+                requireKnown(req, setOf("direction"), address = setOf("roomId"))
+                val roomId = req.str("roomId") ?: throw ApiError(400, "Нужно roomId")
+                val direction = req.str("direction") ?: throw ApiError(400, "Нужно direction")
+                if (!api.removeRoomExit(roomId, direction)) {
+                    throw ApiError(404, "Выхода $direction из комнаты $roomId нет")
+                }
+                audit("[${session.name}] снят выход $roomId $direction")
+                mapOf("ok" to true, "applied" to listOf("exit"))
             }
 
             "note" -> {

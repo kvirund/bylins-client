@@ -304,6 +304,34 @@ interface PluginAPI {
     fun updateRoom(roomId: String, changes: Map<String, Any?>): Boolean
 
     /**
+     * Прописывает выход из комнаты вручную.
+     *
+     * Маппер строит связи по строке «Вых:», поэтому скрытые и тёмные проходы в
+     * карту не попадают: комнаты за ними есть, рёбер нет, и маршрут туда не
+     * строится. Целевая комната может быть из другой зоны — межзонные переходы
+     * ровно такие же.
+     *
+     * @param direction «EAST», «east», «восток» или «в»
+     * @param both записать и обратный выход; по умолчанию нет — односторонние
+     *   переходы (падения, телепорты) в игре обычны
+     * @return текст ошибки или null, если выход записан
+     */
+    fun setRoomExit(
+        roomId: String,
+        direction: String,
+        targetRoomId: String,
+        door: String? = null,
+        both: Boolean = false
+    ): String?
+
+    /**
+     * Убирает выход из комнаты.
+     *
+     * @return false, если комнаты или самого выхода нет
+     */
+    fun removeRoomExit(roomId: String, direction: String): Boolean
+
+    /**
      * Устанавливает заметку для комнаты.
      */
     fun setRoomNote(roomId: String, note: String)

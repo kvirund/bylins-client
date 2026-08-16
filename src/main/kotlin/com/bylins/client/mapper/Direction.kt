@@ -51,6 +51,17 @@ enum class Direction(
         }
 
         /**
+         * Разбирает направление, как его пишут снаружи: и «EAST», и «east»,
+         * и «восток», и «в». Имя перечисления сначала, потому что именно его
+         * отдают ручки чтения — что прочитал, тем и пиши.
+         */
+        fun parse(text: String): Direction? {
+            val trimmed = text.trim()
+            return values().firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
+                ?: fromCommand(trimmed)
+        }
+
+        /**
          * Парсит направление из текста выходов
          */
         fun fromExitText(text: String): List<Direction> {

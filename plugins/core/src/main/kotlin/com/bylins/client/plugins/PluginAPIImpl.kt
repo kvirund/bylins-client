@@ -84,6 +84,8 @@ class PluginAPIImpl(
     private val stopWalkFunc: () -> Unit,
     private val isWalkingFunc: () -> Boolean,
     private val updateRoomFunc: (String, Map<String, Any?>) -> Boolean,
+    private val setRoomExitFunc: (String, String, String, String?, Boolean) -> String?,
+    private val removeRoomExitFunc: (String, String) -> Boolean,
     private val setRoomNoteFunc: (String, String) -> Unit,
     private val setRoomColorFunc: (String, String?) -> Unit,
     private val setRoomZoneFunc: (String, String) -> Unit,
@@ -462,6 +464,17 @@ class PluginAPIImpl(
 
     override fun updateRoom(roomId: String, changes: Map<String, Any?>): Boolean =
         updateRoomFunc(roomId, changes)
+
+    override fun setRoomExit(
+        roomId: String,
+        direction: String,
+        targetRoomId: String,
+        door: String?,
+        both: Boolean
+    ): String? = setRoomExitFunc(roomId, direction, targetRoomId, door, both)
+
+    override fun removeRoomExit(roomId: String, direction: String): Boolean =
+        removeRoomExitFunc(roomId, direction)
 
     override fun setRoomNote(roomId: String, note: String) = setRoomNoteFunc(roomId, note)
 
