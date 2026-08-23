@@ -12,8 +12,13 @@ import kotlin.test.assertTrue
  */
 class InputFocusPolicyTest {
 
-    private fun focus(key: Key, ctrl: Boolean = false, alt: Boolean = false, secondary: Boolean = false) =
-        InputFocusPolicy.shouldFocusInput(key, ctrl, alt, secondary)
+    private fun focus(
+        key: Key,
+        ctrl: Boolean = false,
+        alt: Boolean = false,
+        meta: Boolean = false,
+        secondary: Boolean = false
+    ) = InputFocusPolicy.shouldFocusInput(key, ctrl, alt, meta, secondary)
 
     @Test
     fun `клавиши прокрутки вывода фокус не забирают`() {
@@ -45,6 +50,11 @@ class InputFocusPolicyTest {
     fun `сочетания с Ctrl и Alt фокус не трогают`() {
         assertFalse(focus(Key.A, ctrl = true))
         assertFalse(focus(Key.One, alt = true))
+    }
+
+    @Test
+    fun `сочетания с Meta фокус не трогают`() {
+        assertFalse(focus(Key.C, meta = true))
     }
 
     @Test
