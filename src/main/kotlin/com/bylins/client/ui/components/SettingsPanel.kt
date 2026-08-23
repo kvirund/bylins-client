@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.OperatingSystem
 import com.bylins.client.config.MAX_CONFIG_BACKUPS
 import com.bylins.client.PERMANENT_TAB_IDS
 import com.bylins.client.ui.theme.LocalAppColorScheme
@@ -834,10 +835,10 @@ fun SettingsPanel(
 
 private fun openDirectory(path: String) {
     try {
-        val os = System.getProperty("os.name").lowercase()
+        val os = OperatingSystem.current
         when {
-            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", path))
-            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", path))
+            os == OperatingSystem.Windows -> Runtime.getRuntime().exec(arrayOf("explorer", path))
+            os == OperatingSystem.MacOS -> Runtime.getRuntime().exec(arrayOf("open", path))
             else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
         }
     } catch (e: Exception) {
@@ -851,10 +852,10 @@ private fun openDirectory(path: String) {
  */
 private fun revealInExplorer(filePath: String) {
     try {
-        val os = System.getProperty("os.name").lowercase()
+        val os = OperatingSystem.current
         when {
-            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", "/select,$filePath"))
-            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", "-R", filePath))
+            os == OperatingSystem.Windows -> Runtime.getRuntime().exec(arrayOf("explorer", "/select,$filePath"))
+            os == OperatingSystem.MacOS -> Runtime.getRuntime().exec(arrayOf("open", "-R", filePath))
             else -> {
                 val parent = File(filePath).parent ?: filePath
                 Runtime.getRuntime().exec(arrayOf("xdg-open", parent))
@@ -871,10 +872,10 @@ private fun openFile(path: String) {
         if (Desktop.isDesktopSupported()) {
             Desktop.getDesktop().open(file)
         } else {
-            val os = System.getProperty("os.name").lowercase()
+            val os = OperatingSystem.current
             when {
-                os.contains("win") -> Runtime.getRuntime().exec(arrayOf("notepad", path))
-                os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", "-t", path))
+                os == OperatingSystem.Windows -> Runtime.getRuntime().exec(arrayOf("notepad", path))
+                os == OperatingSystem.MacOS -> Runtime.getRuntime().exec(arrayOf("open", "-t", path))
                 else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
             }
         }

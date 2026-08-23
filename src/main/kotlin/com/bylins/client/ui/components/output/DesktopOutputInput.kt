@@ -37,6 +37,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import com.bylins.client.OperatingSystem
 import com.bylins.client.ui.AnsiParser
 import com.bylins.client.ui.scroll.BufferGeometry
 import com.bylins.client.ui.scroll.ContentSnapshot
@@ -76,7 +78,7 @@ private val DIVIDER_HEIGHT = 6.dp
  * скроллбэк (заякорена), нижняя — живой хвост (всегда автоскролл), между ними
  * перетаскиваемый разделитель. Докрутка скроллбэка до низа схлопывает обратно.
  * Выделение (по всему буферу) и drag живут на корне и не рвутся при раздвоении/
- * схлопывании и приходе нового текста. Копирование Ctrl+C/Ctrl+Insert, Ctrl+A.
+ * схлопывании и приходе нового текста. Копирование Ctrl+C/Cmd+C/Ctrl+Insert, Ctrl+A.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -94,6 +96,7 @@ fun ScrollbackOutputView(
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val clipboard = LocalClipboardManager.current
+    val isMacOs = OperatingSystem.current == OperatingSystem.MacOS
     val focusRequester = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
     var searchQuery by remember { mutableStateOf(holder.search.query) }
@@ -294,7 +297,10 @@ fun ScrollbackOutputView(
                     event.isCtrlPressed && event.key == Key.A -> {
                         selection.selectAll(effectiveFirstSeq, geometry.lineCount); holder.bumpSelection(); true
                     }
-                    event.isCtrlPressed && (event.key == Key.C || event.key == Key.Insert) -> { copySelection(); true }
+                    event.key == Key.C && (event.isCtrlPressed || (isMacOs && event.isMetaPressed)) -> {
+                        copySelection(); true
+                    }
+                    event.isCtrlPressed && event.key == Key.Insert -> { copySelection(); true }
                     event.key == Key.PageDown -> { userScrollTo(scrollbackPx + topPaneHeightPx); true }
                     event.key == Key.PageUp -> { userScrollTo(scrollbackPx - topPaneHeightPx); true }
                     event.key == Key.DirectionDown -> { userScrollTo(scrollbackPx + lineHeightPx); true }

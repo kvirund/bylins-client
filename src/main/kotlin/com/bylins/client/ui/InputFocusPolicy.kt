@@ -41,7 +41,8 @@ object InputFocusPolicy {
         key: Key,
         isCtrlPressed: Boolean,
         isAltPressed: Boolean,
+        isMetaPressed: Boolean,
         secondaryFieldFocused: Boolean
     ): Boolean =
-        !isCtrlPressed && !isAltPressed && !secondaryFieldFocused && key !in keepFocusKeys
+        !isCtrlPressed && !isAltPressed && !isMetaPressed && !secondaryFieldFocused && key !in keepFocusKeys
 }
