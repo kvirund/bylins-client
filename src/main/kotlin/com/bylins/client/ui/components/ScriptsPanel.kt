@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bylins.client.ClientState
+import com.bylins.client.OperatingSystem
 import com.bylins.client.scripting.Script
 import com.bylins.client.ui.theme.LocalAppColorScheme
 import java.io.File
@@ -276,10 +277,10 @@ private fun ScriptItem(
 
 private fun openDirectory(path: String) {
     try {
-        val os = System.getProperty("os.name").lowercase()
+        val os = OperatingSystem.current
         when {
-            os.contains("win") -> Runtime.getRuntime().exec(arrayOf("explorer", path))
-            os.contains("mac") -> Runtime.getRuntime().exec(arrayOf("open", path))
+            os == OperatingSystem.Windows -> Runtime.getRuntime().exec(arrayOf("explorer", path))
+            os == OperatingSystem.MacOS -> Runtime.getRuntime().exec(arrayOf("open", path))
             else -> Runtime.getRuntime().exec(arrayOf("xdg-open", path))
         }
     } catch (e: Exception) {
