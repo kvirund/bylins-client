@@ -1,4 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.io.OutputStream
+
+val generatedMacOsIcon = layout.buildDirectory.file("generated/macos/icon.icns")
 
 plugins {
     kotlin("jvm") version "1.9.22"
@@ -114,8 +117,92 @@ compose.desktop {
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))
             }
+            macOS {
+                iconFile.set(generatedMacOsIcon)
+            }
         }
     }
+}
+
+val exportMacOsIcon by tasks.registering {
+    inputs.dir("src/main/resources/macos.icon")
+    outputs.file(generatedMacOsIcon)
+    onlyIf { System.getProperty("os.name").contains("Mac", ignoreCase = true) }
+
+    doLast {
+        val source = project.file("src/main/resources/macos.icon")
+        val sourcePng = project.file("src/main/resources/macos.icon/Assets/alatir.png")
+        val iconset = layout.buildDirectory.dir("generated/macos.iconset").get().asFile
+        iconset.deleteRecursively()
+        iconset.mkdirs()
+
+        val ictool = listOf(
+            file("/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool"),
+            // можно добавить другие пути, если кто-то установил Xcode в нестандартное место (бета-версии, альтернативные сборки)
+        ).firstOrNull { candidate ->
+            candidate.canExecute() && runCatching {
+                exec {
+                    isIgnoreExitValue = true
+                    commandLine(candidate.absolutePath, "--help")
+                     // чтобы не засорять консоль
+                    standardOutput = OutputStream.nullOutputStream()
+                    errorOutput = OutputStream.nullOutputStream()
+                }.exitValue == 0
+            }.getOrDefault(false)
+        }
+
+        val sizes = listOf(
+            "icon_16x16@2x.png" to 16,
+            "icon_32x32@2x.png" to 32,
+            // чтобы не было дополнительного отступа
+            // не используем размеры 128 и 256
+            "icon_512x512@2x.png" to 512
+        )
+
+        val scale = 2 // создаём только @2x, система уменьшит до @1x сама если надо
+        if (ictool != null) {
+            val tool = ictool.absolutePath
+            val sourcePath = source.absolutePath
+            sizes.forEach { (name, size) ->
+                exec {
+                    commandLine(
+                        tool, sourcePath, "--export-image",
+                        "--output-file", iconset.resolve(name).absolutePath,
+                        "--platform", "macOS", "--rendition", "Dark",
+                        "--width", size, "--height", size, "--scale", scale
+                    )
+                    // чтобы не засорять консоль
+                    standardOutput = OutputStream.nullOutputStream()
+                }
+            }
+        } else {
+            val sourcePath = sourcePng.absolutePath
+            sizes.forEach { (name, size) ->
+                exec {
+                    val scaledSize = size * scale
+                    commandLine("/usr/bin/sips", "-z", scaledSize, scaledSize,
+                        sourcePath, "--out", iconset.resolve(name).absolutePath)
+                    // чтобы не засорять консоль
+                    standardOutput = OutputStream.nullOutputStream()
+                }
+            }
+        }
+
+        exec {
+            commandLine("/usr/bin/iconutil", "-c", "icns", "-o",
+                generatedMacOsIcon.get().asFile.absolutePath, iconset.absolutePath)
+
+            // чтобы не засорять консоль
+            standardOutput = OutputStream.nullOutputStream()
+        }
+    }
+}
+
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    dependsOn(exportMacOsIcon)
+}
+tasks.matching { it.name == "processResources" }.configureEach {
+    dependsOn(exportMacOsIcon)
 }
 
 tasks.test {
