@@ -122,6 +122,30 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// Нативный дистрибутив должен содержать те же runtime-плагины, что и `run`.
+// Кладём их рядом с application JAR внутри app image и также во внешний
+// каталог дистрибутива для совместимости с Windows/Linux.
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    dependsOn(":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+    doLast {
+        val appRoot = layout.buildDirectory.dir("compose/binaries/main/app/Bylins Client").get().asFile
+        val pluginSources = listOf(
+            project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"),
+            project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar")
+        )
+        val pluginDirectories = listOf(
+            File(appRoot.parentFile, "Bylins Client.app/Contents/app/plugins"),
+            File(appRoot, "plugins")
+        )
+        pluginDirectories.forEach { pluginsDirectory ->
+            copy {
+                from(pluginSources)
+                into(pluginsDirectory)
+            }
+        }
+    }
+}
+
 // Только для запуска из Gradle: в дистрибутиве плагины лежат рядом с приложением,
 // и зашитый сюда путь увёл бы установленный клиент искать их в build/run/plugins
 tasks.matching { it.name == "run" }.configureEach {
