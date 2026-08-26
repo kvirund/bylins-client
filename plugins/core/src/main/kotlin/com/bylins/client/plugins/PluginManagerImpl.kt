@@ -39,8 +39,14 @@ class PluginManagerImpl(
             val jar = File(
                 PluginManagerImpl::class.java.protectionDomain.codeSource.location.toURI()
             )
-            // Образ jpackage: <дистрибутив>/app/*.jar, плагины — в <дистрибутив>/plugins
-            jar.parentFile?.parentFile?.resolve("plugins")
+            // В macOS app image плагины могут оказаться рядом с JAR, уровнем
+            // выше или рядом с .app: все варианты используются Compose packaging.
+            val appPlugins = jar.parentFile?.resolve("plugins")
+            val bundlePlugins = jar.parentFile?.parentFile?.resolve("plugins")
+            val distributionPlugins = jar.parentFile?.parentFile?.parentFile?.parentFile?.resolve("plugins")
+            listOfNotNull(appPlugins, bundlePlugins, distributionPlugins).firstOrNull { directory ->
+                directory.isDirectory && directory.listFiles { file -> file.extension == "jar" }?.isNotEmpty() == true
+            }
         }.getOrNull()
 
         return installed?.takeIf { it.isDirectory } ?: File("plugins")
