@@ -2202,7 +2202,12 @@ class ClientState {
             if (roomInfo != null) {
                 val direction = lastCommand?.let { roomParser.detectMovementDirection(it) }
                 if (direction != null) {
-                    mapManager.handleMovement(direction, roomInfo.name, roomInfo.exits)
+                    mapManager.handleMovement(
+                        direction = direction,
+                        newRoomName = roomInfo.name,
+                        exits = roomInfo.exits,
+                        roomId = roomInfo.vnum
+                    )
                 }
             }
         }
