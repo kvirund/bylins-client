@@ -142,7 +142,7 @@ scrollbackPx = anchorToPx(layout, plainText, firstSeq, anchorSeq, anchorCol) + a
   панелей → переживает раздвоение/схлопывание и «разрыв» между панелями;
 - подсветка рисуется в `OutputCanvas` через `layout.getPathForRange(charRange)`;
 - drag-жест и сброс по клику объединены в один `awaitEachGesture` (камень №9);
-- копирование Ctrl+C/Ctrl+Insert = `clipboard.setText(plain-подстрока)`.
+- копирование Ctrl+C/Cmd+C/Ctrl+Insert = `clipboard.setText(plain-подстрока)`.
 
 ## 6. Поиск
 

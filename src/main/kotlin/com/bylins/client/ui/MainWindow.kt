@@ -154,6 +154,7 @@ fun MainWindow() {
                                     key = event.key,
                                     isCtrlPressed = event.isCtrlPressed,
                                     isAltPressed = event.isAltPressed,
+                                    isMetaPressed = event.isMetaPressed,
                                     secondaryFieldFocused = secondaryTextFieldFocused
                                 )
                             ) {
