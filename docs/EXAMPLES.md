@@ -228,36 +228,12 @@ clientState.enableTrigger("auto-heal")
 clientState.disableTrigger("auto-heal")
 ```
 
-## Сохранение и загрузка (TODO)
+## Сохранение и загрузка
 
-### JSON формат
-```json
-{
-  "triggers": [
-    {
-      "id": "auto-heal",
-      "name": "Auto Heal",
-      "pattern": "HP: (\\d+)/(\\d+)",
-      "commands": ["cast 'cure serious'"],
-      "enabled": true,
-      "priority": 10
-    }
-  ],
-  "aliases": [
-    {
-      "id": "recall-alias",
-      "name": "Recall",
-      "pattern": "^r$",
-      "commands": ["cast 'word of recall'"],
-      "enabled": true
-    }
-  ]
-}
-```
+Триггеры, алиасы, хоткеи и вкладки хранятся в `~/.bylins-client/config.json` и
+сохраняются автоматически; у конфига есть циклические резервные копии.
+Обмен настройками — экспорт и импорт JSON прямо из UI (в панелях триггеров,
+алиасов и хоткеев), с выбором элементов и режимами merge и replace.
 
-### Загрузка из файла (планируется)
-```kotlin
-val config = File("config/triggers.json").readText()
-val triggers = Json.decodeFromString<List<Trigger>>(config)
-triggerManager.loadTriggers(triggers)
-```
+Правила профиля персонажа лежат в его профиле и действуют, только пока он в
+активном стеке.

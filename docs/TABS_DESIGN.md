@@ -1,255 +1,116 @@
-# Система вкладок и перенаправления
+# Система вкладок и маршрутизация вывода
 
-## Обзор
+Как вывод сервера раскладывается по вкладкам. Документ описывает то, что
+собрано, а не то, что задумывалось: ранняя версия этого файла описывала
+`RedirectManager` с отдельными правилами, а получилось иначе — фильтры живут
+внутри самой вкладки.
 
-Система множественных вкладок позволяет организовать вывод от MUD сервера в различные окна по категориям.
+Про прокрутку, выделение и поиск внутри вкладки — [OUTPUT_PANELS.md](OUTPUT_PANELS.md).
 
-## Use Cases
+Код: `tabs/Tab.kt`, `tabs/TabManager.kt`, `ui/components/OutputPanel.kt`.
 
-### 1. Разделение чата и игры
-```
-Main: основной геймплей
-Chat: tells, шепоты, оос
-Channels: болталка, новости, кланы
-```
+## Модель
 
-### 2. Бой отдельно
-```
-Main: исследование мира
-Combat: весь боевой лог
-```
-
-### 3. Групповая игра
-```
-Main: основное
-Party: групповые сообщения, hp группы
-Combat: бой
-```
-
-## Архитектура
-
-### Tab Model
 ```kotlin
 data class Tab(
     val id: String,
     val name: String,
-    val content: StateFlow<AnnotatedString>,
-    val unreadCount: Int = 0,
-    val color: Color? = null
+    val filters: List<TabFilter> = emptyList(),
+    val captureMode: CaptureMode = CaptureMode.COPY,
+    val maxLines: Int = 2000,
+    val isPluginTab: Boolean = false,
+    val profileTab: Boolean = false,
+    val profileLog: Boolean = false,
+    val persistContent: Boolean = false,
+    val timestamps: Boolean = false
 )
 
-class TabManager {
-    private val _tabs = MutableStateFlow<List<Tab>>(listOf(mainTab))
-    val tabs: StateFlow<List<Tab>> = _tabs
-
-    private val _activeTab = MutableStateFlow<String>("main")
-    val activeTab: StateFlow<String> = _activeTab
-
-    fun createTab(name: String): Tab
-    fun closeTab(id: String)
-    fun switchTab(id: String)
-    fun renameTab(id: String, newName: String)
-}
-```
-
-### Redirect Rules
-```kotlin
-data class RedirectRule(
-    val id: String,
+data class TabFilter(
     val pattern: Regex,
-    val targetTab: String,
-    val mode: RedirectMode,
-    val enabled: Boolean = true
+    val replacement: String? = null,     // null — копировать строку как есть
+    val matchWithColors: Boolean = false // матчить по строке с ANSI-кодами
 )
 
-enum class RedirectMode {
-    COPY,           // Показать в обеих вкладках (Main + Target)
-    MOVE,           // Показать только в Target (gag в Main)
-    COPY_HIGHLIGHT  // Копировать с подсветкой
-}
-
-class RedirectManager {
-    private val rules = mutableListOf<RedirectRule>()
-
-    fun addRule(rule: RedirectRule)
-    fun removeRule(id: String)
-    fun processLine(line: String): Map<String, String> {
-        // Возвращает map: tabId -> text
-        // Одна строка может попасть в несколько вкладок
-    }
-}
+enum class CaptureMode { COPY, MOVE }
 ```
 
-### Text Processing Pipeline
-```kotlin
-class TextProcessor(
-    private val tabManager: TabManager,
-    private val redirectManager: RedirectManager,
-    private val triggerManager: TriggerManager
-) {
-    fun processServerOutput(text: String) {
-        val lines = text.split("\n")
+Правил перенаправления как отдельной сущности нет: **вкладка сама знает, что
+ловит**. Так проще и в UI (правила редактируются там же, где вкладка), и в
+конфиге — нет второй коллекции, которая может рассинхронизироваться с первой.
 
-        for (line in lines) {
-            // 1. Выполнить триггеры
-            triggerManager.process(line)
+Режима два. `COPY` — строка попадает и во вкладку, и в главную; `MOVE` —
+только во вкладку, из главной исчезает (gag).
 
-            // 2. Проверить redirect rules
-            val redirects = redirectManager.processLine(line)
+## Маршрутизация
 
-            // 3. Добавить в соответствующие вкладки
-            for ((tabId, content) in redirects) {
-                tabManager.appendToTab(tabId, content)
-            }
-        }
-    }
-}
-```
+`TabManager.processText` вызывается на каждый кусок входящего текста и
+разбирает его построчно:
 
-## UI Design
+1. со строки снимаются ANSI-коды — получается `cleanLine`;
+2. каждая вкладка, кроме `main`, проверяет строку своими фильтрами по порядку;
+   срабатывает первый подошедший;
+3. поймавшая вкладка получает строку **с цветом** (или результат замены),
+   при `timestamps` — с меткой времени;
+4. если хоть одна поймавшая вкладка в режиме `MOVE`, строка не попадает в
+   главную;
+5. остаток склеивается и уходит в `main`.
 
-### Tab Bar
-```
-┌─────────────────────────────────────────────────┐
-│ [Main] [Chat(3)] [Combat] [+] [⚙️]              │
-└─────────────────────────────────────────────────┘
-```
+Одна строка может попасть в несколько вкладок сразу — это нормально и
+используется: например, «сказал вам» ловят и «Чат», и вкладка личных
+сообщений.
 
-- `[Main]` - активная вкладка
-- `[Chat(3)]` - 3 непрочитанных сообщения
-- `[+]` - создать новую вкладку
-- `[⚙️]` - настройки redirect rules
+### Особые вкладки
 
-### Redirect Rules Editor
-```
-┌─────────────────────────────────────────────────┐
-│ Redirect Rules                                  │
-├─────────────────────────────────────────────────┤
-│ ☑ ^.+ говорит вам:       → [Chat]    [Copy]    │
-│ ☑ ^.+ шепчет вам:        → [Chat]    [Copy]    │
-│ ☑ ^\[Болталка\]          → [Channels] [Move]   │
-│ ☑ ^Вы атакуете           → [Combat]  [Copy]    │
-│ ☐ ^.+ атакует вас        → [Combat]  [Copy]    │
-├─────────────────────────────────────────────────┤
-│ [Add Rule] [Edit] [Delete] [Import] [Export]   │
-└─────────────────────────────────────────────────┘
-```
+- `main` — главная, в фильтрации не участвует (пропускается в цикле);
+- `logs` — системный лог клиента, наполняется напрямую через `addToLogsTab`;
+- плагинные (`isPluginTab`) — создаются плагином, пользователь их не правит.
 
-## Конфигурация
+## Хранение
 
-### tabs.json
-```json
-{
-  "tabs": [
-    {
-      "id": "main",
-      "name": "Main",
-      "permanent": true
-    },
-    {
-      "id": "chat",
-      "name": "Chat",
-      "color": "#00AA00"
-    },
-    {
-      "id": "combat",
-      "name": "Combat",
-      "color": "#AA0000"
-    }
-  ],
-  "redirectRules": [
-    {
-      "id": "tells",
-      "pattern": "^.+ говорит вам:",
-      "targetTab": "chat",
-      "mode": "COPY",
-      "enabled": true
-    },
-    {
-      "id": "whispers",
-      "pattern": "^.+ шепчет вам:",
-      "targetTab": "chat",
-      "mode": "COPY",
-      "enabled": true
-    },
-    {
-      "id": "channels",
-      "pattern": "^\\[Болталка\\]",
-      "targetTab": "chat",
-      "mode": "MOVE",
-      "enabled": true
-    }
-  ]
-}
-```
+| Что | Где |
+|-----|-----|
+| Глобальные вкладки | `config.json`, поле `tabs` |
+| Вкладки профиля (`profileTab`) | профиль подключения |
+| Содержимое (`persistContent`) | `~/.bylins-client`, восстанавливается при старте |
+| Лог вкладки (`profileLog`) | свой файл на каждый сервер |
 
-## Примеры использования
+`profileTab` подразумевает `profileLog`: вкладка, видимая только на своём
+сервере, не должна писать в общий лог.
 
-### Пример 1: Чат
-```kotlin
-// Создаем вкладку для чата
-tabManager.createTab("Chat")
+## Подводные камни
 
-// Добавляем правила
-redirectManager.addRule(
-    RedirectRule(
-        pattern = "^.+ говорит вам:".toRegex(),
-        targetTab = "chat",
-        mode = RedirectMode.COPY
-    )
-)
-```
+**Во вкладку пишут из разных потоков.** Вывод сервера раскладывает поток
+чтения сокета, а плагины и команды ИИ добавляют свой текст из своих. Список
+строк защищён `linesLock`; без него параллельные добавления теряли строки.
 
-Результат:
-```
-Main:  обычный геймплей + копии tells
-Chat:  только tells и шепоты
-```
+**Абсолютная нумерация строк.** Буфер вкладки — скользящее окно на `maxLines`,
+поэтому индекс строки в списке не годится как её идентификатор: он «съезжает»
+при вытеснении. Счётчик `evictedLines` даёт абсолютный `seq` первой строки в
+буфере; на нём держатся якорь прокрутки и выделение (см. OUTPUT_PANELS).
+Ломать монотонность `seq` нельзя.
 
-### Пример 2: Бой (gag в Main)
-```kotlin
-tabManager.createTab("Combat")
+**Фильтр матчит без цвета, а кладёт с цветом.** Проверка идёт по `cleanLine`,
+иначе ANSI-коды посреди строки рвут паттерн; во вкладку попадает исходная
+строка, иначе теряется раскраска. Если паттерн должен видеть коды — есть
+`matchWithColors`.
 
-redirectManager.addRule(
-    RedirectRule(
-        pattern = "^(Вы атакуете|.+ атакует вас)".toRegex(),
-        targetTab = "combat",
-        mode = RedirectMode.MOVE  // Убрать из Main
-    )
-)
-```
+**Метка времени ставится при захвате, а не при отрисовке.** Иначе после
+перезапуска у сохранённого содержимого время окажется временем открытия
+клиента, а не сообщения.
 
-Результат:
-```
-Main:    чистый от боевого спама
-Combat:  весь боевой лог
-```
+**Порядок фильтров внутри вкладки значим,** а порядок вкладок — нет: строку
+получают все подошедшие вкладки, и `MOVE` любой из них убирает её из главной.
 
-## Горячие клавиши
+**`main` наполняется дважды.** Для отображения используется буфер
+`TelnetClient.receivedData`, а `mainTab` нужен для лога и снимков. Добавляя
+текст в главную мимо сервера (плагины, локальные команды), надо помнить про
+оба места — иначе строка либо не видна, либо не попадает в лог.
 
-- `Ctrl+T` - новая вкладка
-- `Ctrl+W` - закрыть вкладку
-- `Ctrl+Tab` - следующая вкладка
-- `Ctrl+Shift+Tab` - предыдущая вкладка
-- `Ctrl+1..9` - переключиться на вкладку N
+## Стандартные вкладки
 
-## Split Windows (будущее)
+Заводятся в `config/DefaultData.kt`:
 
-```
-┌─────────────────┬──────────────┐
-│                 │              │
-│   Main          │   Chat       │
-│                 │              │
-│                 ├──────────────┤
-│                 │              │
-│                 │   Combat     │
-└─────────────────┴──────────────┘
-```
-
-## Detached Windows (будущее)
-
-Возможность "отцепить" вкладку в отдельное окно:
-- Независимое позиционирование
-- Always on top режим
-- Настраиваемая прозрачность
-- Идеально для мониторинга чата на втором мониторе
+- **Чат** — говорят, кричат, шепчут, торгуют, оффтоп, группа, боги.
+  Паттерны написаны под формат «Былин»: `сказал вам : '`, `^[оффтоп] `,
+  `заорал :'`. Форматов вроде «говорит вам» или `[Болталка]`, которые
+  встречаются в других MUD, здесь не бывает — с ними вкладка молчала.
