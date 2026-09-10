@@ -1,320 +1,151 @@
 # Архитектура проекта
 
-> Детальная документация подсистем и индекс базы знаний — в [docs/README.md](docs/README.md).
-> В частности, панели вывода (скролл/выделение/поиск) и их **подводные камни** —
-> [docs/OUTPUT_PANELS.md](docs/OUTPUT_PANELS.md).
+Kotlin + Compose for Desktop, JVM. Собирается и запускается на Windows, Linux
+и macOS; Compose тянет платформозависимый Skiko, поэтому сборка всегда под ту
+систему, где её делают.
 
-## Обзор
+Документ описывает то, что собрано. Подробности по подсистемам — в
+[docs/](docs/README.md): [вывод и прокрутка](docs/OUTPUT_PANELS.md),
+[вкладки](docs/TABS_DESIGN.md).
 
-Bylins MUD Client построен на современном стеке:
-- **Kotlin** - основной язык
-- **Compose for Desktop** - UI фреймворк
-- **Coroutines** - асинхронность
-- **Gradle** - сборка проекта
-
-## Структура модулей
-
-### 1. UI Layer (`ui/`)
-
-#### MainWindow.kt
-Главное окно приложения с layout:
-- Верхняя панель подключения
-- Основная область (текст + статус)
-- Панель ввода команд
-
-#### Components
-
-**ConnectionPanel** - управление подключением
-- Поля host/port
-- Кнопка connect/disconnect
-- Состояние подключения
-
-**OutputPanel** - вывод текста от сервера (split-scrollback)
-- Под-вкладки (Главная/Логи/Чат/плагинные), ANSI-цвета, monospace
-- Кастомный скролл с якорем по строке: внизу автоскролл, при прокрутке вверх
-  делится на скроллбэк + живой хвост (перетаскиваемый разделитель)
-- Выделение по всему буферу (Ctrl+C/Ctrl+Insert/Ctrl+A), поиск (Ctrl+F)
-- Подробно (и **подводные камни**): [docs/OUTPUT_PANELS.md](docs/OUTPUT_PANELS.md)
-
-**InputPanel** - ввод команд
-- История команд (↑/↓)
-- Enter для отправки
-- TODO: автодополнение
-
-**StatusPanel** - статус персонажа
-- HP/Mana/Move бары
-- Уровень, опыт, золото
-- TODO: динамические данные из MSDP
-
-### 2. Network Layer (`network/`)
-
-#### TelnetClient.kt
-Основной класс для работы с Telnet:
-- Подключение/отключение
-- Отправка команд
-- Прием данных
-- Telnet negotiation (DO/DONT/WILL/WONT)
-- Поддержка MSDP, GMCP
-
-**Flow архитектура:**
-```
-connect() -> startReading() -> parse() -> emit receivedData
-                            -> parse() -> handleTelnetCommand()
-```
-
-**Поддерживаемые Telnet опции:**
-- TERMINAL_TYPE (24)
-- NAWS (31) - размер окна
-- MSDP (69) - данные сервера
-- GMCP (201) - расширенный протокол
-
-#### TelnetParser.kt
-Парсер Telnet протокола:
-- State machine для обработки IAC последовательностей
-- Разделение текста и команд
-- Обработка subnegotiation
-
-**States:**
-- NORMAL - обычный текст
-- IAC - обнаружен IAC (255)
-- COMMAND - обработка DO/DONT/WILL/WONT
-- SUBNEGOTIATION - обработка SB...SE
-- SUBNEG_IAC - IAC внутри subnegotiation
-
-### 3. TODO: Triggers System (`triggers/`)
-
-Планируется:
-```kotlin
-data class Trigger(
-    val pattern: Regex,
-    val action: (MatchResult) -> Unit,
-    val enabled: Boolean = true
-)
-
-class TriggerManager {
-    fun addTrigger(trigger: Trigger)
-    fun removeTrigger(id: String)
-    fun process(text: String)
-}
-```
-
-### 4. TODO: Mapper System (`mapper/`)
-
-Автомаппер с Canvas/SVG:
-```kotlin
-data class Room(
-    val id: String,
-    val name: String,
-    val exits: Map<Direction, String>,
-    val x: Int, y: Int, z: Int
-)
-
-class Mapper {
-    fun addRoom(room: Room)
-    fun navigate(direction: Direction)
-    fun render(): Bitmap
-}
-```
-
-### 5. TODO: Stats System (`stats/`)
-
-Система статистики:
-- Сбор данных (урон, лечение, опыт)
-- Хранение в БД или файлах
-- Графики (Compose Charts)
-
-### 6. TODO: Scripting System (`scripting/`)
-
-Система скриптов с поддержкой Python, Lua, JavaScript:
-
-#### Архитектура движков
-```kotlin
-interface ScriptEngine {
-    val language: String
-    fun loadScript(path: String): Script
-    fun executeScript(script: Script, context: ScriptContext)
-    fun reloadScript(scriptId: String)
-}
-
-class ScriptEngineManager {
-    private val engines = mapOf(
-        "py" to PythonScriptEngine(),     // GraalVM Python / Jython
-        "lua" to LuaScriptEngine(),       // LuaJ
-        "js" to JavaScriptEngine()        // GraalVM JS / Nashorn
-    )
-
-    fun loadScript(path: String): Script {
-        val extension = path.substringAfterLast(".")
-        return engines[extension]?.loadScript(path)
-            ?: throw UnsupportedScriptException(extension)
-    }
-}
-
-// Единый API доступный из всех языков
-interface ScriptAPI {
-    fun send(command: String)                    // Отправить команду на сервер
-    fun echo(text: String, color: String? = null) // Вывести текст локально
-    fun addTrigger(pattern: String, callback: Function)
-    fun addAlias(name: String, callback: Function)
-    fun getVariable(name: String): Any?
-    fun setVariable(name: String, value: Any)
-    fun getMsdpValue(key: String): Any?          // Получить MSDP данные
-    fun getMapperRoom(): Room?                   // Текущая комната
-}
-```
-
-#### Примеры скриптов
-
-**Python** (`scripts/auto_heal.py`):
-```python
-def on_load(api):
-    api.echo("Auto-heal script loaded!", "green")
-    api.add_trigger(r"У вас осталось (\d+) жизней", on_low_hp)
-
-def on_low_hp(api, match):
-    hp = int(match.group(1))
-    max_hp = api.get_msdp_value("MAX_HEALTH")
-    if hp < max_hp * 0.3:
-        api.send("cast 'cure serious'")
-        api.echo(f"Auto-healing! HP: {hp}/{max_hp}", "yellow")
-```
-
-**Lua** (`scripts/auto_loot.lua`):
-```lua
-function on_load(api)
-    api.echo("Auto-loot script loaded!", "green")
-    api.add_trigger("^(.+) мертв", on_kill)
-end
-
-function on_kill(api, match)
-    local corpse = match[1]
-    api.send("взять все " .. corpse)
-    api.send("взять все.монета труп")
-end
-```
-
-**JavaScript** (`scripts/speedwalk.js`):
-```javascript
-function on_load(api) {
-    api.echo("Speedwalk script loaded!", "green");
-    api.add_alias("^#(\\d+)([nsewud])$", speedwalk);
-}
-
-function speedwalk(api, match) {
-    const count = parseInt(match[1]);
-    const direction = match[2];
-
-    for (let i = 0; i < count; i++) {
-        api.send(direction);
-    }
-}
-```
-
-### 7. TODO: Plugins System (`plugins/`)
-
-Система плагинов с поддержкой Kotlin/Java и Python:
-
-#### Kotlin/Java плагины
-```kotlin
-interface Plugin {
-    val name: String
-    val version: String
-    val author: String
-
-    fun onLoad(api: PluginAPI)
-    fun onUnload()
-    fun onCommand(cmd: String): Boolean
-    fun onServerOutput(text: String)
-}
-
-class PluginManager {
-    fun loadPlugin(path: String): Plugin
-    fun unloadPlugin(name: String)
-    fun reloadPlugin(name: String)
-}
-```
-
-#### Python плагины
-```python
-# plugins/damage_counter/plugin.py
-class DamageCounterPlugin:
-    name = "Damage Counter"
-    version = "1.0.0"
-    author = "Player"
-
-    def on_load(self, api):
-        self.total_damage = 0
-        api.add_trigger(r"Вы нанесли (\d+) урона", self.on_damage)
-
-    def on_damage(self, api, match):
-        damage = int(match.group(1))
-        self.total_damage += damage
-        api.set_variable("total_damage", self.total_damage)
-```
-
-## Data Flow
+## Слои
 
 ```
-User Input -> InputPanel -> TelnetClient.send() -> Server
-
-Server -> TelnetClient.receive() -> TelnetParser -> TextProcessor
-                                                  -> MSDP Handler -> StatusPanel
-
-TextProcessor:
-  -> TriggerManager (execute triggers)
-  -> RedirectManager (check redirect rules)
-     -> Tab 1 (Main)
-     -> Tab 2 (Chat)
-     -> Tab 3 (Combat)
-     -> Tab N (Custom)
+Main.kt → MainWindow (Compose)
+             │
+        ClientState ──── единственный узел, связывающий подсистемы
+             │
+  ┌──────────┼───────────┬──────────┬───────────┬──────────┐
+network/   triggers/   tabs/     mapper/   scripting/   plugins/
+aliases/   hotkeys/    ui/       config/   variables/   profiles/
+contextcommands/
 ```
 
-## State Management
+`ClientState` — не «god object» по недосмотру, а сознательная точка сборки:
+подсистемы не знают друг о друге, а он раздаёт им колбэки. Цена — файл большой;
+выгода — связи видны в одном месте, а не размазаны по десятку менеджеров.
 
-Используется Kotlin StateFlow для реактивности:
-```kotlin
-// TelnetClient
-val isConnected: StateFlow<Boolean>
-val receivedData: StateFlow<String>
+## Путь текста от сервера
 
-// UI Components наблюдают за состоянием
-val isConnected by telnetClient.isConnected.collectAsState()
+```
+сокет (Dispatchers.IO)
+  → TelnetClient.processReceivedText
+      telnet-команды разбираются ПЕРВЫМИ (MSDP с новой комнатой приходит
+      в одном пакете с её описанием — иначе правила с областью действия
+      не успевают переключиться)
+  → ClientState.processIncomingText
+      LineReceivedEvent плагинам (отменяемое — на нём держится gag)
+      триггеры: команды, gag, раскраска
+  → TabManager.processText   (раскладка по вкладкам, см. TABS_DESIGN)
+  → буфер вывода             (рендер, см. OUTPUT_PANELS)
 ```
 
-## Конфигурация
+Собственный вывод клиента — эхо команд, ответы `#`-команд, сообщения плагинов
+— идёт мимо этого пути: он уже готов и триггерами не разбирается. Чтобы он
+всё же был виден плагинам (журналу ИИ, например), `TelnetClient` зовёт
+`onLocalOutput`, а `ClientState` рассылает `LocalOutputEvent` — отдельное,
+неотменяемое событие: гонять триггеры по собственному эхо значило бы
+зациклиться.
 
-TODO: Планируется JSON конфиги:
-- `config/settings.json` - основные настройки
-- `config/triggers.json` - триггеры
-- `config/aliases.json` - алиасы
-- `config/colors.json` - цветовая схема
+## Путь команды
+
+```
+поле ввода / хоткей / скрипт / плагин
+  → ClientState.send
+      разделение по «;»
+      #-команды (переменные, навигация, скрипты) — гасятся локально
+      подстановка переменных
+      алиасы (профильные приоритетнее базовых)
+  → sendRaw → sendScope (один поток) → TelnetClient.send (под writeLock)
+```
+
+Однопоточная отправка — не украшение: команды из разных источников (игрок,
+скрипт, залп от ИИ) иначе наслаивались в сокете, и часть до сервера не
+доходила.
+
+## Подсистемы
+
+### network/
+`TelnetClient` — сокет, буфер вывода, telnet-опции. `TelnetParser`,
+`MsdpParser`, `GmcpParser` — разбор протоколов. MSDP — основной источник
+правды о комнате и статусе.
+
+### triggers/, aliases/, hotkeys/, contextcommands/
+Regex-правила с приоритетом. У триггера есть `gag`, `once` и область действия
+(мир/зона/комнаты); хоткей ловит физическую клавишу, поэтому не зависит от
+раскладки. Контекстные команды — предложения по обстановке на `Alt+1..0`.
+
+Правила бывают базовые и профильные: активный профиль персонажа накладывается
+поверх базового набора и действует, пока он в стеке.
+
+### mapper/
+`MapManager` — комнаты, зоны, свойства; `MapDatabase` — SQLite в
+`~/.bylins-client/maps/`; `Pathfinder` — A* и BFS; `PathWalker` — проход по
+маршруту с подтверждением каждого шага; `ZoneDetector` — определение зон.
+
+Карта строится **по MSDP**: `handleMsdpRoom` получает таблицу `ROOM` с VNUM,
+именем, зоной и выходами. Разбор текста для этого не используется — он был,
+не работал и удалён.
+
+Выходы, которых нет в строке «Вых:» (скрытые, тёмные), прописываются вручную
+через API — автоматика по факту перемещения рисовала бы несуществующие связи
+при телепортах и бегстве.
+
+### scripting/
+`ScriptManager` + движки: `JavaScriptEngine` (Nashorn), `PythonEngine`
+(Jython), `LuaEngine` (LuaJ). `ScriptAPI` — то, что видит скрипт;
+`ScriptStorage` — его persistent-хранилище (SQLite).
+
+### plugins/
+Плагин — отдельный модуль Gradle, собранный в jar. Загрузчик
+(`PluginManagerImpl`) поднимает каждый своим classloader'ом, поэтому плагин
+можно выгрузить и перезагрузить на живом клиенте.
+
+- `plugins/core` — `PluginAPI` и `ClientControl`: контракт, который видит плагин
+- `plugins/assistant` — промпт, статы, автодействия, миникарта
+- `plugins/ai-control` — HTTP+JSON сервер для ИИ-агентов и MCP-мост
+
+Права (`client-control`, `network-server`, `connection-control`) выдаёт игрок;
+`GuardedClientControl` проверяет их на каждом вызове.
+
+Каталог плагинов ищется относительно jar-а приложения (`AppLayout`), а не
+рабочего каталога: у распакованного дистрибутива рабочим может оказаться что
+угодно, а у бандла macOS из Finder — корень файловой системы.
+
+### config/, profiles/
+`ConfigManager` — `~/.bylins-client/config.json`: атомарная запись через
+временный файл и циклические резервные копии. Профили подключения (сервер,
+кодировка, файл карты) и профили персонажа (свои правила) — отдельно.
+
+## Потоки и блокировки
+
+| Что | Где исполняется | Чем защищено |
+|-----|-----------------|--------------|
+| Чтение сокета | `Dispatchers.IO` | — |
+| Запись в сокет | `sendScope` (один поток) | `writeLock` |
+| Буфер вывода | пишут поток чтения и плагины | `bufferLock` |
+| Строки вкладки | то же | `linesLock` |
+| UI | `Dispatchers.Main` | Compose |
+| HTTP ИИ-агентов | пул сервера | `execSlot` на `/exec` |
+
+Все четыре замка появились по одной причине: плагины и агенты пишут в те же
+структуры, что и поток чтения, и без синхронизации строки терялись.
 
 ## Расширяемость
 
-### Добавление новой Telnet опции
-1. Добавить константу в TelnetClient
-2. Добавить в sendTelnetNegotiation()
-3. Добавить обработчик в handleTelnetCommand()
+**Плагин** — новый модуль в `plugins/`, наследник `PluginBase`, манифест
+`plugin.yml`, сборка задачей `buildPlugin`.
 
-### Добавление нового UI компонента
-1. Создать Composable в `ui/components/`
-2. Подключить к MainWindow
-3. Подписаться на StateFlow для данных
+**Команда клиента** — ветка в `CommandProcessor.processNavigationCommand`;
+команда должна гаситься локально, иначе уйдёт на сервер.
 
-### Добавление плагина
-1. Реализовать Plugin interface
-2. Положить jar в `plugins/`
-3. PluginManager загрузит автоматически
+**Telnet-опция** — обработка в `TelnetParser` и реакция в
+`TelnetClient.handleTelnetCommand`.
 
-## Performance
+## Ограничения
 
-- Telnet чтение в IO Dispatcher
-- UI в Main Dispatcher
-- Парсинг текста оптимизирован (ByteArray вместо String)
-- TODO: виртуализация длинного текста в OutputPanel
-
-## Security
-
-- TODO: SSL/TLS поддержка
-- TODO: валидация команд перед отправкой
-- TODO: sandbox для плагинов
+- Нет SSL/TLS для telnet
+- Установщики (msi/dmg/deb) собираются без плагинов — комплект для раздачи
+  делает `releaseDist`
+- Плагины только на JVM, хотя скрипты бывают на трёх языках
+- Нет виртуализации очень длинного вывода: буфер ограничен по строкам
