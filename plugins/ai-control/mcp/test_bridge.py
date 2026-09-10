@@ -10,6 +10,12 @@ MCP-диалог по stdio: так проверяется и протокол, 
 import json, os, subprocess, sys, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+# Тот же случай, что и в самом мосте: на Windows вывод по умолчанию
+# получает кодировку локали (cp1252), в которой нет кириллицы, и тест
+# падает на первой же русской строке отчёта — не проверив ничего
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 PORT = 47471
 calls = []
 
