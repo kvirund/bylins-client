@@ -98,7 +98,7 @@ class PluginAPIImpl(
     private val createRoomFunc: (String, String) -> Boolean,
     private val createRoomWithExitsFunc: (String, String, Map<String, String>) -> Boolean,
     private val linkRoomsFunc: (String, String, String) -> Unit,
-    private val handleMovementFunc: (String, String, List<String>) -> Map<String, Any>?,
+    private val handleMovementFunc: (String, String, List<String>, String?) -> Map<String, Any>?,
     private val setMapEnabledFunc: (Boolean) -> Unit,
     private val isMapEnabledFunc: () -> Boolean,
     private val clearMapFunc: () -> Unit,
@@ -507,8 +507,13 @@ class PluginAPIImpl(
     override fun linkRooms(fromRoomId: String, direction: String, toRoomId: String) =
         linkRoomsFunc(fromRoomId, direction, toRoomId)
 
-    override fun handleMovement(direction: String, roomName: String, exits: List<String>): Map<String, Any>? =
-        handleMovementFunc(direction, roomName, exits)
+    override fun handleMovement(
+        direction: String,
+        roomName: String,
+        exits: List<String>,
+        roomId: String?
+    ): Map<String, Any>? =
+        handleMovementFunc(direction, roomName, exits, roomId)
 
     // ============================================
     // Маппер - управление

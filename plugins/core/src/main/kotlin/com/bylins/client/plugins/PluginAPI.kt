@@ -401,12 +401,21 @@ interface PluginAPI {
     /**
      * Обрабатывает движение персонажа.
      * Создаёт или обновляет комнату на основе направления движения.
+     *
      * @param direction Направление движения (север, юг, ...)
      * @param roomName Название новой комнаты
      * @param exits Список выходов из новой комнаты
+     * @param roomId Идентификатор комнаты в игре (vnum). Обязателен: комната
+     *   на карте адресуется по нему, и без него движение обработать нельзя —
+     *   ни найти существующую комнату, ни завести новую.
      * @return Информация о комнате или null при ошибке
      */
-    fun handleMovement(direction: String, roomName: String, exits: List<String>): Map<String, Any>?
+    fun handleMovement(
+        direction: String,
+        roomName: String,
+        exits: List<String>,
+        roomId: String?
+    ): Map<String, Any>?
 
     // ============================================
     // Маппер - MSDP интеграция

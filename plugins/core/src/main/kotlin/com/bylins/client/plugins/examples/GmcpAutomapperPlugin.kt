@@ -183,7 +183,7 @@ class GmcpAutomapperPlugin : PluginBase() {
 
         if (direction != null) {
             // Движение в направлении - создаем связь
-            val roomInfo = api.handleMovement(direction, name, exits)
+            val roomInfo = api.handleMovement(direction, name, exits, vnum)
             if (roomInfo != null) {
                 val roomId = roomInfo["id"] as? String
                 if (roomId != null && zone != null) {

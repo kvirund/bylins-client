@@ -223,7 +223,7 @@ class TriggerAutomapperPlugin : PluginBase() {
 
         if (direction != null) {
             // Движение - используем handleMovement
-            val roomInfo = api.handleMovement(direction, roomName, exits)
+            val roomInfo = api.handleMovement(direction, roomName, exits, roomId)
             if (roomInfo != null) {
                 val createdId = roomInfo["id"] as? String
                 if (createdId != null) {

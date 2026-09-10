@@ -296,9 +296,7 @@ class ClientState {
     }
     private lateinit var commandProcessor: CommandProcessor
 
-    private val roomParser = com.bylins.client.mapper.RoomParser()
 
-    private var lastCommand: String? = null
 
     // Кодировка для telnet (конфигурируется пользователем)
     private var _encoding = "UTF-8"
@@ -1025,9 +1023,6 @@ class ClientState {
             }
         }
 
-        // Сохраняем команду для автомаппера
-        lastCommand = command
-
         // Уведомляем скрипты
         if (::scriptManager.isInitialized) {
             scriptManager.fireEvent(com.bylins.client.scripting.ScriptEvent.ON_COMMAND, command)
@@ -1405,9 +1400,6 @@ class ClientState {
 
         // Распределяем текст по вкладкам
         tabManager.processText(text)
-
-        // Обрабатываем текст для автомаппера
-        processMapping(text)
 
         // Разбиваем на строки и обрабатываем каждую триггерами
         val ansiParser = com.bylins.client.ui.AnsiParser()
@@ -2162,54 +2154,6 @@ class ClientState {
         return sessionStats.getFormattedBytes()
     }
 
-    // Управление картой
-    /**
-     * Обрабатывает входящий текст для автомаппера
-     */
-    private fun processMapping(text: String) {
-        if (!mapManager.mapEnabled.value) return
-
-        val ansiParser = com.bylins.client.ui.AnsiParser()
-        val cleanText = ansiParser.stripAnsi(text)
-        val lines = cleanText.lines()
-
-        // Ищем информацию о комнате
-        for (line in lines) {
-            // Парсим выходы
-            val exits = roomParser.parseExits(line)
-            if (exits.isNotEmpty()) {
-                // Найдены выходы, пробуем определить название комнаты
-                val roomName = lines.firstOrNull { roomParser.parseRoomName(it) != null }
-                    ?.let { roomParser.parseRoomName(it) }
-
-                if (roomName != null) {
-                    // Определяем направление движения из последней команды
-                    val direction = lastCommand?.let { roomParser.detectMovementDirection(it) }
-
-                    if (direction != null) {
-                        // Обрабатываем движение и обновляем карту
-                        mapManager.handleMovement(direction, roomName, exits)
-                    } else {
-                        // Возможно первая комната или телепорт
-                        // TODO: обработка телепорта/первой комнаты
-                    }
-                }
-            }
-        }
-
-        // Обработка MSDP данных для маппинга
-        val msdp = _msdpData.value
-        if (msdp.isNotEmpty()) {
-            val roomInfo = roomParser.parseFromMSDP(msdp)
-            if (roomInfo != null) {
-                val direction = lastCommand?.let { roomParser.detectMovementDirection(it) }
-                if (direction != null) {
-                    mapManager.handleMovement(direction, roomInfo.name, roomInfo.exits)
-                }
-            }
-        }
-    }
-
     fun setMapEnabled(enabled: Boolean) {
         mapManager.setMapEnabled(enabled)
     }
@@ -2888,11 +2832,11 @@ class ClientState {
                     mapManager.addRoom(reverseUpdated)
                 }
             },
-            handleMovementFunc = { direction, roomName, exits ->
+            handleMovementFunc = { direction, roomName, exits, roomId ->
                 val dir = com.bylins.client.mapper.Direction.fromCommand(direction)
                 if (dir != null) {
                     val exitDirs = exits.mapNotNull { com.bylins.client.mapper.Direction.fromCommand(it) }
-                    mapManager.handleMovement(dir, roomName, exitDirs)?.toMap()
+                    mapManager.handleMovement(dir, roomName, exitDirs, roomId)?.toMap()
                 } else null
             },
             // Маппер - управление
