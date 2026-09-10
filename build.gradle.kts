@@ -37,7 +37,7 @@ plugins {
 }
 
 group = "com.bylins"
-version = "0.1.0"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
@@ -125,12 +125,15 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Bylins Client"
-            // Версия пакета для ОС живёт по своим правилам: для DMG
-            // Compose требует MAJOR > 0, и «0.1.0» роняет конфигурацию
-            // сборки на любой платформе. Версия проекта (см. version
-            // выше) идёт в имена архивов и каталогов, эта — в метаданные
-            // установщика; расходятся они намеренно
-            packageVersion = "1.0.0"
+            // Одна версия на всё: в именах архивов, в метаданных
+            // установщика и в теге релиза. Разойтись им нельзя —
+            // разошлись однажды, и релиз v0.1.0 приехал с каталогами
+            // bylins-client-1.0.0.
+            //
+            // Ограничение, о которое легко споткнуться: для DMG Compose
+            // требует MAJOR > 0, и «0.x» роняет конфигурацию сборки на
+            // любой платформе, а не только на macOS
+            packageVersion = version.toString()
 
             // JRE собирается через jlink, и по умолчанию в неё попадает голый
             // минимум — дистрибутив падал ещё до окна: сначала «java/sql/Driver»,
