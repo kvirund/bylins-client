@@ -3,6 +3,7 @@ package com.bylins.client.hotkeys
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.key
+import com.bylins.client.OperatingSystem
 import mu.KotlinLogging
 import java.lang.reflect.Field
 
@@ -18,16 +19,26 @@ private val logger = KotlinLogging.logger("PhysicalKey")
  * В самом событии AWT есть `rawCode` — код клавиши от Windows (VK_OEM_2 = 191
  * для «/?»), одинаковый в любой раскладке. Его и берём. Поле приватное,
  * поэтому нужен `--add-opens java.desktop/java.awt.event=ALL-UNNAMED`; если
- * доступа нет (другая ОС, запуск без флага), откатываемся на прежнее
- * поведение — хоткеи продолжат работать в раскладке, где их назначили.
+ * доступа нет (запуск без флага), откатываемся на прежнее поведение — хоткеи
+ * продолжат работать в раскладке, где их назначили.
+ *
+ * Только на Windows: `rawCode` хранит код той системы, в которой событие
+ * пришло, а на macOS и X11 нумерация своя. Имена клавиш и сравнение с
+ * константами Compose построены на кодах Windows — «1» там 49, и на этом
+ * держатся контекстные команды Alt+1..0. На маке та же клавиша приходит как
+ * 18, и совпадать перестало бы всё сразу: и имена в конфиге, и хоткеи.
  */
 object PhysicalKey {
 
-    private val rawCodeField: Field? = runCatching {
-        java.awt.event.KeyEvent::class.java.getDeclaredField("rawCode").apply { isAccessible = true }
-    }.onFailure {
-        logger.warn { "Физический код клавиши недоступен (${it.javaClass.simpleName}): хоткеи будут зависеть от раскладки" }
-    }.getOrNull()
+    private val rawCodeField: Field? =
+        if (OperatingSystem.current != OperatingSystem.Windows) {
+            logger.info { "Не Windows: клавиша определяется штатным кодом Compose" }
+            null
+        } else runCatching {
+            java.awt.event.KeyEvent::class.java.getDeclaredField("rawCode").apply { isAccessible = true }
+        }.onFailure {
+            logger.warn { "Физический код клавиши недоступен (${it.javaClass.simpleName}): хоткеи будут зависеть от раскладки" }
+        }.getOrNull()
 
     /** Доступен ли раскладко-независимый код. Для диагностики в UI. */
     val available: Boolean get() = rawCodeField != null

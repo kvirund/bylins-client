@@ -128,7 +128,9 @@ class ClientState {
     init {
         // Без физического кода клавиши хоткеи привязаны к раскладке, в которой
         // их назначили. Это надо видеть в логе, а не выяснять наощупь.
-        if (!com.bylins.client.hotkeys.PhysicalKey.available) {
+        if (!com.bylins.client.hotkeys.PhysicalKey.available &&
+            com.bylins.client.OperatingSystem.current == com.bylins.client.OperatingSystem.Windows
+        ) {
             logger.warn {
                 "Физический код клавиши недоступен: хоткеи будут зависеть от раскладки. " +
                     "Нужен параметр запуска --add-opens=java.desktop/java.awt.event=ALL-UNNAMED"
