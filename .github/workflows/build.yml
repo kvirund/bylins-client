@@ -10,8 +10,21 @@ on:
 
 jobs:
   tests:
-    name: Тесты
-    runs-on: ubuntu-latest
+    name: Тесты (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          # Разбор клавиш и модификаторы различаются по системам: определение
+          # ОС, физический код клавиши, Cmd вместо Ctrl. Проверять их на одной
+          # ubuntu значило проверять ровно ту ветку, где ничего не различается
+          - os: macos-latest
+            platform: macos
     steps:
       - uses: actions/checkout@v7
 
@@ -30,7 +43,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports
+          name: test-reports-${{ matrix.platform }}
           path: '**/build/reports/tests/**'
           retention-days: 7
 
@@ -80,6 +93,10 @@ jobs:
           plugins=$(find "$root" -name 'assistant.jar' -o -name 'ai-control.jar')
           echo "$plugins"
           test "$(echo "$plugins" | grep -c jar)" -eq 2
+          # Скрипты тоже внутри: снаружи бандла они пропадут при переносе
+          # приложения в Applications
+          find "$root" -name 'scripts' -type d
+          test -n "$(find "$root" -name 'scripts' -type d)"
           # Плагины грузятся своим загрузчиком; попав в classpath
           # приложения, они перестали бы выгружаться
           ! grep -r 'plugins' --include='*.cfg' "$root"
