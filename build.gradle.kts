@@ -37,7 +37,7 @@ plugins {
 }
 
 group = "com.bylins"
-version = "1.0.0"
+version = "0.1.0"
 
 repositories {
     mavenCentral()
@@ -125,6 +125,11 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Bylins Client"
+            // Версия пакета для ОС живёт по своим правилам: для DMG
+            // Compose требует MAJOR > 0, и «0.1.0» роняет конфигурацию
+            // сборки на любой платформе. Версия проекта (см. version
+            // выше) идёт в имена архивов и каталогов, эта — в метаданные
+            // установщика; расходятся они намеренно
             packageVersion = "1.0.0"
 
             // JRE собирается через jlink, и по умолчанию в неё попадает голый
