@@ -58,11 +58,15 @@ if errorlevel 1 (
 rem Текущая версия снимка
 set /p APPVER=<"%~dp0build\app\current.txt"
 
+rem Плагины берём из снимка: пересборка иначе подменит jar под живой JVM.
+rem Скрипты — из исходников: правку в них видно по #script reload сразу
+
 "%JAVA_HOME%\bin\javaw.exe" ^
     -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 ^
     -Dsun.stdout.encoding=UTF-8 -Dsun.stderr.encoding=UTF-8 -DCONSOLE_CHARSET=UTF-8 ^
     --add-opens=java.desktop/java.awt.event=ALL-UNNAMED ^
     -Dbylins.plugins.dir=build/app/%APPVER%/plugins ^
+    -Dbylins.scripts.dir="%~dp0scripts" ^
     -Dbylins.plugins.data.dir="%USERPROFILE%\.bylins-client\plugins" ^
     -cp "%~dp0build\app\deps\*;%~dp0build\app\%APPVER%\lib\*" com.bylins.client.MainKt
 if errorlevel 1 (

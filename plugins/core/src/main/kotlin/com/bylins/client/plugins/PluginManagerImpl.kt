@@ -25,26 +25,9 @@ class PluginManagerImpl(
 
     override val pluginsDirectory = resolvePluginsDirectory()
 
-    /**
-     * Каталог с JAR плагинов.
-     *
-     * Ищем рядом с приложением, а не относительно текущего каталога: у
-     * распакованного дистрибутива рабочим каталогом может оказаться что угодно
-     * (ярлык, запуск из консоли), и плагины тогда просто не находятся.
-     */
-    private fun resolvePluginsDirectory(): File {
-        System.getProperty("bylins.plugins.dir")?.let { return File(it) }
-
-        val installed = runCatching {
-            val jar = File(
-                PluginManagerImpl::class.java.protectionDomain.codeSource.location.toURI()
-            )
-            // Образ jpackage: <дистрибутив>/app/*.jar, плагины — в <дистрибутив>/plugins
-            jar.parentFile?.parentFile?.resolve("plugins")
-        }.getOrNull()
-
-        return installed?.takeIf { it.isDirectory } ?: File("plugins")
-    }
+    /** Каталог с JAR плагинов — рядом с приложением, см. [AppLayout]. */
+    private fun resolvePluginsDirectory(): File =
+        AppLayout.directory("plugins", "bylins.plugins.dir", PluginManagerImpl::class.java)
 
     /**
      * Где плагины хранят свои данные (config.yaml и прочее).

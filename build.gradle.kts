@@ -24,6 +24,12 @@ val appImageEntry = if (isMacOsHost) "Bylins Client.app" else "Bylins Client"
  */
 val pluginsInImage = if (isMacOsHost) "$appImageEntry/Contents/plugins" else "$appImageEntry/plugins"
 
+/** Скрипты в исходниках. */
+val scriptsDir = file("scripts")
+
+/** Скрипты ищутся тем же правилом, что и плагины, — значит и лежат рядом. */
+val scriptsInImage = if (isMacOsHost) "$appImageEntry/Contents/scripts" else "$appImageEntry/scripts"
+
 plugins {
     kotlin("jvm") version "1.9.22"
     kotlin("plugin.serialization") version "1.9.22"
@@ -230,11 +236,11 @@ tasks.test {
     useJUnitPlatform()
 }
 
-// === Плагины внутрь образа ===
+// === Плагины и скрипты внутрь образа ===
 //
-// Без них клиент неполон: карта, миникарта и MSDP живут в плагине-ассистенте.
-// `createDistributable` о плагинах не знает, поэтому докладываем их сами —
-// после него, потому что он пересоздаёт каталог образа целиком.
+// Без плагинов клиент неполон: карта, миникарта и MSDP живут в ассистенте.
+// `createDistributable` о них не знает, поэтому докладываем их сами — после
+// него, потому что он пересоздаёт каталог образа целиком.
 //
 // Установщики (msi/dmg/deb) плагинов не получают: jpackage собирает их не из
 // образа, а из каталога с jar-ами, и всё положенное туда попало бы в classpath
@@ -251,8 +257,18 @@ val copyPluginsToImage by tasks.registering(Sync::class) {
     into(appImageDir.map { it.dir(pluginsInImage) })
 }
 
+// Внутрь, а не рядом: то, что лежит около бандла, пропадает при переносе
+// приложения в Applications
+val copyScriptsToImage by tasks.registering(Sync::class) {
+    group = "distribution"
+    description = "Кладёт скрипты рядом с приложением внутри образа"
+
+    from(scriptsDir) { exclude("*.disabled") }
+    into(appImageDir.map { it.dir(scriptsInImage) })
+}
+
 tasks.matching { it.name == "createDistributable" }.configureEach {
-    finalizedBy(copyPluginsToImage)
+    finalizedBy(copyPluginsToImage, copyScriptsToImage)
 }
 
 // Только для запуска из Gradle: в дистрибутиве плагины лежат рядом с приложением,
@@ -400,7 +416,6 @@ afterEvaluate {
 
 val userHome: String = System.getProperty("user.home")
 val userDataDir = file("$userHome/.bylins-client")
-val scriptsDir = file("scripts")
 val packageDir = layout.buildDirectory.dir("package")
 
 // Task to create install script for Windows
@@ -671,7 +686,7 @@ val releaseDist by tasks.registering(Sync::class) {
     group = "distribution"
     description = "Каталог для релиза: приложение, плагины и скрипты"
 
-    dependsOn("createDistributable", copyPluginsToImage)
+    dependsOn("createDistributable", copyPluginsToImage, copyScriptsToImage)
 
     into(layout.buildDirectory.dir("release/bylins-client-$version-$osTag"))
 
@@ -682,11 +697,6 @@ val releaseDist by tasks.registering(Sync::class) {
         from(appImageDir)
     } else {
         from(appImageDir.map { it.dir(appImageEntry) })
-    }
-
-    from(scriptsDir) {
-        into("scripts")
-        exclude("*.disabled")
     }
 
     // Мост для ИИ-агентов: чистый Python без зависимостей, полезен рядом с клиентом

@@ -17,7 +17,18 @@ class ScriptManager(
     private val _scripts = MutableStateFlow<List<Script>>(emptyList())
     val scripts: StateFlow<List<Script>> = _scripts
 
-    private val scriptsDirectory = File("scripts")
+    /**
+     * Каталог скриптов ищется рядом с приложением, а не от рабочего.
+     *
+     * Раньше здесь стоял File("scripts") — путь от рабочего каталога. На
+     * Windows это срабатывало случайно (запуск exe из проводника делает
+     * рабочим каталог с exe), а бандл macOS, запущенный из Finder, получает
+     * корень файловой системы: клиент лез в /scripts, не мог его создать, и
+     * скрипты просто не загружались.
+     */
+    private val scriptsDirectory = com.bylins.client.plugins.AppLayout.directory(
+        "scripts", "bylins.scripts.dir", ScriptManager::class.java
+    )
 
     init {
         // Создаем директорию для скриптов если её нет
