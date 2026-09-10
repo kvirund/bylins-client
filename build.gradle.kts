@@ -3,6 +3,27 @@ import java.io.OutputStream
 
 val generatedMacOsIcon = layout.buildDirectory.file("generated/macos/icon.icns")
 
+// Раскладка образа приложения. Compose собирает его только под ту ОС, где
+// запущен, поэтому выбрать её можно прямо здесь — клиенту не нужно выяснять
+// это на старте и перебирать каталоги в поисках плагинов.
+val isMacOsHost = System.getProperty("os.name").lowercase().contains("mac")
+
+/** Куда Compose кладёт образ. */
+val appImageDir = layout.buildDirectory.dir("compose/binaries/main/app")
+
+/** Само приложение внутри образа: у macOS это бандл со своей раскладкой. */
+val appImageEntry = if (isMacOsHost) "Bylins Client.app" else "Bylins Client"
+
+/**
+ * Каталог плагинов внутри образа.
+ *
+ * PluginManager ищет их на уровень выше своего jar-а: у Windows и Linux тот
+ * лежит в `app/`, у macOS — в `Contents/app/`. Значит `<образ>/plugins` и
+ * `Contents/plugins` — одно и то же место с точки зрения поиска, и правило
+ * поиска остаётся одно на все платформы.
+ */
+val pluginsInImage = if (isMacOsHost) "$appImageEntry/Contents/plugins" else "$appImageEntry/plugins"
+
 plugins {
     kotlin("jvm") version "1.9.22"
     kotlin("plugin.serialization") version "1.9.22"
@@ -207,6 +228,31 @@ tasks.matching { it.name == "processResources" }.configureEach {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// === Плагины внутрь образа ===
+//
+// Без них клиент неполон: карта, миникарта и MSDP живут в плагине-ассистенте.
+// `createDistributable` о плагинах не знает, поэтому докладываем их сами —
+// после него, потому что он пересоздаёт каталог образа целиком.
+//
+// Установщики (msi/dmg/deb) плагинов не получают: jpackage собирает их не из
+// образа, а из каталога с jar-ами, и всё положенное туда попало бы в classpath
+// приложения — плагины перестали бы выгружаться и перезагружаться. Комплект
+// для раздачи собирает releaseDist.
+val copyPluginsToImage by tasks.registering(Sync::class) {
+    group = "distribution"
+    description = "Кладёт плагины рядом с приложением внутри образа"
+
+    dependsOn(":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+
+    from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar"))
+    from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar"))
+    into(appImageDir.map { it.dir(pluginsInImage) })
+}
+
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    finalizedBy(copyPluginsToImage)
 }
 
 // Только для запуска из Gradle: в дистрибутиве плагины лежат рядом с приложением,
@@ -625,17 +671,17 @@ val releaseDist by tasks.registering(Sync::class) {
     group = "distribution"
     description = "Каталог для релиза: приложение, плагины и скрипты"
 
-    dependsOn("createDistributable", ":plugins:assistant:buildPlugin", ":plugins:ai-control:buildPlugin")
+    dependsOn("createDistributable", copyPluginsToImage)
 
     into(layout.buildDirectory.dir("release/bylins-client-$version-$osTag"))
 
-    from(layout.buildDirectory.dir("compose/binaries/main/app/Bylins Client"))
-
-    from(project(":plugins:assistant").layout.buildDirectory.file("libs/assistant.jar")) {
-        into("plugins")
-    }
-    from(project(":plugins:ai-control").layout.buildDirectory.file("libs/ai-control.jar")) {
-        into("plugins")
+    // Плагины уже внутри образа, отдельно досыпать нечего. У macOS в архив
+    // едет бандл целиком: всё, что лежит рядом с ним, а не внутри, пропадёт,
+    // как только пользователь перетащит приложение в Applications.
+    if (isMacOsHost) {
+        from(appImageDir)
+    } else {
+        from(appImageDir.map { it.dir(appImageEntry) })
     }
 
     from(scriptsDir) {

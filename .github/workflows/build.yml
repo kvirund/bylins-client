@@ -42,7 +42,7 @@ jobs:
     needs: tests
     runs-on: ${{ matrix.os }}
     strategy:
-      # Одна платформа упала — вторую всё равно доводим до конца
+      # Одна платформа упала — остальные всё равно доводим до конца
       fail-fast: false
       matrix:
         include:
@@ -50,6 +50,10 @@ jobs:
             platform: windows
           - os: ubuntu-latest
             platform: linux
+          # У macOS образ устроен иначе — бандл вместо каталога, и
+          # ошибки в его раскладке иначе видны только на машине автора
+          - os: macos-latest
+            platform: macos
 
     steps:
       - uses: actions/checkout@v7
@@ -65,6 +69,20 @@ jobs:
       # комплект собирается на каждой ОС свой — кроссплатформенного тут не бывает
       - name: Собрать дистрибутив
         run: ./gradlew releaseDist
+
+      # Без плагинов клиент неполон: карта, миникарта и MSDP живут в
+      # ассистенте. Проверяем, что они доехали, — раскладка образа у
+      # каждой ОС своя, и промах виден только так
+      - name: Проверить комплект
+        shell: bash
+        run: |
+          root=$(ls -d build/release/*/)
+          plugins=$(find "$root" -name 'assistant.jar' -o -name 'ai-control.jar')
+          echo "$plugins"
+          test "$(echo "$plugins" | grep -c jar)" -eq 2
+          # Плагины грузятся своим загрузчиком; попав в classpath
+          # приложения, они перестали бы выгружаться
+          ! grep -r 'plugins' --include='*.cfg' "$root"
 
       # Каталогом, а не архивом: upload-artifact пакует сам, и готовый zip
       # внутри давал бы архив в архиве
