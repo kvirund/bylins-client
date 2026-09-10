@@ -11,7 +11,11 @@ import androidx.compose.ui.input.key.Key
  */
 object OutputSearchShortcut {
 
-    /** Клавиша сравнивается физическая: код от Compose зависит от раскладки. */
-    fun isOpen(key: Key, isCtrlPressed: Boolean, isAltPressed: Boolean, isShiftPressed: Boolean): Boolean =
-        key == Key.F && isCtrlPressed && !isAltPressed && !isShiftPressed
+    /**
+     * Клавиша сравнивается физическая: код от Compose зависит от раскладки.
+     *
+     * @param isCommandPressed Ctrl, а на macOS ещё и Cmd — см. [CommandModifier]
+     */
+    fun isOpen(key: Key, isCommandPressed: Boolean, isAltPressed: Boolean, isShiftPressed: Boolean): Boolean =
+        key == Key.F && isCommandPressed && !isAltPressed && !isShiftPressed
 }

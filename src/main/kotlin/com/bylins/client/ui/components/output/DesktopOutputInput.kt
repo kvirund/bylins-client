@@ -61,8 +61,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
-import com.bylins.client.OperatingSystem
 import com.bylins.client.ui.AnsiParser
+import com.bylins.client.ui.CommandModifier
 import com.bylins.client.ui.scroll.BufferGeometry
 import com.bylins.client.ui.scroll.ContentSnapshot
 import com.bylins.client.ui.scroll.ScrollTarget
@@ -96,7 +96,11 @@ fun ScrollbackOutputView(
     val density = LocalDensity.current
     val measurer = rememberTextMeasurer()
     val clipboard = LocalClipboardManager.current
-    val isMacOs = OperatingSystem.current == OperatingSystem.MacOS
+    // Ctrl, а на macOS ещё и Cmd: выделение, копирование и поиск живут там
+    // на Cmd, и прибитый к Ctrl набор оставлял мак с половиной сочетаний
+    val isCommand: (KeyEvent) -> Boolean = { event ->
+        CommandModifier.isPressed(event.isCtrlPressed, event.isMetaPressed)
+    }
     val focusRequester = remember { FocusRequester() }
     val searchFocus = remember { FocusRequester() }
     var searchQuery by remember { mutableStateOf(holder.search.query) }
@@ -285,7 +289,7 @@ fun ScrollbackOutputView(
                 when {
                     com.bylins.client.ui.OutputSearchShortcut.isOpen(
                         key = com.bylins.client.hotkeys.PhysicalKey.of(event),
-                        isCtrlPressed = event.isCtrlPressed,
+                        isCommandPressed = isCommand(event),
                         isAltPressed = event.isAltPressed,
                         isShiftPressed = event.isShiftPressed
                     ) -> {
@@ -294,12 +298,10 @@ fun ScrollbackOutputView(
                     event.key == Key.F3 && event.isShiftPressed -> { prevMatch(); true }
                     event.key == Key.F3 -> { nextMatch(); true }
                     event.key == Key.Escape && holder.searchActive -> { closeSearch(); true }
-                    event.isCtrlPressed && event.key == Key.A -> {
+                    isCommand(event) && event.key == Key.A -> {
                         selection.selectAll(effectiveFirstSeq, geometry.lineCount); holder.bumpSelection(); true
                     }
-                    event.key == Key.C && (event.isCtrlPressed || (isMacOs && event.isMetaPressed)) -> {
-                        copySelection(); true
-                    }
+                    isCommand(event) && event.key == Key.C -> { copySelection(); true }
                     event.isCtrlPressed && event.key == Key.Insert -> { copySelection(); true }
                     event.key == Key.PageDown -> { userScrollTo(scrollbackPx + topPaneHeightPx); true }
                     event.key == Key.PageUp -> { userScrollTo(scrollbackPx - topPaneHeightPx); true }

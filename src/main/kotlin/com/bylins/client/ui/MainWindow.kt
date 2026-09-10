@@ -126,7 +126,9 @@ fun MainWindow() {
                             if (
                                 OutputSearchShortcut.isOpen(
                                     key = com.bylins.client.hotkeys.PhysicalKey.of(event),
-                                    isCtrlPressed = event.isCtrlPressed,
+                                    isCommandPressed = CommandModifier.isPressed(
+                                        event.isCtrlPressed, event.isMetaPressed
+                                    ),
                                     isAltPressed = event.isAltPressed,
                                     isShiftPressed = event.isShiftPressed
                                 )
